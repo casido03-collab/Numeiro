@@ -1,0 +1,201 @@
+"""Совместимость двух людей — FSM + AI."""
+import json
+from datetime import datetime, date
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from sqlalchemy.ext.asyncio import AsyncSession
+from bot.models.user import User
+from bot.services.compatibility import calculate_compatibility
+from bot.services.cache import get_cached, set_cached, make_cache_key
+from bot.services.limits import check_limit, consume_limit
+from bot.services.ai_service import generate
+from bot.prompts.prompts import COMPATIBILITY_PROMPT
+from bot.keyboards.main import relation_type_menu, limit_reached_keyboard, after_reading_keyboard, back_to_main
+from bot.utils import parse_birth_date as _parse_compat_date, safe_edit
+
+router = Router()
+
+from bot.keyboards.main import main_menu  # noqa: E402
+
+
+@router.callback_query(F.data == "compat:cancel")
+async def compat_cancel(callback: CallbackQuery, state: FSMContext, user: User):
+    await state.clear()
+    name = user.first_name or "друг"
+    await callback.message.edit_text(
+        f"✨ *{name}*, выбери что тебя интересует:",
+        reply_markup=main_menu(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+RELATION_NAMES = {
+    "love": "романтические отношения",
+    "marriage": "брак",
+    "friendship": "дружба",
+    "work": "рабочие отношения",
+    "ex": "отношения с бывшим партнёром",
+    "potential": "потенциальный партнёр",
+}
+
+
+class CompatibilityFSM(StatesGroup):
+    waiting_partner_date = State()
+    waiting_relation_type = State()
+
+
+def _parse_date(text: str) -> date | None:
+    for fmt in ["%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y"]:
+        try:
+            return datetime.strptime(text.strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+@router.callback_query(F.data == "menu:compatibility")
+@router.callback_query(F.data == "compat:start")
+async def compat_start(callback: CallbackQuery, user: User, session: AsyncSession, state: FSMContext):
+    has_limit, used, max_val = await check_limit(session, user.id, "compatibility")
+    if not has_limit:
+        await callback.message.edit_text(
+            "🔒 *Совместимость*\n\nЭта функция требует подписки или разовой покупки.\n\n"
+            "• Lite: 1 совместимость\n"
+            "• Premium: 4 совместимости\n"
+            "• Pro: 15 совместимостей",
+            reply_markup=limit_reached_keyboard(),
+            parse_mode="Markdown",
+        )
+        await callback.answer()
+        return
+
+    if not user.birth_date:
+        await callback.message.edit_text(
+            "✨ Сначала укажи свою дату рождения.\n\nВведи в формате *ДД.ММ.ГГГГ*",
+            parse_mode="Markdown",
+        )
+        await callback.answer()
+        return
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    await callback.message.edit_text(
+        "💞 *Совместимость*\n\nВведи дату рождения второго человека в формате *ДД.ММ.ГГГГ*",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="compat:cancel")]
+        ]),
+        parse_mode="Markdown",
+    )
+    await state.set_state(CompatibilityFSM.waiting_partner_date)
+    await callback.answer()
+
+
+@router.message(CompatibilityFSM.waiting_partner_date, ~F.text.in_({"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}))
+async def receive_partner_date(message: Message, state: FSMContext):
+    partner_date = _parse_date(message.text or "")
+    if not partner_date:
+        await message.answer(
+            "❌ Не могу распознать дату. Введи в формате *ДД.ММ.ГГГГ*",
+            parse_mode="Markdown",
+        )
+        return
+
+    if partner_date.year < 1900 or partner_date > date.today():
+        await message.answer("❌ Пожалуйста, введи корректную дату рождения.")
+        return
+
+    await state.update_data(partner_date=partner_date.strftime("%d.%m.%Y"))
+    await message.answer(
+        "💞 Теперь выбери тип связи:",
+        reply_markup=relation_type_menu(),
+    )
+    await state.set_state(CompatibilityFSM.waiting_relation_type)
+
+
+@router.callback_query(F.data.startswith("compat:type:"), CompatibilityFSM.waiting_relation_type)
+async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user: User, session: AsyncSession):
+    relation_type = callback.data.split(":")[-1]
+    data = await state.get_data()
+    partner_date_str = data.get("partner_date")
+    await state.clear()
+
+    if not partner_date_str:
+        await callback.message.edit_text("❌ Ошибка. Начни сначала.", reply_markup=back_to_main())
+        await callback.answer()
+        return
+
+    thinking_msg = await callback.message.edit_text("✨ Изучаю совместимость ваших энергий...")
+
+    user_date = _parse_compat_date(user.birth_date)
+    partner_date = _parse_compat_date(partner_date_str)
+
+    if not user_date or not partner_date:
+        await thinking_msg.edit_text("❌ Ошибка при разборе дат.")
+        await callback.answer()
+        return
+
+    cache_key = make_cache_key("compat", user.birth_date, partner_date_str, relation_type)
+    cached = await get_cached(cache_key)
+
+    if not cached:
+        compat = calculate_compatibility(user_date, partner_date, relation_type)
+        context = {
+            "name": user.first_name or "друг",
+            "user_birth": user.birth_date,
+            "partner_birth": partner_date_str,
+            "relation_type": RELATION_NAMES.get(relation_type, relation_type),
+            "compatibility": compat,
+        }
+        user_msg = f"Анализируй совместимость.\nДанные: {json.dumps(context, ensure_ascii=False)}"
+        cached = await generate(
+            session, user.id, "compatibility",
+            COMPATIBILITY_PROMPT, user_msg,
+            complexity="medium", max_tokens=700,
+        )
+        await set_cached(cache_key, cached, ttl=3600 * 24 * 30)
+
+        # Сохраняем отчёт
+        from bot.models.user import CompatibilityReport
+        report = CompatibilityReport(
+            user_id=user.id,
+            user_birth_date=user.birth_date,
+            partner_birth_date=partner_date_str,
+            relation_type=relation_type,
+            content=cached,
+            cache_key=cache_key,
+        )
+        session.add(report)
+        await session.commit()
+
+    from bot.services.reports_service import save_report
+    await save_report(
+        session, user.id, "compatibility",
+        title=f"Совместимость | {RELATION_NAMES.get(relation_type, relation_type)}",
+        content=cached,
+        metadata={"partner_birth": partner_date_str, "relation_type": relation_type},
+    )
+    await consume_limit(session, user.id, "compatibility")
+    await consume_limit(session, user.id, "ai_messages")
+
+    name = user.first_name or "друг"
+    relation_name = RELATION_NAMES.get(relation_type, relation_type)
+    header = f"💞 *Совместимость — {name}*\n_Тип связи: {relation_name}_\n\n"
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Поделиться результатом", callback_data=f"share:compat:{cache_key[:20]}")],
+        [InlineKeyboardButton(text="💞 Другая совместимость", callback_data="compat:start")],
+        [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+    ])
+    await safe_edit(thinking_msg, header + cached, reply_markup=kb)
+
+    # Контентный CTA
+    from bot.handlers.content import compatibility_cta_kb
+    await callback.message.answer(
+        "✨ _Некоторые связи приходят в нашу жизнь не случайно..._",
+        reply_markup=compatibility_cta_kb(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()

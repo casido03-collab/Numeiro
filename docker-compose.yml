@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    env_file: .env
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    command: python -m bot.main
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: numeiro
+      POSTGRES_USER: numeiro
+      POSTGRES_PASSWORD: numeiro_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
