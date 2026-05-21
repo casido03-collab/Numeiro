@@ -5,6 +5,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, User as TGUser
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from bot.models.user import User, Subscription, UserProfile, PlanEnum
 import secrets
 import string
@@ -37,24 +38,33 @@ class UserMiddleware(BaseMiddleware):
 
         if not user:
             logger.info("USER_MW: new user telegram_id=%s", tg_user.id)
-            user = User(
-                telegram_id=tg_user.id,
-                username=tg_user.username,
-                first_name=tg_user.first_name,
-                referral_code=_generate_referral_code(),
-            )
-            session.add(user)
-            # flush даёт user.id без полного commit
-            await session.flush()
-            logger.info("USER_MW: user flushed, id=%s", user.id)
+            try:
+                user = User(
+                    telegram_id=tg_user.id,
+                    username=tg_user.username,
+                    first_name=tg_user.first_name,
+                    referral_code=_generate_referral_code(),
+                )
+                session.add(user)
+                # flush даёт user.id без полного commit
+                await session.flush()
+                logger.info("USER_MW: user flushed, id=%s", user.id)
 
-            profile = UserProfile(user_id=user.id)
-            subscription = Subscription(user_id=user.id, plan=PlanEnum.free)
-            session.add(profile)
-            session.add(subscription)
-            await session.commit()
-            # expire_on_commit=False — refresh НЕ нужен, объект уже актуален
-            logger.info("USER_MW: new user committed, id=%s", user.id)
+                profile = UserProfile(user_id=user.id)
+                subscription = Subscription(user_id=user.id, plan=PlanEnum.free)
+                session.add(profile)
+                session.add(subscription)
+                await session.commit()
+                # expire_on_commit=False — refresh НЕ нужен, объект уже актуален
+                logger.info("USER_MW: new user committed, id=%s", user.id)
+            except IntegrityError:
+                # Гонка: другой запрос уже создал пользователя — просто загрузим его
+                await session.rollback()
+                logger.warning("USER_MW: race condition for telegram_id=%s — re-fetching", tg_user.id)
+                result = await session.execute(
+                    select(User).where(User.telegram_id == tg_user.id)
+                )
+                user = result.scalar_one()
         else:
             if user.first_name != tg_user.first_name or user.username != tg_user.username:
                 user.first_name = tg_user.first_name
