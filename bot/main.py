@@ -127,6 +127,10 @@ async def main():
 
     asyncio.create_task(_watchdog())
 
+    # Гарантированно сбросить webhook перед polling (на случай если был зарегистрирован)
+    await bot.delete_webhook(drop_pending_updates=False)
+    logger.info("Webhook cleared, starting polling...")
+
     # Запуск
     try:
         logger.info("Bot started. Press Ctrl+C to stop.")
