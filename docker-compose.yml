@@ -20,17 +20,15 @@ services:
       POSTGRES_PASSWORD: numeiro_pass
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # Порт не пробрасываем наружу — бот достучится внутри Docker-сети
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     restart: unless-stopped
     volumes:
       - redisdata:/data
+    # Порт не пробрасываем наружу — бот достучится внутри Docker-сети
 
 volumes:
   pgdata:
