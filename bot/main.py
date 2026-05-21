@@ -6,7 +6,6 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
-from aiohttp import ClientTimeout
 
 from config import settings
 from database.base import create_tables, async_session_maker
@@ -30,8 +29,8 @@ async def main():
     await create_tables()
 
     # Bot и Dispatcher
-    # Таймаут сессии: 30 сек на connect, 60 сек на чтение ответа от Telegram
-    session = AiohttpSession(timeout=ClientTimeout(total=60, connect=10))
+    # Таймаут сессии: 60 сек — бот не будет висеть при сетевых проблемах
+    session = AiohttpSession(timeout=60)
     bot = Bot(
         token=settings.bot_token,
         session=session,
