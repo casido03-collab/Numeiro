@@ -1,4 +1,5 @@
 """Реферальная система — раздел «👥 Друзья»."""
+import asyncio
 import logging
 from urllib.parse import quote
 from aiogram import Router, F
@@ -79,11 +80,12 @@ def _stats_kb() -> InlineKeyboardMarkup:
 async def reply_friends(message: Message, user: User, session: AsyncSession, state: FSMContext):
     await state.clear()
     try:
-        await message.delete()
+        await asyncio.wait_for(message.delete(), timeout=5.0)
     except Exception:
         pass
     from bot.utils import show_menu_message
-    bot_username = (await message.bot.get_me()).username
+    from bot.handlers.share import _get_bot_username
+    bot_username = await _get_bot_username(message.bot)
     link = _ref_link(bot_username, user.telegram_id)
     stats = await _get_stats(session, user.telegram_id)
     text = (

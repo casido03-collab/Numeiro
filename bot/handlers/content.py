@@ -1,4 +1,5 @@
 """Контентная система — раздел «Интересное»."""
+import asyncio
 import logging
 from datetime import date
 from aiogram import Router, F
@@ -228,7 +229,7 @@ def content_menu_kb() -> InlineKeyboardMarkup:
 async def reply_interesting(message: Message, state: FSMContext):
     await state.clear()
     try:
-        await message.delete()
+        await asyncio.wait_for(message.delete(), timeout=5.0)
     except Exception:
         pass
     from bot.utils import show_menu_message
@@ -244,7 +245,7 @@ async def reply_menu(message: Message, user: User, state: FSMContext):
     """Кнопка «🔮 Меню» работает как /start — полный welcome-экран + клавиатура."""
     await state.clear()
     try:
-        await message.delete()
+        await asyncio.wait_for(message.delete(), timeout=5.0)
     except Exception:
         pass
     from bot.keyboards.main import main_menu

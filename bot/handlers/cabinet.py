@@ -1,4 +1,5 @@
 """Личный кабинет пользователя — «💎 Подписка»."""
+import asyncio
 import random
 from datetime import datetime, timezone
 from aiogram import Router, F
@@ -143,7 +144,7 @@ def _cabinet_kb() -> InlineKeyboardMarkup:
 async def reply_cabinet(message: Message, user: User, session: AsyncSession, state: FSMContext):
     await state.clear()
     try:
-        await message.delete()
+        await asyncio.wait_for(message.delete(), timeout=5.0)
     except Exception:
         pass
     from bot.utils import show_menu_message
