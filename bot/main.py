@@ -37,7 +37,15 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
     )
 
-    storage = RedisStorage.from_url(settings.redis_url)
+    storage = RedisStorage.from_url(
+        settings.redis_url,
+        connection_kwargs={
+            "socket_timeout": 5,
+            "socket_connect_timeout": 5,
+            "retry_on_timeout": True,
+            "health_check_interval": 30,
+        },
+    )
     dp = Dispatcher(storage=storage)
 
     # Middleware: сессия БД (регистрируем первой)

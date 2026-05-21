@@ -6,10 +6,21 @@ from config import settings
 _redis: aioredis.Redis | None = None
 
 
+def _create_redis() -> aioredis.Redis:
+    return aioredis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_timeout=5,            # 5 сек на выполнение команды
+        socket_connect_timeout=5,    # 5 сек на подключение
+        retry_on_timeout=True,       # повторить при таймауте
+        health_check_interval=30,    # пинговать соединение каждые 30 сек
+    )
+
+
 async def get_redis() -> aioredis.Redis:
     global _redis
     if _redis is None:
-        _redis = await aioredis.from_url(settings.redis_url, decode_responses=True)
+        _redis = _create_redis()
     return _redis
 
 
