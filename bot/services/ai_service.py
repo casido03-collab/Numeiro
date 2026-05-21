@@ -17,7 +17,11 @@ def _get_client() -> AsyncOpenAI | None:
     if not settings.openai_api_key:
         return None
     if _client is None:
-        _client = AsyncOpenAI(api_key=settings.openai_api_key)
+        _client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            timeout=90.0,        # максимум 90 сек на запрос
+            max_retries=1,       # одна автоматическая повторная попытка
+        )
     return _client
 
 
