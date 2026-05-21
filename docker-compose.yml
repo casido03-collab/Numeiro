@@ -11,6 +11,14 @@ services:
     volumes:
       - .:/app
     command: python -m bot.main
+    healthcheck:
+      # Проверяем что бот обрабатывал апдейты в последние 10 минут
+      test: ["CMD", "python", "-c",
+        "import time, sys; f=open('/tmp/bot_last_update'); v=float(f.read()); sys.exit(0 if time.time()-v < 660 else 1)"]
+      interval: 120s      # проверять каждые 2 минуты
+      timeout: 5s
+      retries: 3          # 3 провала подряд → unhealthy → Docker рестартует
+      start_period: 60s   # не проверять первые 60 сек (время старта)
 
   postgres:
     image: postgres:16-alpine

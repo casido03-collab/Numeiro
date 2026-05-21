@@ -1,9 +1,11 @@
 """Точка входа бота."""
 import asyncio
 import logging
+import os
+import signal
+import time
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 
@@ -21,19 +23,41 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ─── Watchdog: timestamp последнего обработанного апдейта ─────────────────────
+# Пишется в файл чтобы Docker healthcheck мог его прочитать
+_HEALTH_FILE = "/tmp/bot_last_update"
+_WATCHDOG_TIMEOUT = 600  # 10 минут без апдейтов → считаем зависшим
+
+
+def touch_health():
+    """Обновить timestamp — вызывается на каждый обработанный апдейт."""
+    try:
+        with open(_HEALTH_FILE, "w") as f:
+            f.write(str(time.time()))
+    except Exception:
+        pass
+
+
+def check_health() -> bool:
+    """Вернуть True если бот живой (апдейт был недавно или бот только стартовал)."""
+    try:
+        with open(_HEALTH_FILE) as f:
+            last = float(f.read().strip())
+        return (time.time() - last) < _WATCHDOG_TIMEOUT
+    except Exception:
+        return True  # файл ещё не создан — значит только стартовали
+
 
 async def main():
     logger.info("Starting Numeiro bot...")
+    touch_health()  # сброс watchdog при старте
 
     # Создаём таблицы
     await create_tables()
 
     # Bot и Dispatcher
-    # Таймаут сессии: 60 сек — бот не будет висеть при сетевых проблемах
-    session = AiohttpSession(timeout=60)
     bot = Bot(
         token=settings.bot_token,
-        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
     )
 
@@ -51,6 +75,7 @@ async def main():
     # Middleware: сессия БД (регистрируем первой)
     from bot.middlewares.db import DbSessionMiddleware
     from bot.middlewares.activity import ActivityMiddleware
+
     dp.update.outer_middleware(DbSessionMiddleware(async_session_maker))
     dp.update.outer_middleware(UserMiddleware())
     # Activity tracking — после UserMiddleware (нужен user в data)
@@ -58,6 +83,13 @@ async def main():
     dp.callback_query.outer_middleware(ActivityMiddleware(async_session_maker))
     dp.message.outer_middleware(RateLimitMiddleware())
     dp.callback_query.outer_middleware(RateLimitMiddleware())
+
+    # Обновляем healthcheck-файл на каждый обработанный апдейт
+    @dp.update.outer_middleware()
+    async def health_touch_middleware(handler, event, data):
+        result = await handler(event, data)
+        touch_health()
+        return result
 
     # Роутеры
     dp.include_routers(
@@ -83,10 +115,27 @@ async def main():
     scheduler = setup_scheduler(bot, async_session_maker)
     scheduler.start()
 
+    # Watchdog: каждые 5 мин проверяет не завис ли polling
+    async def _watchdog():
+        await asyncio.sleep(300)  # первые 5 мин — grace period
+        while True:
+            await asyncio.sleep(300)
+            if not check_health():
+                logger.error("WATCHDOG: no updates for %s sec — restarting", _WATCHDOG_TIMEOUT)
+                os.kill(os.getpid(), signal.SIGTERM)
+                break
+
+    asyncio.create_task(_watchdog())
+
     # Запуск
     try:
         logger.info("Bot started. Press Ctrl+C to stop.")
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        await dp.start_polling(
+            bot,
+            allowed_updates=dp.resolve_used_update_types(),
+            polling_timeout=25,     # Telegram держит long-poll 25 сек
+            handle_signals=True,    # корректно обрабатывать SIGTERM
+        )
     finally:
         scheduler.shutdown()
         await bot.session.close()
