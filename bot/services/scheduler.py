@@ -104,9 +104,23 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
         async with session_maker() as session:
             await send_subscription_reminders(bot, session)
 
+    async def _retention():
+        from bot.services.retention import run_retention_pushes
+        async with session_maker() as session:
+            await run_retention_pushes(bot, session)
+
+    async def _trial_upsell():
+        from bot.services.retention import run_trial_upsell
+        async with session_maker() as session:
+            await run_trial_upsell(bot, session)
+
     # Ежедневные пуши в 9:00 МСК
     scheduler.add_job(_daily_push, CronTrigger(hour=6, minute=0))
     # Напоминания об окончании подписки в 12:00 МСК
     scheduler.add_job(_reminders, CronTrigger(hour=9, minute=0))
+    # Retention push — каждые 10 минут (проверяет 24ч неактивности)
+    scheduler.add_job(_retention, CronTrigger(minute="*/10"))
+    # Trial upsell — каждые 10 минут (проверяет 1ч неактивности для free)
+    scheduler.add_job(_trial_upsell, CronTrigger(minute="*/10"))
 
     return scheduler

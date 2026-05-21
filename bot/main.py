@@ -42,8 +42,12 @@ async def main():
 
     # Middleware: сессия БД (регистрируем первой)
     from bot.middlewares.db import DbSessionMiddleware
+    from bot.middlewares.activity import ActivityMiddleware
     dp.update.outer_middleware(DbSessionMiddleware(async_session_maker))
     dp.update.outer_middleware(UserMiddleware())
+    # Activity tracking — после UserMiddleware (нужен user в data)
+    dp.message.outer_middleware(ActivityMiddleware(async_session_maker))
+    dp.callback_query.outer_middleware(ActivityMiddleware(async_session_maker))
     dp.message.outer_middleware(RateLimitMiddleware())
     dp.callback_query.outer_middleware(RateLimitMiddleware())
 

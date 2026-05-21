@@ -170,6 +170,20 @@ class Referral(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class UserActivity(Base):
+    """Трекинг активности пользователя для retention push-системы."""
+    __tablename__ = "user_activity"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), unique=True, index=True)
+    last_activity_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_push_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    push_index: Mapped[int] = mapped_column(Integer, default=0)
+    trial_upsell_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class UserReport(Base):
     """История разборов пользователя (прогнозы, совместимости, вопросы и т.д.)."""
     __tablename__ = "user_reports"
