@@ -1,11 +1,16 @@
 """Утилиты: безопасная отправка Markdown, парсинг дат, clean UX helpers."""
-import re
+import asyncio
 import logging
 from datetime import date, datetime
+from typing import Optional
 from aiogram.types import Message, InlineKeyboardMarkup
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
 
 logger = logging.getLogger(__name__)
+
+# Retry-настройки для Telegram API вызовов
+_RETRIES = 2          # попыток после первой неудачи
+_RETRY_DELAY = 1.5    # секунд между попытками
 
 
 def parse_birth_date(birth_str: str | None) -> date | None:
@@ -20,39 +25,108 @@ def parse_birth_date(birth_str: str | None) -> date | None:
     return None
 
 
-async def safe_edit(
-    message: Message,
-    text: str,
-    reply_markup: InlineKeyboardMarkup | None = None,
-    parse_mode: str | None = "Markdown",
-) -> Message:
-    """
-    Edit message with Markdown; if Telegram rejects it (bad entities),
-    retry without parse_mode to never lose the response.
-    """
-    try:
-        return await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
-    except TelegramBadRequest as e:
-        if "can't parse" in str(e).lower() or "bad request" in str(e).lower():
-            logger.warning("Markdown parse error, retrying as plain text: %s", e)
-            return await message.edit_text(text, reply_markup=reply_markup, parse_mode=None)
-        raise
+# ─── Retry-хелпер ─────────────────────────────────────────────────────────────
 
+async def _with_retry(fn, label: str = "telegram call"):
+    """
+    Вызвать callable fn() с retry при сетевых ошибках Telegram.
+
+    - TelegramNetworkError → до _RETRIES повторов с паузой _RETRY_DELAY сек.
+    - TelegramRetryAfter   → ждать retry_after секунд, затем повтор.
+    - Другие исключения    → пробрасываются без retry.
+    """
+    last_err = None
+    for attempt in range(_RETRIES + 1):
+        try:
+            return await fn()
+        except TelegramRetryAfter as e:
+            wait = e.retry_after + 1
+            logger.warning("%s: RetryAfter %ss (attempt %d)", label, wait, attempt + 1)
+            await asyncio.sleep(wait)
+        except TelegramNetworkError as e:
+            last_err = e
+            logger.warning("%s: network error (attempt %d/%d): %s", label, attempt + 1, _RETRIES + 1, e)
+            if attempt < _RETRIES:
+                await asyncio.sleep(_RETRY_DELAY)
+    logger.error("%s: all %d attempts failed: %s", label, _RETRIES + 1, last_err)
+    raise last_err
+
+
+# ─── Безопасные Telegram API вызовы ──────────────────────────────────────────
 
 async def safe_answer(
     message: Message,
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
     parse_mode: str | None = "Markdown",
-) -> Message:
-    """Answer a message with Markdown; fallback to plain text on parse error."""
+) -> Optional[Message]:
+    """
+    Отправить ответное сообщение.
+    - Retry при TelegramNetworkError / TelegramRetryAfter.
+    - При Markdown-ошибке повтор без parse_mode.
+    - При любой неустранимой ошибке возвращает None (не бросает исключение).
+    """
     try:
-        return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        return await _with_retry(
+            lambda: message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode),
+            label="safe_answer",
+        )
     except TelegramBadRequest as e:
-        if "can't parse" in str(e).lower() or "bad request" in str(e).lower():
-            logger.warning("Markdown parse error, retrying as plain text: %s", e)
-            return await message.answer(text, reply_markup=reply_markup, parse_mode=None)
-        raise
+        if "can't parse" in str(e).lower():
+            try:
+                return await message.answer(text, reply_markup=reply_markup, parse_mode=None)
+            except Exception as e2:
+                logger.warning("safe_answer: plain-text fallback failed: %s", e2)
+        else:
+            logger.warning("safe_answer: bad request: %s", e)
+    except Exception as e:
+        logger.warning("safe_answer: failed: %s", e)
+    return None
+
+
+async def safe_edit(
+    message: Message,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: str | None = "Markdown",
+) -> Optional[Message]:
+    """
+    Отредактировать сообщение.
+    - Retry при TelegramNetworkError / TelegramRetryAfter.
+    - При Markdown-ошибке повтор без parse_mode.
+    - Если редактирование невозможно (сообщение удалено / слишком старое) —
+      fallback на safe_answer (отправляет новое сообщение).
+    - Возвращает None если ни edit, ни answer не удались.
+    """
+    try:
+        return await _with_retry(
+            lambda: message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode),
+            label="safe_edit",
+        )
+    except TelegramBadRequest as e:
+        err_lower = str(e).lower()
+        if "can't parse" in err_lower:
+            try:
+                return await message.edit_text(text, reply_markup=reply_markup, parse_mode=None)
+            except TelegramBadRequest:
+                pass  # Всё равно не получилось — идём к fallback
+        # Сообщение нельзя редактировать (удалено, слишком старое и т.д.)
+        logger.debug("safe_edit: edit failed (%s), falling back to answer", e)
+        return await safe_answer(message, text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except Exception as e:
+        logger.warning("safe_edit: failed: %s", e)
+    return None
+
+
+async def safe_delete(message: Message, timeout: float = 5.0) -> None:
+    """
+    Удалить сообщение с таймаутом и тихим игнорированием ошибок.
+    Таймаут защищает от зависания при зомби-TCP-соединении.
+    """
+    try:
+        await asyncio.wait_for(message.delete(), timeout=timeout)
+    except Exception:
+        pass
 
 
 # ─── Clean UX helpers ─────────────────────────────────────────────────────────
@@ -64,60 +138,61 @@ async def show_menu_message(
     reply_markup: InlineKeyboardMarkup | None = None,
     parse_mode: str = "Markdown",
     force_new: bool = False,
-) -> Message:
+) -> Optional[Message]:
     """
-    Manage the single tracked "menu" message in the chat.
+    Управляет единственным «меню-сообщением» в чате.
 
-    force_new=True  →  always send a fresh message.answer() and track it.
-                       Use for /start and any Message-triggered entry points
-                       where editing a stale tracked message would place the
-                       response far above the new command in the chat.
-
-    force_new=False →  try to EDIT the previously tracked message in-place
-                       (silent, no scroll jump).  If edit fails, send new.
-                       Use for reply-keyboard button handlers.
-
-    Does NOT delete the caller's trigger message — that is done by the
-    reply-keyboard handlers themselves before calling this function.
+    force_new=True  — всегда отправить новое сообщение (для /start и reply-кнопок).
+    force_new=False — попытаться отредактировать отслеживаемое сообщение на месте
+                      (тихо, без прокрутки вверх). Если не вышло — отправить новое.
     """
     from bot.services.menu_tracker import get_menu_msg_id, set_menu_msg_id
 
     if not force_new:
-        # ── Try editing the existing tracked menu message ───────────────────
         old_id = await get_menu_msg_id(telegram_id)
         if old_id:
+            edited = None
             try:
-                edited = await message.bot.edit_message_text(
-                    text,
-                    chat_id=message.chat.id,
-                    message_id=old_id,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode,
+                edited = await _with_retry(
+                    lambda: message.bot.edit_message_text(
+                        text,
+                        chat_id=message.chat.id,
+                        message_id=old_id,
+                        reply_markup=reply_markup,
+                        parse_mode=parse_mode,
+                    ),
+                    label="show_menu_message:edit",
                 )
-                # Edit succeeded — tracked ID unchanged, nothing else to do
-                return edited
-            except Exception:
-                # Edit failed — remove stale message silently
+            except TelegramBadRequest:
+                # Сообщение нельзя редактировать — молча удалить
                 try:
-                    await message.bot.delete_message(message.chat.id, old_id)
+                    await asyncio.wait_for(
+                        message.bot.delete_message(message.chat.id, old_id), timeout=3.0
+                    )
                 except Exception:
                     pass
+            except Exception as e:
+                logger.warning("show_menu_message: edit failed, sending new: %s", e)
 
-    # ── Send a brand-new message and track its ID ───────────────────────────
-    new_msg = await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
-    await set_menu_msg_id(telegram_id, new_msg.message_id)
+            if edited is not None:
+                return edited
+
+    # Отправить новое сообщение
+    new_msg = await safe_answer(message, text, reply_markup=reply_markup, parse_mode=parse_mode)
+    if new_msg:
+        await set_menu_msg_id(telegram_id, new_msg.message_id)
     return new_msg
 
 
 async def ensure_keyboard(message: Message, telegram_id: int) -> None:
     """
-    Send the persistent reply keyboard exactly once per user lifetime.
-
-    Subsequent calls are no-ops (checked via Redis flag).
+    Отправить постоянную reply-клавиатуру ровно один раз за всё время жизни пользователя.
+    Повторные вызовы — no-op (проверяется через Redis).
     """
     from bot.services.menu_tracker import is_keyboard_shown, mark_keyboard_shown
     from bot.keyboards.reply import main_reply_keyboard
 
     if not await is_keyboard_shown(telegram_id):
-        await message.answer("🌙", reply_markup=main_reply_keyboard())
-        await mark_keyboard_shown(telegram_id)
+        sent = await safe_answer(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
+        if sent:
+            await mark_keyboard_shown(telegram_id)

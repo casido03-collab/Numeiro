@@ -262,8 +262,10 @@ async def reply_menu(message: Message, user: User, state: FSMContext):
 
     name = user.first_name or None
     # Отправляем клавиатуру (как /start — всегда, чтобы она точно была видна)
-    await message.answer("🌙", reply_markup=main_reply_keyboard())
-    await mark_keyboard_shown(user.telegram_id)
+    from bot.utils import safe_answer
+    sent = await safe_answer(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
+    if sent:
+        await mark_keyboard_shown(user.telegram_id)
     # Полный welcome-текст + inline меню
     await show_menu_message(
         message, user.telegram_id,
