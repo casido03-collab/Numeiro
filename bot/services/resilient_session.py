@@ -19,7 +19,7 @@ from aiogram.methods.base import TelegramType
 
 logger = logging.getLogger(__name__)
 
-_RETRIES = 2        # повторов после первой неудачи
+_RETRIES = 1        # повторов после первой неудачи (2 попытки итого)
 _RETRY_DELAY = 1.5  # секунд между попытками
 
 

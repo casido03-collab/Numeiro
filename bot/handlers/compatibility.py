@@ -12,7 +12,7 @@ from bot.services.cache import get_cached, set_cached, make_cache_key
 from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import COMPATIBILITY_PROMPT
-from bot.keyboards.main import relation_type_menu, limit_reached_keyboard, after_reading_keyboard, back_to_main
+from bot.keyboards.main import relation_type_menu, limit_reached_keyboard, back_to_main
 from bot.utils import parse_birth_date as _parse_compat_date, safe_edit
 
 router = Router()
@@ -187,15 +187,8 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📤 Поделиться результатом", callback_data=f"share:compat:{cache_key[:20]}")],
         [InlineKeyboardButton(text="💞 Другая совместимость", callback_data="compat:start")],
+        [InlineKeyboardButton(text="❤️ Что такое кармические отношения?", callback_data="content:compatibility")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
     ])
     await safe_edit(thinking_msg, header + cached, reply_markup=kb)
-
-    # Контентный CTA
-    from bot.handlers.content import compatibility_cta_kb
-    await callback.message.answer(
-        "✨ _Некоторые связи приходят в нашу жизнь не случайно..._",
-        reply_markup=compatibility_cta_kb(),
-        parse_mode="Markdown",
-    )
     await callback.answer()

@@ -66,7 +66,7 @@ async def main():
     # timeout=15: дефолтный таймаут всех Telegram API-вызовов снижен с 60с до 15с.
     # int(15) + polling_timeout(25) = 40с — допустимо для polling.
     # Без этого message.answer() после зомби-delete мог ждать 60с.
-    _session = ResilientSession(timeout=15)
+    _session = ResilientSession(timeout=8)
     _session._connector_init["enable_cleanup_closed"] = True
     _session._connector_init["keepalive_timeout"] = 5
 

@@ -11,7 +11,7 @@ from bot.services.limits import check_limit, consume_limit
 from bot.utils import parse_birth_date, safe_edit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import WEEKLY_PREDICTION_PROMPT
-from bot.keyboards.main import sphere_menu, limit_reached_keyboard, after_reading_keyboard, back_to_main
+from bot.keyboards.main import sphere_menu, limit_reached_keyboard, back_to_main
 
 router = Router()
 
@@ -146,13 +146,6 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
         f"_{week_start.strftime('%d.%m')} — {week_end.strftime('%d.%m.%Y')}_\n"
         f"Сфера: *{sphere_name}*\n\n"
     )
-    await safe_edit(thinking_msg, header + cached, reply_markup=after_reading_keyboard())
-
-    # Контентный CTA
-    from bot.handlers.content import weekly_cta_kb
-    await callback.message.answer(
-        "🌙 _Иногда мы чувствуем изменения ещё до того, как они происходят..._",
-        reply_markup=weekly_cta_kb(),
-        parse_mode="Markdown",
-    )
+    from bot.keyboards.main import after_reading_keyboard_weekly
+    await safe_edit(thinking_msg, header + cached, reply_markup=after_reading_keyboard_weekly())
     await callback.answer()
