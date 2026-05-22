@@ -148,14 +148,16 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
     # ── 4. Главное меню для вернувшегося пользователя ────────────────────────
     logger.info("CMD_START: showing main menu, name=%s", name)
     try:
-        from bot.utils import show_menu_message
+        from bot.utils import show_menu_message, safe_answer
         from bot.keyboards.reply import main_reply_keyboard
-        from bot.services.menu_tracker import mark_keyboard_shown
+        from bot.services.menu_tracker import is_keyboard_shown, mark_keyboard_shown
 
-        # Всегда отправляем клавиатуру — гарантирует её видимость
-        await message.answer("🌙", reply_markup=main_reply_keyboard())
-        await mark_keyboard_shown(tg_id)
-        logger.info("CMD_START: keyboard sent")
+        # Клавиатуру шлём только один раз за всё время — экономим API-вызов
+        if not await is_keyboard_shown(tg_id):
+            sent = await safe_answer(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
+            if sent:
+                await mark_keyboard_shown(tg_id)
+            logger.info("CMD_START: keyboard sent")
 
         await show_menu_message(
             message, tg_id,
