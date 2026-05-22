@@ -120,7 +120,7 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     scheduler.add_job(_reminders, CronTrigger(hour=9, minute=0))
     # Retention push — каждые 10 минут (проверяет 24ч неактивности)
     scheduler.add_job(_retention, CronTrigger(minute="*/10"))
-    # Trial upsell — каждые 10 минут (проверяет 1ч неактивности для free)
-    scheduler.add_job(_trial_upsell, CronTrigger(minute="*/10"))
+    # Trial upsell — каждые 5 минут (проверяет 1ч неактивности для free)
+    scheduler.add_job(_trial_upsell, CronTrigger(minute="*/5"))
 
     return scheduler

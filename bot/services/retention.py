@@ -180,9 +180,15 @@ TRIAL_UPSELL_TEXT = (
 
 
 def _is_push_time() -> bool:
-    """Проверить что сейчас разрешённое время (10:00–22:00 МСК)."""
+    """Проверить что сейчас разрешённое время для retention (10:00–22:00 МСК)."""
     msk_hour = (datetime.now(timezone.utc).hour + 3) % 24
     return 10 <= msk_hour < 22
+
+
+def _is_trial_upsell_time() -> bool:
+    """Разрешённое время для trial upsell (10:00–23:00 МСК) — шире чтобы не пропускать."""
+    msk_hour = (datetime.now(timezone.utc).hour + 3) % 24
+    return 10 <= msk_hour < 23
 
 
 async def run_retention_pushes(bot: Bot, session: AsyncSession) -> None:
@@ -225,7 +231,7 @@ async def run_retention_pushes(bot: Bot, session: AsyncSession) -> None:
 
 async def run_trial_upsell(bot: Bot, session: AsyncSession) -> None:
     """Отправить trial upsell один раз — free-пользователям после 1ч неактивности."""
-    if not _is_push_time():
+    if not _is_trial_upsell_time():
         return
 
     from bot.models.user import User, UserActivity, Subscription, PlanEnum, SubscriptionStatusEnum
