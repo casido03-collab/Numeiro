@@ -1,6 +1,7 @@
 """Контентная система — раздел «Интересное»."""
 import asyncio
 import logging
+import time
 from datetime import date
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -227,6 +228,8 @@ def content_menu_kb() -> InlineKeyboardMarkup:
 
 @router.message(F.text == "📚 Интересное")
 async def reply_interesting(message: Message, state: FSMContext):
+    t0 = time.monotonic()
+    logger.info("MENU_HANDLER_STARTED handler=reply_interesting user=%s", message.from_user.id)
     try:
         await asyncio.wait_for(state.clear(), timeout=3.0)
     except Exception:
@@ -237,12 +240,16 @@ async def reply_interesting(message: Message, state: FSMContext):
         "✨ *Выберите тему, которая вам интересна:*",
         content_menu_kb(),
         force_new=True,
+        fast=True,
     )
+    logger.info("MENU_RENDER_DONE handler=reply_interesting duration_ms=%.0f", (time.monotonic() - t0) * 1000)
 
 
 @router.message(F.text == "🔮 Меню")
 async def reply_menu(message: Message, user: User, state: FSMContext):
     """Кнопка «🔮 Меню» работает как /start — полный welcome-экран + клавиатура."""
+    t0 = time.monotonic()
+    logger.info("MENU_HANDLER_STARTED handler=reply_menu user=%s", message.from_user.id)
     try:
         await asyncio.wait_for(state.clear(), timeout=3.0)
     except Exception:
@@ -251,12 +258,12 @@ async def reply_menu(message: Message, user: User, state: FSMContext):
     from bot.keyboards.reply import main_reply_keyboard
     from bot.handlers.start import _welcome_text
     from bot.services.menu_tracker import is_keyboard_shown, mark_keyboard_shown
-    from bot.utils import show_menu_message, safe_answer
+    from bot.utils import show_menu_message, safe_answer_menu
 
     name = user.first_name or None
     # Клавиатуру отправляем только если она не была показана ранее
     if not await is_keyboard_shown(user.telegram_id):
-        sent = await safe_answer(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
+        sent = await safe_answer_menu(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
         if sent:
             await mark_keyboard_shown(user.telegram_id)
     # Полный welcome-текст + inline меню одним новым сообщением
@@ -265,7 +272,9 @@ async def reply_menu(message: Message, user: User, state: FSMContext):
         _welcome_text(name),
         main_menu(),
         force_new=True,
+        fast=True,
     )
+    logger.info("MENU_RENDER_DONE handler=reply_menu duration_ms=%.0f", (time.monotonic() - t0) * 1000)
 
 
 # ─── Обработчик inline-меню контента ─────────────────────────────────────────

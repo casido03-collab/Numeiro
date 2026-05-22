@@ -1,5 +1,6 @@
 import logging
 import random
+import time
 from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -105,10 +106,11 @@ PLANS_TEXT = """📜 *Тарифы Aisha AI*
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, user: User, session: AsyncSession, state: FSMContext):
+    t0 = time.monotonic()
     tg_id = message.from_user.id
     # Имя берём из Telegram-объекта — оно никогда не None в отличие от user.first_name
     name = message.from_user.first_name or None
-    logger.info("CMD_START ENTERED: telegram_id=%s user_db_id=%s name=%s", tg_id, getattr(user, "id", "?"), name)
+    logger.info("MENU_HANDLER_STARTED handler=cmd_start telegram_id=%s user_db_id=%s name=%s", tg_id, getattr(user, "id", "?"), name)
 
     # ── 1. Сбросить FSM ──────────────────────────────────────────────────────
     try:
@@ -148,13 +150,13 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
     # ── 4. Главное меню для вернувшегося пользователя ────────────────────────
     logger.info("CMD_START: showing main menu, name=%s", name)
     try:
-        from bot.utils import show_menu_message, safe_answer
+        from bot.utils import show_menu_message, safe_answer_menu
         from bot.keyboards.reply import main_reply_keyboard
         from bot.services.menu_tracker import is_keyboard_shown, mark_keyboard_shown
 
         # Клавиатуру шлём только один раз за всё время — экономим API-вызов
         if not await is_keyboard_shown(tg_id):
-            sent = await safe_answer(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
+            sent = await safe_answer_menu(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
             if sent:
                 await mark_keyboard_shown(tg_id)
             logger.info("CMD_START: keyboard sent")
@@ -164,8 +166,9 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
             _welcome_text(name),
             main_menu(),
             force_new=True,
+            fast=True,
         )
-        logger.info("CMD_START: MESSAGE SENT — done")
+        logger.info("MENU_RENDER_DONE handler=cmd_start duration_ms=%.0f", (time.monotonic() - t0) * 1000)
     except Exception:
         logger.exception("CMD_START: menu sending failed — showing fallback")
         await _send_fallback_menu(message, name)

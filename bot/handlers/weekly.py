@@ -8,7 +8,7 @@ from bot.models.user import User
 from bot.services.numerology import calculate_all, _reduce
 from bot.services.cache import get_cached, set_cached, make_cache_key
 from bot.services.limits import check_limit, consume_limit
-from bot.utils import parse_birth_date, safe_edit
+from bot.utils import parse_birth_date, safe_edit_ai
 from bot.services.ai_service import generate
 from bot.prompts.prompts import WEEKLY_PREDICTION_PROMPT
 from bot.keyboards.main import sphere_menu, limit_reached_keyboard, back_to_main
@@ -147,5 +147,5 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
         f"Сфера: *{sphere_name}*\n\n"
     )
     from bot.keyboards.main import after_reading_keyboard_weekly
-    await safe_edit(thinking_msg, header + cached, reply_markup=after_reading_keyboard_weekly())
+    await safe_edit_ai(thinking_msg, header + cached, reply_markup=after_reading_keyboard_weekly())
     await callback.answer()

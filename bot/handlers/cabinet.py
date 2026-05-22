@@ -1,6 +1,8 @@
 """Личный кабинет пользователя — «💎 Подписка»."""
 import asyncio
+import logging
 import random
+import time
 from datetime import datetime, timezone
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -12,6 +14,7 @@ from bot.services.limits import get_user_plan, get_limits_summary
 from bot.keyboards.main import plans_keyboard
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 # ─── Шаблоны описания личности ────────────────────────────────────────────────
@@ -142,13 +145,16 @@ def _cabinet_kb() -> InlineKeyboardMarkup:
 
 @router.message(F.text == "💎 Подписка")
 async def reply_cabinet(message: Message, user: User, session: AsyncSession, state: FSMContext):
+    t0 = time.monotonic()
+    logger.info("MENU_HANDLER_STARTED handler=reply_cabinet user=%s", message.from_user.id)
     try:
         await asyncio.wait_for(state.clear(), timeout=3.0)
     except Exception:
         pass
     from bot.utils import show_menu_message
     text = await _build_cabinet_text(session, user)
-    await show_menu_message(message, user.telegram_id, text, _cabinet_kb(), force_new=True)
+    await show_menu_message(message, user.telegram_id, text, _cabinet_kb(), force_new=True, fast=True)
+    logger.info("MENU_RENDER_DONE handler=reply_cabinet duration_ms=%.0f", (time.monotonic() - t0) * 1000)
 
 
 @router.callback_query(F.data == "cabinet:open")

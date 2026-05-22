@@ -1,6 +1,7 @@
 """Реферальная система — раздел «👥 Друзья»."""
 import asyncio
 import logging
+import time
 from urllib.parse import quote
 from aiogram import Router, F
 from aiogram.types import (
@@ -78,6 +79,8 @@ def _stats_kb() -> InlineKeyboardMarkup:
 
 @router.message(F.text == "👥 Друзья")
 async def reply_friends(message: Message, user: User, session: AsyncSession, state: FSMContext):
+    t0 = time.monotonic()
+    logger.info("MENU_HANDLER_STARTED handler=reply_friends user=%s", message.from_user.id)
     try:
         await asyncio.wait_for(state.clear(), timeout=3.0)
     except Exception:
@@ -98,7 +101,8 @@ async def reply_friends(message: Message, user: User, session: AsyncSession, sta
         f"━━━━━━━━━━━━━━━\n"
         f"🔗 Твоя ссылка:\n`{link}`"
     )
-    await show_menu_message(message, user.telegram_id, text, _referral_kb(link), force_new=True)
+    await show_menu_message(message, user.telegram_id, text, _referral_kb(link), force_new=True, fast=True)
+    logger.info("MENU_RENDER_DONE handler=reply_friends duration_ms=%.0f", (time.monotonic() - t0) * 1000)
 
 
 @router.callback_query(F.data == "referral:back")

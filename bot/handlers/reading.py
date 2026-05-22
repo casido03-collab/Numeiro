@@ -12,7 +12,7 @@ from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import FREE_BIRTH_REPORT_PROMPT, FULL_MATRIX_PROMPT, UPSELL_PROMPT
 from bot.keyboards.main import sphere_menu, upsell_keyboard, limit_reached_keyboard, back_to_main, main_menu, upsell_keyboard_reading, after_reading_keyboard_matrix
-from bot.utils import parse_birth_date, safe_edit
+from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
 
 router = Router()
 
@@ -123,7 +123,7 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
 
     # CTA кнопка встроена прямо в клавиатуру — не нужен лишний API-вызов
     from bot.keyboards.main import upsell_keyboard_reading
-    await safe_edit(thinking_msg, text, reply_markup=upsell_keyboard_reading())
+    await safe_edit_ai(thinking_msg, text, reply_markup=upsell_keyboard_reading())
     await callback.answer()
 
 
@@ -184,7 +184,7 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
 
     name = user.first_name or "друг"
     text = f"🌟 *Матрица судьбы — {name}*\n\n{cached}"
-    await safe_edit(thinking_msg, text, reply_markup=after_reading_keyboard_matrix())
+    await safe_edit_ai(thinking_msg, text, reply_markup=after_reading_keyboard_matrix())
     await callback.answer()
 
 

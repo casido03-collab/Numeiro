@@ -10,7 +10,7 @@ from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import DATE_SELECTION_PROMPT
 from bot.keyboards.main import event_type_menu, limit_reached_keyboard, back_to_main
-from bot.utils import safe_edit
+from bot.utils import safe_edit, safe_edit_ai
 
 router = Router()
 
@@ -88,5 +88,5 @@ async def select_event(callback: CallbackQuery, user: User, session: AsyncSessio
         [InlineKeyboardButton(text="📆 Выбрать другое событие", callback_data="menu:dates")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
     ])
-    await safe_edit(thinking_msg, header + response, reply_markup=kb)
+    await safe_edit_ai(thinking_msg, header + response, reply_markup=kb)
     await callback.answer()

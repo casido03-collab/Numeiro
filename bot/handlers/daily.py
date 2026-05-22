@@ -11,7 +11,7 @@ from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import DAILY_FORECAST_PROMPT
 from bot.keyboards.main import back_to_main, limit_reached_keyboard
-from bot.utils import parse_birth_date, safe_edit
+from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
 
 router = Router()
 
@@ -100,5 +100,5 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
         [InlineKeyboardButton(text="❓ Задать вопрос", callback_data="menu:question")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
     ])
-    await safe_edit(thinking_msg, header + cached, reply_markup=kb)
+    await safe_edit_ai(thinking_msg, header + cached, reply_markup=kb)
     await callback.answer()

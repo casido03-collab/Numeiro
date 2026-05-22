@@ -13,7 +13,7 @@ from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import COMPATIBILITY_PROMPT
 from bot.keyboards.main import relation_type_menu, limit_reached_keyboard, back_to_main
-from bot.utils import parse_birth_date as _parse_compat_date, safe_edit
+from bot.utils import parse_birth_date as _parse_compat_date, safe_edit_ai
 
 router = Router()
 
@@ -190,5 +190,5 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
         [InlineKeyboardButton(text="❤️ Что такое кармические отношения?", callback_data="content:compatibility")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
     ])
-    await safe_edit(thinking_msg, header + cached, reply_markup=kb)
+    await safe_edit_ai(thinking_msg, header + cached, reply_markup=kb)
     await callback.answer()
