@@ -57,12 +57,18 @@ async def main():
     await create_tables()
 
     # Bot и Dispatcher
-    # Настраиваем TCP-коннектор: закрывать зомби-соединения активно.
-    # Без этого Docker NAT может "убить" TCP, но aiohttp не узнает об этом
-    # до следующего запроса → first API call после простоя висит.
-    _session = AiohttpSession()
-    _session._connector_init["enable_cleanup_closed"] = True  # чистить закрытые соединения
-    _session._connector_init["keepalive_timeout"] = 15        # не держать idle >15с (уже дефолт, явно для ясности)
+    # Настраиваем TCP-коннектор против зомби-соединений после простоя.
+    #
+    # keepalive_timeout=5: соединение, пролежавшее в пуле >5 сек, выбрасывается.
+    # После любого перерыва в общении (>5с) пул будет пустым → следующий запрос
+    # создаст свежий TCP и не зависнет на зомби-соединении.
+    #
+    # timeout=15: дефолтный таймаут всех Telegram API-вызовов снижен с 60с до 15с.
+    # int(15) + polling_timeout(25) = 40с — допустимо для polling.
+    # Без этого message.answer() после зомби-delete мог ждать 60с.
+    _session = AiohttpSession(timeout=15)
+    _session._connector_init["enable_cleanup_closed"] = True
+    _session._connector_init["keepalive_timeout"] = 5
 
     bot = Bot(
         token=settings.bot_token,
