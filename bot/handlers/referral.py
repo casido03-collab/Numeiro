@@ -107,7 +107,8 @@ async def reply_friends(message: Message, user: User, session: AsyncSession, sta
 
 @router.callback_query(F.data == "referral:back")
 async def referral_back(callback: CallbackQuery, user: User, session: AsyncSession):
-    bot_username = (await callback.bot.get_me()).username
+    from bot.handlers.share import _get_bot_username
+    bot_username = await _get_bot_username(callback.bot)
     link = _ref_link(bot_username, user.telegram_id)
 
     stats = await _get_stats(session, user.telegram_id)
