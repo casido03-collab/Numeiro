@@ -14,14 +14,20 @@ _client: AsyncOpenAI | None = None
 
 def _get_client() -> AsyncOpenAI | None:
     global _client
-    if not settings.openai_api_key:
+    # Приоритет: OpenRouter (без геоблокировок) → OpenAI напрямую
+    api_key = getattr(settings, "openrouter_api_key", "") or settings.openai_api_key
+    if not api_key:
         return None
     if _client is None:
+        use_openrouter = bool(getattr(settings, "openrouter_api_key", ""))
         _client = AsyncOpenAI(
-            api_key=settings.openai_api_key,
-            timeout=90.0,        # максимум 90 сек на запрос
-            max_retries=1,       # одна автоматическая повторная попытка
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1" if use_openrouter else "https://api.openai.com/v1",
+            timeout=90.0,
+            max_retries=1,
+            default_headers={"HTTP-Referer": "https://t.me/numerelogia_astro_bot"} if use_openrouter else {},
         )
+        logger.info("AI client: %s", "OpenRouter" if use_openrouter else "OpenAI direct")
     return _client
 
 
@@ -138,7 +144,10 @@ async def generate(
         logger.warning("OpenAI key not set — returning stub response for '%s'", request_type)
         return _STUB_RESPONSES.get(request_type, "✨ AI-ответ временно недоступен. Попробуйте позже.")
 
-    model = AI_MODELS.get(complexity, AI_MODELS["medium"])
+    base_model = AI_MODELS.get(complexity, AI_MODELS["medium"])
+    # OpenRouter требует префикс "openai/" перед именем модели
+    use_openrouter = bool(getattr(settings, "openrouter_api_key", ""))
+    model = f"openai/{base_model}" if use_openrouter else base_model
 
     try:
         response = await client.chat.completions.create(

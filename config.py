@@ -5,6 +5,7 @@ from pydantic import Field
 class Settings(BaseSettings):
     bot_token: str = Field(..., env="BOT_TOKEN")
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
+    openrouter_api_key: str = Field(default="", env="OPENROUTER_API_KEY")
     database_url: str = Field(..., env="DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
     admin_ids: str = Field(default="", env="ADMIN_IDS")
