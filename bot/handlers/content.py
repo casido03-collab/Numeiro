@@ -231,15 +231,12 @@ async def reply_interesting(message: Message, state: FSMContext):
         await asyncio.wait_for(state.clear(), timeout=3.0)
     except Exception:
         pass
-    try:
-        await asyncio.wait_for(message.delete(), timeout=5.0)
-    except Exception:
-        pass
     from bot.utils import show_menu_message
     await show_menu_message(
         message, message.from_user.id,
         "✨ *Выберите тему, которая вам интересна:*",
         content_menu_kb(),
+        force_new=True,
     )
 
 
@@ -250,23 +247,19 @@ async def reply_menu(message: Message, user: User, state: FSMContext):
         await asyncio.wait_for(state.clear(), timeout=3.0)
     except Exception:
         pass
-    try:
-        await asyncio.wait_for(message.delete(), timeout=5.0)
-    except Exception:
-        pass
     from bot.keyboards.main import main_menu
     from bot.keyboards.reply import main_reply_keyboard
     from bot.handlers.start import _welcome_text
-    from bot.services.menu_tracker import mark_keyboard_shown
-    from bot.utils import show_menu_message
+    from bot.services.menu_tracker import is_keyboard_shown, mark_keyboard_shown
+    from bot.utils import show_menu_message, safe_answer
 
     name = user.first_name or None
-    # Отправляем клавиатуру (как /start — всегда, чтобы она точно была видна)
-    from bot.utils import safe_answer
-    sent = await safe_answer(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
-    if sent:
-        await mark_keyboard_shown(user.telegram_id)
-    # Полный welcome-текст + inline меню
+    # Клавиатуру отправляем только если она не была показана ранее
+    if not await is_keyboard_shown(user.telegram_id):
+        sent = await safe_answer(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
+        if sent:
+            await mark_keyboard_shown(user.telegram_id)
+    # Полный welcome-текст + inline меню одним новым сообщением
     await show_menu_message(
         message, user.telegram_id,
         _welcome_text(name),

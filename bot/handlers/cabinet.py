@@ -146,13 +146,9 @@ async def reply_cabinet(message: Message, user: User, session: AsyncSession, sta
         await asyncio.wait_for(state.clear(), timeout=3.0)
     except Exception:
         pass
-    try:
-        await asyncio.wait_for(message.delete(), timeout=5.0)
-    except Exception:
-        pass
     from bot.utils import show_menu_message
     text = await _build_cabinet_text(session, user)
-    await show_menu_message(message, user.telegram_id, text, _cabinet_kb())
+    await show_menu_message(message, user.telegram_id, text, _cabinet_kb(), force_new=True)
 
 
 @router.callback_query(F.data == "cabinet:open")

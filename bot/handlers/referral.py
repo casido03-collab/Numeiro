@@ -82,10 +82,6 @@ async def reply_friends(message: Message, user: User, session: AsyncSession, sta
         await asyncio.wait_for(state.clear(), timeout=3.0)
     except Exception:
         pass
-    try:
-        await asyncio.wait_for(message.delete(), timeout=5.0)
-    except Exception:
-        pass
     from bot.utils import show_menu_message
     from bot.handlers.share import _get_bot_username
     bot_username = await _get_bot_username(message.bot)
@@ -102,7 +98,7 @@ async def reply_friends(message: Message, user: User, session: AsyncSession, sta
         f"━━━━━━━━━━━━━━━\n"
         f"🔗 Твоя ссылка:\n`{link}`"
     )
-    await show_menu_message(message, user.telegram_id, text, _referral_kb(link))
+    await show_menu_message(message, user.telegram_id, text, _referral_kb(link), force_new=True)
 
 
 @router.callback_query(F.data == "referral:back")
