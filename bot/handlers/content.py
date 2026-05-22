@@ -227,7 +227,10 @@ def content_menu_kb() -> InlineKeyboardMarkup:
 
 @router.message(F.text == "📚 Интересное")
 async def reply_interesting(message: Message, state: FSMContext):
-    await state.clear()
+    try:
+        await asyncio.wait_for(state.clear(), timeout=3.0)
+    except Exception:
+        pass
     try:
         await asyncio.wait_for(message.delete(), timeout=5.0)
     except Exception:
@@ -243,7 +246,10 @@ async def reply_interesting(message: Message, state: FSMContext):
 @router.message(F.text == "🔮 Меню")
 async def reply_menu(message: Message, user: User, state: FSMContext):
     """Кнопка «🔮 Меню» работает как /start — полный welcome-экран + клавиатура."""
-    await state.clear()
+    try:
+        await asyncio.wait_for(state.clear(), timeout=3.0)
+    except Exception:
+        pass
     try:
         await asyncio.wait_for(message.delete(), timeout=5.0)
     except Exception:

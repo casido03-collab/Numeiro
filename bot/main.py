@@ -4,8 +4,10 @@ import logging
 import os
 import signal
 import time
+import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 
@@ -56,9 +58,17 @@ async def main():
     await create_tables()
 
     # Bot и Dispatcher
+    # Настраиваем TCP-коннектор: закрывать зомби-соединения активно.
+    # Без этого Docker NAT может "убить" TCP, но aiohttp не узнает об этом
+    # до следующего запроса → first API call после простоя висит.
+    _session = AiohttpSession()
+    _session._connector_init["enable_cleanup_closed"] = True  # чистить закрытые соединения
+    _session._connector_init["keepalive_timeout"] = 15        # не держать idle >15с (уже дефолт, явно для ясности)
+
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
+        session=_session,
     )
 
     storage = RedisStorage.from_url(

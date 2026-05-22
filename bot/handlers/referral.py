@@ -78,7 +78,10 @@ def _stats_kb() -> InlineKeyboardMarkup:
 
 @router.message(F.text == "👥 Друзья")
 async def reply_friends(message: Message, user: User, session: AsyncSession, state: FSMContext):
-    await state.clear()
+    try:
+        await asyncio.wait_for(state.clear(), timeout=3.0)
+    except Exception:
+        pass
     try:
         await asyncio.wait_for(message.delete(), timeout=5.0)
     except Exception:

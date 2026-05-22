@@ -142,7 +142,10 @@ def _cabinet_kb() -> InlineKeyboardMarkup:
 
 @router.message(F.text == "💎 Подписка")
 async def reply_cabinet(message: Message, user: User, session: AsyncSession, state: FSMContext):
-    await state.clear()
+    try:
+        await asyncio.wait_for(state.clear(), timeout=3.0)
+    except Exception:
+        pass
     try:
         await asyncio.wait_for(message.delete(), timeout=5.0)
     except Exception:
