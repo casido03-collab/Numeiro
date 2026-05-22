@@ -160,7 +160,12 @@ async def generate(
         return content
 
     except Exception as e:
-        logger.error("OpenAI error for user %s / type %s: %s", user_id, request_type, e)
+        # Логируем тип ошибки явно чтобы легче диагностировать
+        logger.error(
+            "OpenAI error for user %s / type %s / model %s: [%s] %s",
+            user_id, request_type, model, type(e).__name__, e,
+            exc_info=True,
+        )
         return _STUB_RESPONSES.get(
             request_type,
             "🌙 Что-то пошло не так при генерации ответа. Попробуй чуть позже."
