@@ -94,13 +94,14 @@ def one_time_products_keyboard() -> InlineKeyboardMarkup:
 
 def payment_method_keyboard(product_type: str, product_key: str, stars: int, back: str = "menu:plans") -> InlineKeyboardMarkup:
     """product_type: 'plan' or 'product'"""
+    yk = f"pay:yookassa:{product_type}:{product_key}"
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Банковская карта", callback_data=yk)],
+        [InlineKeyboardButton(text="🏦 СБП", callback_data=yk)],
+        [InlineKeyboardButton(text="🟢 SberPay", callback_data=yk)],
+        [InlineKeyboardButton(text="🟡 ЮMoney", callback_data=yk)],
         [InlineKeyboardButton(
-            text=f"💳 Оплатить картой / СБП",
-            callback_data=f"pay:yookassa:{product_type}:{product_key}",
-        )],
-        [InlineKeyboardButton(
-            text=f"⭐ Оплатить {stars} Telegram Stars",
+            text=f"⭐ Telegram Stars ({stars})",
             callback_data=f"pay:stars:{product_type}:{product_key}",
         )],
         [InlineKeyboardButton(text="◀️ Назад", callback_data=back)],
