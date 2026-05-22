@@ -146,7 +146,12 @@ async def cmd_grant(message: Message, session: AsyncSession):
 
     args = message.text.split()
     if len(args) < 4:
-        await message.answer("Использование: /grant <telegram_id> <plan> <days>")
+        await message.answer(
+            "Использование: /grant <telegram_id> <plan> <days>\n"
+            "days=0 → бессрочная подписка\n"
+            "Пример: /grant 123456789 premium 30\n"
+            "Пример: /grant 123456789 premium 0  (∞)",
+        )
         return
 
     try:
@@ -167,7 +172,9 @@ async def cmd_grant(message: Message, session: AsyncSession):
         await message.answer("❌ Пользователь не найден")
         return
 
-    expires = datetime.now(timezone.utc) + timedelta(days=days)
+    # days=0 → бессрочная (expires_at=None, автоистечение не сработает)
+    expires = None if days == 0 else datetime.now(timezone.utc) + timedelta(days=days)
+
     sub_result = await session.execute(select(Subscription).where(Subscription.user_id == user.id))
     sub = sub_result.scalar_one_or_none()
 
@@ -185,14 +192,19 @@ async def cmd_grant(message: Message, session: AsyncSession):
         session.add(sub)
 
     await session.commit()
-    await message.answer(f"✅ Пользователю {tg_id} выдан тариф *{plan_key}* на {days} дней", parse_mode="Markdown")
+
+    duration_str = "бессрочно ∞" if days == 0 else f"на {days} дней"
+    await message.answer(
+        f"✅ Пользователю `{tg_id}` выдан тариф *{plan_key}* {duration_str}",
+        parse_mode="Markdown",
+    )
 
     try:
-        await message.bot.send_message(
-            tg_id,
-            f"🎁 *Тариф {plan_key.title()} активирован!*\nДоступ открыт на {days} дней.",
-            parse_mode="Markdown",
+        user_msg = (
+            f"🎁 *Тариф {plan_key.title()} активирован!*\n"
+            + ("Доступ открыт бессрочно." if days == 0 else f"Доступ открыт на {days} дней.")
         )
+        await message.bot.send_message(tg_id, user_msg, parse_mode="Markdown")
     except Exception:
         pass
 
