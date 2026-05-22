@@ -17,6 +17,7 @@ from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.handlers import start, profile, reading, weekly, compatibility, daily, question, dates, payments, admin, share
 from bot.handlers import onboarding, content, cabinet, referral, reports
 from bot.services.scheduler import setup_scheduler
+from bot.handlers.yookassa_webhook import setup_webhook, handle_yookassa_webhook
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -126,6 +127,16 @@ async def main():
         share.router,
     )
 
+    # ЮКасса webhook-сервер (aiohttp на порту 8080)
+    from aiohttp import web as aiohttp_web
+    setup_webhook(bot, async_session_maker)
+    _webhook_app = aiohttp_web.Application()
+    _webhook_app.router.add_post("/yookassa/webhook", handle_yookassa_webhook)
+    _webhook_runner = aiohttp_web.AppRunner(_webhook_app)
+    await _webhook_runner.setup()
+    await aiohttp_web.TCPSite(_webhook_runner, "0.0.0.0", 8080).start()
+    logger.info("YooKassa webhook server started on port 8080")
+
     # Планировщик
     scheduler = setup_scheduler(bot, async_session_maker)
     scheduler.start()
@@ -157,6 +168,7 @@ async def main():
         )
     finally:
         scheduler.shutdown()
+        await _webhook_runner.cleanup()
         await bot.session.close()
         logger.info("Bot stopped.")
 

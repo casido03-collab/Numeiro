@@ -11,6 +11,8 @@ services:
     volumes:
       - .:/app
     command: python -m bot.main
+    ports:
+      - "8080:8080"
     healthcheck:
       # Проверяем что бот обрабатывал апдейты в последние 10 минут
       test: ["CMD", "python", "-c",

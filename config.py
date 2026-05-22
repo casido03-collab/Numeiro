@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
     admin_ids: str = Field(default="", env="ADMIN_IDS")
     payment_provider_token: str = Field(default="", env="PAYMENT_PROVIDER_TOKEN")
+    yookassa_shop_id: str = Field(default="", env="YOOKASSA_SHOP_ID")
+    yookassa_secret_key: str = Field(default="", env="YOOKASSA_SECRET_KEY")
+    yookassa_return_url: str = Field(default="https://t.me/numerelogia_astro_bot", env="YOOKASSA_RETURN_URL")
     debug: bool = Field(default=False, env="DEBUG")
 
     @property

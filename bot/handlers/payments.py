@@ -1,4 +1,5 @@
 """Платежи — выбор метода (карта / Stars) + Telegram Payments API."""
+import logging
 from datetime import datetime, timedelta, timezone
 from aiogram import Router, F
 from aiogram.types import (
@@ -15,6 +16,7 @@ from bot.keyboards.main import (
 from config import PLANS, ONE_TIME_PRODUCTS, settings
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 PLAN_DISPLAY = {
     "lite":    {"label": "Lite",    "price": 299,  "period": "7 дней"},
@@ -91,7 +93,64 @@ async def buy_product_choose_method(callback: CallbackQuery):
     await callback.answer()
 
 
-# ─── Шаг 2а: выбрана оплата картой → список методов ──────────────────────────
+# ─── Шаг 2а: оплата через ЮКассу (карта / СБП) ───────────────────────────────
+
+@router.callback_query(F.data.startswith("pay:yookassa:"))
+async def yookassa_pay(callback: CallbackQuery, user: User):
+    # pay:yookassa:plan:lite  или  pay:yookassa:product:full_matrix
+    parts = callback.data.split(":")  # ['pay', 'yookassa', type, key]
+    if len(parts) < 4:
+        await callback.answer()
+        return
+    product_type, product_key = parts[2], parts[3]
+    info = PLAN_DISPLAY.get(product_key) or PRODUCT_DISPLAY.get(product_key)
+    if not info:
+        await callback.answer("❌ Товар не найден")
+        return
+
+    if not settings.yookassa_secret_key:
+        await callback.answer("⚠️ Оплата картой временно недоступна.", show_alert=True)
+        return
+
+    await callback.answer("⏳ Создаём ссылку на оплату...")
+
+    from bot.services.yookassa_service import create_payment
+    label = info["label"]
+    amount = float(info["price"])
+    desc = PRODUCT_DESCRIPTIONS.get(product_key, label)
+
+    try:
+        payment = await create_payment(
+            shop_id=settings.yookassa_shop_id,
+            secret_key=settings.yookassa_secret_key,
+            amount=amount,
+            description=desc,
+            return_url=settings.yookassa_return_url,
+            metadata={
+                "user_id": str(user.telegram_id),
+                "product_type": product_type,
+                "product_key": product_key,
+            },
+        )
+    except Exception as e:
+        logger.error("YooKassa create_payment failed: %s", e, exc_info=True)
+        await callback.message.answer("❌ Ошибка при создании платежа. Попробуй позже.")
+        return
+
+    back_cb = "menu:plans" if product_type == "plan" else "buy:oneoff"
+    await callback.message.edit_text(
+        f"💳 *{label}* — {info['price']} ₽\n\n"
+        f"Нажмите кнопку ниже для перехода на страницу оплаты.\n"
+        f"После оплаты вернитесь в бот — доступ откроется автоматически.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment["confirmation_url"])],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data=back_cb)],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+# ─── Шаг 2а (legacy): выбрана оплата картой → список методов ─────────────────
 
 @router.callback_query(F.data.startswith("pay:card:"))
 async def card_method_menu(callback: CallbackQuery):
