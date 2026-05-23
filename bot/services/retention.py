@@ -186,9 +186,9 @@ def _is_push_time() -> bool:
 
 
 def _is_trial_upsell_time() -> bool:
-    """Разрешённое время для trial upsell (10:00–23:00 МСК) — шире чтобы не пропускать."""
+    """Разрешённое время для trial upsell (7:00–23:00 МСК)."""
     msk_hour = (datetime.now(timezone.utc).hour + 3) % 24
-    return 10 <= msk_hour < 23
+    return 7 <= msk_hour < 23
 
 
 async def run_retention_pushes(bot: Bot, session: AsyncSession) -> None:
