@@ -154,12 +154,11 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
         from bot.keyboards.reply import main_reply_keyboard
         from bot.services.menu_tracker import is_keyboard_shown, mark_keyboard_shown
 
-        # Клавиатуру шлём только один раз за всё время — экономим API-вызов
-        if not await is_keyboard_shown(tg_id):
-            sent = await safe_answer_menu(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
-            if sent:
-                await mark_keyboard_shown(tg_id)
-            logger.info("CMD_START: keyboard sent")
+        # На /start всегда показываем reply-клавиатуру (на случай если пропала)
+        sent = await safe_answer_menu(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
+        if sent:
+            await mark_keyboard_shown(tg_id)
+        logger.info("CMD_START: keyboard sent")
 
         await show_menu_message(
             message, tg_id,
