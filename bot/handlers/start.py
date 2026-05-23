@@ -68,12 +68,12 @@ def random_header(name: str | None) -> str:
     return random.choice(_HEADERS_UNIVERSAL)
 
 
-PLANS_TEXT = """📜 *Тарифы Aisha AI*
+PLANS_TEXT = """📜 <b>Тарифы Aisha AI</b>
 
-Ваш текущий тариф: *{current_plan}*
+Ваш текущий тариф: <b>{current_plan}</b>
 
 ━━━━━━━━━━━━━━━
-💫 *Lite* — 299 ₽ / 7 дней
+💫 <b>Lite</b> — 299 ₽ / 7 дней
 • 120 AI‑сообщений
 • 2 личных вопроса Тарологу*
 • 1 совместимость
@@ -81,7 +81,7 @@ PLANS_TEXT = """📜 *Тарифы Aisha AI*
 • 3 мини‑разбора
 
 ━━━━━━━━━━━━━━━
-🌟 *Premium* — 999 ₽ / месяц
+🌟 <b>Premium</b> — 999 ₽ / месяц
 • 800 AI‑сообщений
 • 15 личных вопросов Тарологу*
 • 2 недельных расклада
@@ -91,7 +91,7 @@ PLANS_TEXT = """📜 *Тарифы Aisha AI*
 • 10 подборов благоприятных дат
 
 ━━━━━━━━━━━━━━━
-🔥 *Pro* — 1 499 ₽ / месяц
+🔥 <b>Pro</b> — 1 499 ₽ / месяц
 • 3 000 AI‑сообщений
 • 60 личных вопросов Тарологу*
 • 4 недельных расклада
@@ -254,5 +254,5 @@ async def menu_plans(callback: CallbackQuery, user: User, session: AsyncSession)
     }
     current = plan_names.get(plan, "Бесплатный")
     text = PLANS_TEXT.format(current_plan=current)
-    await callback.message.edit_text(text, reply_markup=plans_keyboard(), parse_mode="Markdown")
+    await callback.message.edit_text(text, reply_markup=plans_keyboard(), parse_mode="HTML")
     await callback.answer()
