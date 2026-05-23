@@ -25,7 +25,7 @@ async def question_cancel(callback: CallbackQuery, state: FSMContext, user: User
     await state.clear()
     name = user.first_name or "друг"
     await callback.message.edit_text(
-        f"✨ *{name}*, выбери что тебя интересует:",
+        f"✨ *{name}*, выберите что вас интересует:",
         reply_markup=main_menu(),
         parse_mode="Markdown",
     )

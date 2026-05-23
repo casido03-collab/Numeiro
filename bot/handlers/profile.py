@@ -42,7 +42,7 @@ async def free_start(callback: CallbackQuery, user: User, state: FSMContext, ses
         return
 
     await callback.message.edit_text(
-        "✨ *Введи свою дату рождения* в формате ДД.ММ.ГГГГ\n\nНапример: *15.03.1995*",
+        "✨ *Введите вашу дату рождения* в формате ДД.ММ.ГГГГ\n\nНапример: *15.03.1995*",
         reply_markup=cancel_fsm_keyboard(),
         parse_mode="Markdown",
     )
@@ -58,7 +58,7 @@ async def profile_cancel(callback: CallbackQuery, state: FSMContext, user: User)
     await state.clear()
     name = user.first_name or "друг"
     await callback.message.edit_text(
-        f"✨ *{name}*, выбери что тебя интересует:",
+        f"✨ *{name}*, выберите что вас интересует:",
         reply_markup=main_menu(),
         parse_mode="Markdown",
     )
@@ -75,7 +75,7 @@ async def receive_birth_date(message: Message, state: FSMContext, user: User, se
     birth_date = _parse_date(message.text or "")
     if not birth_date:
         await message.answer(
-            "❌ Не могу распознать дату. Введи в формате *ДД.ММ.ГГГГ*\n\nНапример: *15.03.1995*",
+            "❌ Не могу распознать дату. Введите в формате *ДД.ММ.ГГГГ*\n\nНапример: *15.03.1995*",
             reply_markup=cancel_fsm_keyboard(),
             parse_mode="Markdown",
         )
@@ -83,7 +83,7 @@ async def receive_birth_date(message: Message, state: FSMContext, user: User, se
 
     if birth_date.year < 1900 or birth_date > date.today():
         await message.answer(
-            "❌ Пожалуйста, введи корректную дату рождения.",
+            "❌ Пожалуйста, введите корректную дату рождения.",
             reply_markup=cancel_fsm_keyboard(),
         )
         return
@@ -130,7 +130,7 @@ async def receive_gender(callback: CallbackQuery, state: FSMContext, user: User,
     else:
         name = user.first_name or "друг"
         await callback.message.edit_text(
-            f"✅ Профиль сохранён! Выбери что тебя интересует, *{name}*:",
+            f"✅ Профиль сохранён! Выберите что вас интересует, *{name}*:",
             reply_markup=main_menu(),
             parse_mode="Markdown",
         )

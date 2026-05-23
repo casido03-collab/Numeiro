@@ -19,20 +19,34 @@ def _create_payment_sync(
     description: str,
     return_url: str,
     metadata: dict,
+    email: str | None = None,
 ) -> dict:
     from yookassa import Payment
     _configure(shop_id, secret_key)
     idempotency_key = str(uuid.uuid4())
-    payment = Payment.create(
-        {
-            "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
-            "confirmation": {"type": "redirect", "return_url": return_url},
-            "capture": True,
-            "description": description,
-            "metadata": metadata,
-        },
-        idempotency_key,
-    )
+
+    payload: dict = {
+        "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
+        "confirmation": {"type": "redirect", "return_url": return_url},
+        "capture": True,
+        "description": description,
+        "metadata": metadata,
+    }
+
+    if email:
+        payload["receipt"] = {
+            "customer": {"email": email},
+            "items": [{
+                "description": description,
+                "quantity": "1.00",
+                "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
+                "vat_code": 1,
+                "payment_mode": "full_payment",
+                "payment_subject": "service",
+            }],
+        }
+
+    payment = Payment.create(payload, idempotency_key)
     return {
         "id": str(payment.id),
         "confirmation_url": payment.confirmation.confirmation_url,
@@ -47,6 +61,7 @@ async def create_payment(
     description: str,
     return_url: str,
     metadata: dict,
+    email: str | None = None,
 ) -> dict:
     """Создать платёж в ЮКассе. Возвращает dict с id и confirmation_url."""
     return await asyncio.to_thread(
@@ -57,4 +72,5 @@ async def create_payment(
         description,
         return_url,
         metadata,
+        email,
     )

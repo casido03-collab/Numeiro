@@ -5,17 +5,15 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌀 История", callback_data="reports:menu")],
+        [InlineKeyboardButton(text="⚡ Энергия дня", callback_data="menu:daily")],
         [InlineKeyboardButton(text="✨ Мой разбор", callback_data="menu:reading")],
         [InlineKeyboardButton(text="🌟 Полная матрица судьбы", callback_data="matrix:start")],
         [InlineKeyboardButton(text="📅 Прогноз на неделю", callback_data="menu:weekly")],
         [InlineKeyboardButton(text="💞 Совместимость", callback_data="menu:compatibility")],
         [InlineKeyboardButton(text="🔮 Задать вопрос Тарологу", callback_data="menu:question")],
-        [
-            InlineKeyboardButton(text="⚡ Энергия дня", callback_data="menu:daily"),
-            InlineKeyboardButton(text="📆 Подбор дат", callback_data="menu:dates"),
-        ],
+        [InlineKeyboardButton(text="📆 Подбор дат", callback_data="menu:dates")],
         [InlineKeyboardButton(text="📜 Тарифы", callback_data="menu:plans")],
+        [InlineKeyboardButton(text="🌀 История", callback_data="reports:menu")],
     ])
 
 

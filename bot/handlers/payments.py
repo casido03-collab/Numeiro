@@ -1,11 +1,14 @@
 """Платежи — выбор метода (карта / Stars) + Telegram Payments API."""
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from aiogram import Router, F
 from aiogram.types import (
     CallbackQuery, Message, LabeledPrice, PreCheckoutQuery,
     InlineKeyboardMarkup, InlineKeyboardButton,
 )
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from bot.models.user import User, Payment, Subscription, PlanEnum, SubscriptionStatusEnum
@@ -17,6 +20,14 @@ from config import PLANS, ONE_TIME_PRODUCTS, settings
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+
+class PaymentFSM(StatesGroup):
+    waiting_email = State()
+
+
+def _valid_email(email: str) -> bool:
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email.strip()))
 
 PLAN_DISPLAY = {
     "lite":    {"label": "Lite",    "price": 299,  "period": "7 дней"},
@@ -96,7 +107,7 @@ async def buy_product_choose_method(callback: CallbackQuery):
 # ─── Шаг 2а: оплата через ЮКассу (карта / СБП) ───────────────────────────────
 
 @router.callback_query(F.data.startswith("pay:yookassa:"))
-async def yookassa_pay(callback: CallbackQuery, user: User):
+async def yookassa_pay(callback: CallbackQuery, user: User, state: FSMContext):
     # pay:yookassa:plan:lite  или  pay:yookassa:product:full_matrix
     parts = callback.data.split(":")  # ['pay', 'yookassa', type, key]
     if len(parts) < 4:
@@ -112,12 +123,51 @@ async def yookassa_pay(callback: CallbackQuery, user: User):
         await callback.answer("⚠️ Оплата картой временно недоступна.", show_alert=True)
         return
 
-    await callback.answer("⏳ Создаём ссылку на оплату...")
+    # Сохраняем данные о товаре в FSM и запрашиваем email
+    await state.set_state(PaymentFSM.waiting_email)
+    await state.update_data(
+        product_type=product_type,
+        product_key=product_key,
+        price=info["price"],
+        label=info["label"],
+    )
+
+    back_cb = "menu:plans" if product_type == "plan" else "buy:oneoff"
+    await callback.message.edit_text(
+        f"💳 *{info['label']}* — {info['price']} ₽\n\n"
+        f"Введите ваш *email* для получения чека об оплате:\n\n"
+        f"_Например: example@mail.ru_",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data=back_cb)],
+        ]),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@router.message(PaymentFSM.waiting_email)
+async def receive_email_for_payment(message: Message, user: User, state: FSMContext):
+    email = (message.text or "").strip()
+
+    if not _valid_email(email):
+        await message.answer(
+            "❌ Некорректный email. Попробуйте ещё раз:\n\n_Например: example@mail.ru_",
+            parse_mode="Markdown",
+        )
+        return
+
+    data = await state.get_data()
+    product_type = data["product_type"]
+    product_key = data["product_key"]
+    label = data["label"]
+    price = data["price"]
+    await state.clear()
 
     from bot.services.yookassa_service import create_payment
-    label = info["label"]
-    amount = float(info["price"])
     desc = PRODUCT_DESCRIPTIONS.get(product_key, label)
+    amount = float(price)
+
+    wait_msg = await message.answer("⏳ Создаём ссылку на оплату...")
 
     try:
         payment = await create_payment(
@@ -126,6 +176,7 @@ async def yookassa_pay(callback: CallbackQuery, user: User):
             amount=amount,
             description=desc,
             return_url=settings.yookassa_return_url,
+            email=email,
             metadata={
                 "user_id": str(user.telegram_id),
                 "product_type": product_type,
@@ -134,12 +185,12 @@ async def yookassa_pay(callback: CallbackQuery, user: User):
         )
     except Exception as e:
         logger.error("YooKassa create_payment failed: %s", e, exc_info=True)
-        await callback.message.answer("❌ Ошибка при создании платежа. Попробуй позже.")
+        await wait_msg.edit_text("❌ Ошибка при создании платежа. Попробуйте позже.")
         return
 
     back_cb = "menu:plans" if product_type == "plan" else "buy:oneoff"
-    await callback.message.edit_text(
-        f"💳 *{label}* — {info['price']} ₽\n\n"
+    await wait_msg.edit_text(
+        f"💳 *{label}* — {price} ₽\n\n"
         f"Нажмите кнопку ниже для перехода на страницу оплаты.\n"
         f"После оплаты вернитесь в бот — доступ откроется автоматически.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[

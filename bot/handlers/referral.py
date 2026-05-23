@@ -141,7 +141,7 @@ async def referral_stats(callback: CallbackQuery, user: User, session: AsyncSess
         f"💎 Активных рефералов: *{stats['paid']}*\n"
         f"✨ Получено бонусов: *+{stats['bonus_days']} дней*\n\n"
         f"_Бонусные дни начисляются автоматически после первой оплаты приглашённого._\n"
-        f"_Если у тебя нет активной подписки — дни сохранятся и применятся при следующей покупке._"
+        f"_Если у вас нет активной подписки — дни сохранятся и применятся при следующей покупке._"
     )
     await callback.message.edit_text(text, reply_markup=_stats_kb(), parse_mode="Markdown")
     await callback.answer()

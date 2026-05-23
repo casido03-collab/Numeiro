@@ -37,7 +37,7 @@ THINKING_MESSAGES = [
 async def show_sphere_selection(msg: Message, user: User):
     name = user.first_name or "друг"
     await msg.edit_text(
-        f"🔮 *{name}*, выбери сферу для разбора:",
+        f"🔮 *{name}*, выберите сферу для разбора:",
         reply_markup=sphere_menu("sphere", back="menu:main"),
         parse_mode="Markdown",
     )
@@ -53,7 +53,7 @@ async def menu_reading(callback: CallbackQuery, user: User, session: AsyncSessio
         state: FSMContext = callback.data  # получим ниже через middleware
         # Упрощённо: просим ввести дату текстом и переходим к FSM через кнопку
         await callback.message.edit_text(
-            "✨ Для разбора мне нужна твоя дата рождения.\n\nНажми *«Ввести дату рождения»* чтобы начать ввод:",
+            "✨ Для разбора нам нужна ваша дата рождения.\n\nНажми *«Ввести дату рождения»* чтобы начать ввод:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="free:start")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],

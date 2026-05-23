@@ -61,7 +61,7 @@ async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSessio
     if not user.birth_date:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         await callback.message.edit_text(
-            "✨ Для расклада мне нужна твоя дата рождения.",
+            "✨ Для расклада нам нужна ваша дата рождения.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="free:start")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
