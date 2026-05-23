@@ -67,7 +67,9 @@ def _screen4_kb() -> InlineKeyboardMarkup:
 
 def _screen_trial_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔮 Задать вопрос", callback_data="ob:open_menu")]
+        [InlineKeyboardButton(text="⚡ Энергия дня", callback_data="menu:daily")],
+        [InlineKeyboardButton(text="✨ Мой разбор", callback_data="free:start")],
+        [InlineKeyboardButton(text="◀️ Открыть меню", callback_data="ob:open_menu")],
     ])
 
 
@@ -166,9 +168,13 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
 
     name = user.first_name or "друг"
     await callback.message.edit_text(
-        f"✨ *{name}, добро пожаловать!*\n\n"
-        f"Сегодня для новых пользователей открыт *пробный личный вопрос*.\n\n"
-        f"Задайте любой вопрос — о жизни, отношениях, будущем.",
+        f"✨ *{name}, всё готово.*\n\n"
+        f"Узнайте, какая энергия ведёт вас *именно сегодня* —\n"
+        f"или получите персональный разбор по дате рождения.\n\n"
+        f"⚡ *Энергия дня* покажет, на что обратить внимание,\n"
+        f"чего избегать и к чему вас тянет прямо сейчас.\n\n"
+        f"✨ *Мой разбор* откроет ваши числа судьбы,\n"
+        f"сильные стороны и скрытые таланты.",
         reply_markup=_screen_trial_kb(),
         parse_mode="Markdown",
     )
