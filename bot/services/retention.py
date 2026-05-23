@@ -220,7 +220,7 @@ async def run_retention_pushes(bot: Bot, session: AsyncSession) -> None:
         text = RETENTION_PUSHES[idx].format(name=name)
 
         try:
-            await bot.send_message(user.telegram_id, text)
+            await bot.send_message(user.telegram_id, text, parse_mode=None)
             activity.last_push_at = now
             activity.push_index = activity.push_index + 1
             await session.commit()
@@ -256,9 +256,13 @@ async def run_trial_upsell(bot: Bot, session: AsyncSession) -> None:
         name = user.first_name or "друг"
         text = TRIAL_UPSELL_TEXT.format(name=name)
         try:
-            await bot.send_message(user.telegram_id, text)
+            await bot.send_message(user.telegram_id, text, parse_mode=None)
             activity.trial_upsell_sent = True
             await session.commit()
             logger.info("Trial upsell sent to user %s", user.telegram_id)
         except Exception as e:
             logger.warning("Trial upsell failed for user %s: %s", user.telegram_id, e)
+            # Помечаем как отправленный даже при ошибке парсинга — иначе будет бесконечный retry
+            if "can't parse entities" in str(e):
+                activity.trial_upsell_sent = True
+                await session.commit()
