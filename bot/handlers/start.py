@@ -240,6 +240,9 @@ async def menu_main(callback: CallbackQuery, user: User):
         reply_markup=main_menu(),
         parse_mode="Markdown",
     )
+    # Восстановить reply-клавиатуру если пропала
+    from bot.utils import ensure_keyboard
+    await ensure_keyboard(callback.message, user.telegram_id)
     await callback.answer()
 
 

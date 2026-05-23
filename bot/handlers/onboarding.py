@@ -166,6 +166,10 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
     # Показать пробный вопрос
     await mark_onboarding_done(session, user.id, interest)
 
+    # Отправить reply-клавиатуру сразу — до того как пользователь нажмёт любую кнопку
+    from bot.utils import ensure_keyboard
+    await ensure_keyboard(callback.message, user.telegram_id)
+
     name = user.first_name or "друг"
     await callback.message.edit_text(
         f"✨ *{name}, всё готово.*\n\n"

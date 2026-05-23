@@ -10,7 +10,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _MENU_TTL = 86_400       # 24 h
-_KB_TTL   = 86_400 * 30  # 30 days
+_KB_TTL   = 86_400       # 24 h (переотправка раз в сутки если пропала)
 
 
 async def _r():
