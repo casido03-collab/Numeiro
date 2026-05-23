@@ -1,8 +1,9 @@
 """Rate limiting middleware."""
+import hashlib
 from typing import Callable, Awaitable, Any
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
-from bot.services.cache import rate_limit_check, set_user_processing, get_cooldown_remaining
+from bot.services.cache import rate_limit_check, get_redis
 from config import RATE_LIMITS
 
 
@@ -22,9 +23,18 @@ class RateLimitMiddleware(BaseMiddleware):
 
         # Проверка кнопок
         if isinstance(event, CallbackQuery):
+            # 1. Дедупликация: одна и та же кнопка не чаще раза в 2 секунды
+            cb_hash = hashlib.md5(f"{uid}:{event.data}".encode()).hexdigest()
+            r = await get_redis()
+            is_dup = not await r.set(f"cb_dedup:{cb_hash}", "1", nx=True, ex=2)
+            if is_dup:
+                await event.answer()
+                return
+
+            # 2. Общий лимит кнопок: 3 нажатия за 5 секунд
             ok = await rate_limit_check(uid, "buttons", RATE_LIMITS["buttons_per_5sec"], 5)
             if not ok:
-                await event.answer("✨ Подождите немного...", show_alert=False)
+                await event.answer("✨ Подождите немного...", show_alert=True)
                 return
 
         # Проверка AI-запросов для сообщений

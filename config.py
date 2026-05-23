@@ -102,7 +102,7 @@ RATE_LIMITS = {
     "ai_per_10sec": 3,
     "ai_per_minute": 10,
     "compatibility_per_10min": 3,
-    "buttons_per_5sec": 8,
+    "buttons_per_5sec": 3,
 }
 
 # AI модели
