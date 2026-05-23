@@ -46,15 +46,24 @@ async def send_daily_pushes(bot: Bot, session: AsyncSession):
     )
     users = result.scalars().all()
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚡ Открыть энергию дня", callback_data="menu:daily")],
-        [InlineKeyboardButton(text="📅 Прогноз на неделю", callback_data="weekly:start")],
-        [InlineKeyboardButton(text="📜 Тарифы", callback_data="menu:plans")],
-    ])
+    PUSH_BUTTONS = [
+        ("⚡ Энергия дня", "menu:daily"),
+        ("✨ Мой разбор", "menu:reading"),
+        ("🌟 Полная матрица судьбы", "matrix:start"),
+        ("📅 Прогноз на неделю", "weekly:start"),
+        ("💞 Совместимость", "menu:compatibility"),
+        ("🔮 Задать вопрос Тарологу", "menu:question"),
+        ("📆 Подбор дат", "menu:dates"),
+    ]
 
     for user in users:
         name = user.first_name or "друг"
         text = random.choice(PUSH_MESSAGES_ACTIVE).format(name=name)
+        btn_text, btn_cb = random.choice(PUSH_BUTTONS)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=btn_text, callback_data=btn_cb)],
+            [InlineKeyboardButton(text="🔮 Меню", callback_data="menu:main")],
+        ])
         try:
             await bot.send_message(user.telegram_id, text, reply_markup=kb)
         except Exception:
