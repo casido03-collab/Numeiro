@@ -1,17 +1,19 @@
 """Ежедневный прогноз."""
 import json
-from datetime import date
+from datetime import date, datetime, timezone
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from bot.models.user import User
 from bot.services.numerology import calculate_all, _reduce
-from bot.services.cache import get_cached, set_cached, make_cache_key
-from bot.services.limits import check_limit, consume_limit
+from bot.services.cache import get_cached, set_cached, make_cache_key, get_redis
+from bot.services.limits import check_limit, consume_limit, get_user_plan
 from bot.services.ai_service import generate
 from bot.prompts.prompts import DAILY_FORECAST_PROMPT
 from bot.keyboards.main import back_to_main, limit_reached_keyboard
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
+from config import PLANS
 
 router = Router()
 
@@ -22,23 +24,87 @@ def _day_number(birth_date: date, target: date) -> int:
     return _reduce(day_sum + personal)
 
 
+async def _check_energy_total(user_id: int, plan: str) -> tuple[bool, int, int]:
+    """
+    Check Redis total energy counter for Lite/Pro plans.
+    Returns (ok, used, max_total). max_total=0 means no total limit.
+    """
+    plan_config = PLANS.get(plan, {})
+    max_total = plan_config.get("energy_day_total")
+    if max_total is None:
+        return True, 0, 0  # No total cap (Premium, Free)
+
+    r = await get_redis()
+    val = await r.get(f"nrg_total:{user_id}")
+    used = int(val) if val else 0
+    return used < max_total, used, max_total
+
+
+async def _consume_energy_total(user_id: int, plan: str, session: AsyncSession) -> None:
+    """Increment Redis total energy counter; set TTL on first use from subscription expiry."""
+    plan_config = PLANS.get(plan, {})
+    if plan_config.get("energy_day_total") is None:
+        return  # No total cap for this plan
+
+    from bot.models.user import Subscription
+    r = await get_redis()
+    key = f"nrg_total:{user_id}"
+    new_val = await r.incr(key)
+
+    if new_val == 1:
+        # First use — set TTL to subscription expiry or plan default
+        result = await session.execute(
+            select(Subscription).where(Subscription.user_id == user_id)
+        )
+        sub = result.scalar_one_or_none()
+        if sub and sub.expires_at:
+            ttl = int((sub.expires_at - datetime.now(timezone.utc)).total_seconds())
+            if ttl > 0:
+                await r.expire(key, ttl)
+                return
+        # Fallback TTL
+        days = 7 if plan == "lite" else 30
+        await r.expire(key, days * 24 * 3600)
+
+
 @router.callback_query(F.data == "menu:daily")
 async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSession):
-    has_limit, used, max_val = await check_limit(session, user.id, "daily_forecasts")
-    if not has_limit:
+    plan = await get_user_plan(session, user.id)
+
+    # ── 1. Daily cap (1/day for all plans including free) ─────────────────────
+    has_daily, used_daily, max_daily = await check_limit(session, user.id, "daily_forecasts")
+
+    if not has_daily:
         await callback.message.edit_text(
-            "🔒 *Ежедневный прогноз*\n\nЭта функция доступна в подписке.\n\n"
-            "• Lite: 3 прогноза\n• Premium: 15 прогнозов\n• Pro: 45 прогнозов",
+            "⚡ *Энергия дня*\n\n"
+            "✨ Вы уже получили энергию дня сегодня.\n"
+            "Возвращайтесь завтра за новым прогнозом! 🌙",
             reply_markup=limit_reached_keyboard(),
             parse_mode="Markdown",
         )
         await callback.answer()
         return
 
+    # ── 2. Total cap for Lite (3 total) and Pro (30 total) ────────────────────
+    ok_total, used_total, max_total = await _check_energy_total(user.id, plan)
+    if not ok_total:
+        plan_name = {"lite": "Lite", "pro": "Pro"}.get(plan, plan)
+        await callback.message.edit_text(
+            f"⚡ *Энергия дня*\n\n"
+            f"🔒 Вы использовали все {max_total} "
+            f"{'прогноза' if max_total < 5 else 'прогнозов'} по тарифу *{plan_name}*.\n\n"
+            f"Обновите подписку для продолжения.",
+            reply_markup=limit_reached_keyboard(),
+            parse_mode="Markdown",
+        )
+        await callback.answer()
+        return
+
+    # ── 3. Birth date required ────────────────────────────────────────────────
     if not user.birth_date:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         await callback.message.edit_text(
-            "✨ Для прогноза мне нужна дата рождения.\n\nВведи дату через *«Мой разбор»* в главном меню.",
+            "✨ Для прогноза мне нужна дата рождения.\n\nВведите дату через *«Мой разбор»* в главном меню.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✨ Мой разбор", callback_data="free:start")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
@@ -58,6 +124,7 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
         await callback.answer()
         return
 
+    # ── 4. Cache by birth_date + date (shared across users with same DOB) ─────
     cache_key = make_cache_key("daily", user.birth_date, today.strftime("%Y-%m-%d"))
     cached = await get_cached(cache_key)
 
@@ -87,9 +154,13 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
         content=cached,
         metadata={"date": today.isoformat()},
     )
+
+    # ── 5. Consume limits ─────────────────────────────────────────────────────
     await consume_limit(session, user.id, "daily_forecasts")
     await consume_limit(session, user.id, "ai_messages")
+    await _consume_energy_total(user.id, plan, session)
 
+    # ── 6. Send result ────────────────────────────────────────────────────────
     name = user.first_name or "друг"
     weekday_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
     header = f"⚡ *Энергия дня — {name}*\n_{weekday_names[today.weekday()]}, {today.strftime('%d.%m.%Y')}_\n\n"

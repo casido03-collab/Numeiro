@@ -39,7 +39,7 @@ PLANS = {
             "personal_questions": 0,
             "weekly_reports": 1,
             "compatibility": 0,
-            "daily_forecasts": 1,
+            "daily_forecasts": 1,   # 1 Энергия дня в день
             "mini_readings": 1,
             "date_selections": 0,
         },
@@ -53,10 +53,11 @@ PLANS = {
             "personal_questions": 2,
             "weekly_reports": 0,
             "compatibility": 1,
-            "daily_forecasts": 3,
+            "daily_forecasts": 1,   # 1 Энергия дня в день (всего 3 за 7 дней — Redis)
             "mini_readings": 3,
             "date_selections": 0,
         },
+        "energy_day_total": 3,      # всего за подписку (7 дней)
     },
     "premium": {
         "name": "Premium",
@@ -67,7 +68,7 @@ PLANS = {
             "personal_questions": 15,
             "weekly_reports": 2,
             "compatibility": 4,
-            "daily_forecasts": 15,
+            "daily_forecasts": 1,   # 1 Энергия дня в день, без общего лимита
             "mini_readings": 15,
             "date_selections": 10,
         },
@@ -81,10 +82,11 @@ PLANS = {
             "personal_questions": 60,
             "weekly_reports": 4,
             "compatibility": 15,
-            "daily_forecasts": 45,
+            "daily_forecasts": 1,   # 1 Энергия дня в день (всего 30 за месяц — Redis)
             "mini_readings": 50,
             "date_selections": 40,
         },
+        "energy_day_total": 30,     # всего за месяц (30 дней)
     },
 }
 
