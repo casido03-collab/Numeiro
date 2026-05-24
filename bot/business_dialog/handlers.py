@@ -158,6 +158,11 @@ async def _send_payment_offer(
         "product":    prod_name,
     }, ensure_ascii=False)
 
+    # Блокируем стадию сразу — если клиент напишет во время пауз,
+    # попадёт в _stage_waiting_payment (мягкий deflect), а не сюда снова
+    await set_biz_stage(telegram_id, "waiting_payment")
+    await set_payment_offered(telegram_id)
+
     # Сообщение 1 — короткий AI-тизер (2 предложения + многоточие)
     teaser = await generate_business(
         AISHA_PITCH_PROMPT,
@@ -180,8 +185,7 @@ async def _send_payment_offer(
     await typing_medium(bot, chat_id, biz_conn_id)
     await _send(bot, chat_id, payment_text, biz_conn_id, reply_markup=payment_keyboard())
 
-    await set_payment_offered(telegram_id)
-    await set_biz_stage(telegram_id, "waiting_payment")
+    # (стадия и payment_offered уже выставлены в начале функции)
 
 
 # ─── Этапы диалога ────────────────────────────────────────────────────────────
