@@ -145,6 +145,36 @@ def _is_closing(text: str) -> bool:
     return len(t) < 40 and any(phrase in t for phrase in _CLOSING_PHRASES)
 
 
+_PRE_QUESTION_PHRASES = [
+    "у меня есть вопрос", "у меня ещё есть вопрос", "у меня еще есть вопрос",
+    "ещё один вопрос", "еще один вопрос", "можно спросить", "можно задать",
+    "хочу спросить", "хочу задать вопрос", "можно ещё", "можно еще",
+    "есть ещё", "есть еще", "хочу уточнить", "можно уточнить",
+]
+
+_META_SERVICE_PHRASES = [
+    "можно сделать два", "два разбора", "оплатить сразу за два",
+    "как это работает", "что входит", "что будет", "как долго",
+    "сколько займёт", "сколько займет", "сколько стоит", "ссылка работает",
+    "как оплатить", "где оплатить",
+]
+
+
+def _is_pre_question(text: str) -> bool:
+    """Мета-вопрос или попутная реплика — не тратит follow-up слот."""
+    t = text.lower().strip()
+    # Очень короткие реплики (приветствие, благодарность, ок) — не follow-up
+    if len(t) < 20:
+        return True
+    # Фразы-анонсы типа "у меня есть вопрос"
+    if any(phrase in t for phrase in _PRE_QUESTION_PHRASES):
+        return True
+    # Вопросы об услуге/сервисе, а не о ситуации клиента
+    if any(phrase in t for phrase in _META_SERVICE_PHRASES):
+        return True
+    return False
+
+
 def _tier_timing_hint(tier_key: str) -> str:
     """Текстовое описание сроков выполнения тира для подстановки в промпт."""
     tier = get_tier(tier_key)
@@ -732,20 +762,52 @@ async def _stage_waiting_payment(
 
 
 async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
-    """Уточняющие вопросы после платной консультации."""
-    left = await decrement_followup(telegram_id)
+    """Уточняющие вопросы после платной консультации.
 
-    profile    = await get_profile(telegram_id)
-    paid_tier  = await get_paid_tier(telegram_id) or "t190"
-    tier       = get_tier(paid_tier)
-    tier_name  = tier.get("name", "")
+    Различаем два типа сообщений:
+    - Мета/попутные реплики (анонс вопроса, благодарность, сервисный вопрос)
+      → краткий AI-ответ БЕЗ траты follow-up слота
+    - Реальный follow-up вопрос по ситуации
+      → полный ответ, тратит слот
+    """
+    profile   = await get_profile(telegram_id)
+    paid_tier = await get_paid_tier(telegram_id) or "t190"
+    tier      = get_tier(paid_tier)
+
+    context_base = json.dumps({
+        "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
+        "birth_date": profile.get("birth_date", ""),
+        "problem":    profile.get("problem", ""),
+    }, ensure_ascii=False)
+
+    # ── Мета-вопрос / попутная реплика — не тратит слот ──────────────────────
+    if _is_pre_question(text):
+        left = await get_followup_left(telegram_id)
+        quick = await generate_business(
+            AISHA_FOLLOWUP_PROMPT,
+            f"Клиент написал попутную реплику или анонс вопроса: «{text}»\n\n"
+            f"Ответь очень коротко (1 предложение), по смыслу. "
+            f"Если это анонс вопроса — пригласи задать его. "
+            f"Если благодарность — тепло прими. "
+            f"НЕ задавай встречных вопросов. Обращайся на вы.\n\n"
+            f"Данные: {context_base}",
+            complexity="simple",
+            max_tokens=60,
+        )
+        await typing_for_text(bot, chat_id, biz_conn_id, quick)
+        await _send(bot, chat_id, quick, biz_conn_id)
+        return  # слот НЕ тратится
+
+    # ── Реальный follow-up вопрос — тратит слот ───────────────────────────────
+    left = await decrement_followup(telegram_id)
 
     context = json.dumps({
         "name":           profile.get("name", ""),
         "gender":         profile.get("gender", "unknown"),
         "birth_date":     profile.get("birth_date", ""),
         "problem":        profile.get("problem", ""),
-        "tier":           tier_name,
+        "tier":           tier.get("name", ""),
         "followups_left": left,
     }, ensure_ascii=False)
 
