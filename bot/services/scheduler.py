@@ -141,7 +141,8 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
 
 
 async def _send_business_reminders(bot: Bot, session_maker) -> None:
-    """Отправить reminder пользователям которым была показана ссылка оплаты, но не оплатили (через 1ч)."""
+    """Отправить reminder пользователям которым была показана ссылка оплаты, но не оплатили (через 1ч).
+    Кнопка оплаты включается только здесь — в диалоге она больше не дублируется."""
     import logging
     import time
     from sqlalchemy import select
@@ -149,7 +150,10 @@ async def _send_business_reminders(bot: Bot, session_maker) -> None:
 
     try:
         from bot.business_dialog.models import BusinessSession, BusinessProfile
-        from bot.business_dialog.session_manager import get_biz_conn, get_payment_offered_at
+        from bot.business_dialog.session_manager import (
+            get_biz_conn, get_payment_offered_at, get_biz_stage, get_profile,
+        )
+        from bot.business_dialog.tribute_flow import return_payment_keyboard, payment_keyboard
 
         one_hour_ago = int(time.time()) - 3600
 
@@ -171,29 +175,44 @@ async def _send_business_reminders(bot: Bot, session_maker) -> None:
             for biz_sess, profile in rows:
                 tid = biz_sess.telegram_id
 
-                # Напоминание только если ссылка на оплату уже была показана
+                # Напоминание только если ссылка на оплату уже была показана и прошёл 1 час
                 offered_at = await get_payment_offered_at(tid)
                 if not offered_at or offered_at > one_hour_ago:
-                    continue  # ссылка не показывалась или показана менее часа назад
+                    continue
 
-                name = profile.name if profile else "друг"
-                biz_conn_id = await get_biz_conn(tid)
+                # Определяем стадию и нужную кнопку
+                stage        = await get_biz_stage(tid)
+                redis_profile = await get_profile(tid)
+                name         = (profile.name if profile else None) or redis_profile.get("name") or "душа моя"
+                biz_conn_id  = await get_biz_conn(tid)
 
-                text = (
-                    f"{name}, я оставила ваш разбор открытым 🌙\n\n"
-                    f"Если почувствуете, что готовы — можете вернуться и спокойно продолжить просмотр."
-                )
+                _REMINDER_TEXTS = [
+                    f"{name}, я оставила ваш разбор открытым 🌙\n\nКогда почувствуете, что готовы — просто нажмите кнопку.",
+                    f"Хочу, чтобы вы знали — ваш разбор ещё ждёт вас, {name} ✨\n\nМожете вернуться в любой момент.",
+                    f"{name}, я никуда не ухожу 💫\n\nКогда будете готовы — просто нажмите кнопку, и я сразу начну.",
+                ]
+                text = random.choice(_REMINDER_TEXTS)
+
+                # Кнопка зависит от стадии: waiting_payment → t190, waiting_upsell → следующий тир
+                if stage == "waiting_upsell":
+                    next_tier_key = redis_profile.get("next_tier", "t490")
+                    kb = payment_keyboard(next_tier_key)
+                else:
+                    kb = return_payment_keyboard("t190")
+
                 try:
                     send_kw: dict = {
-                        "chat_id": tid, "text": text,
-                        "parse_mode": None,
+                        "chat_id":      tid,
+                        "text":         text,
+                        "parse_mode":   None,
+                        "reply_markup": kb,
                     }
                     if biz_conn_id:
                         send_kw["business_connection_id"] = biz_conn_id
                     await bot.send_message(**send_kw)
                     biz_sess.reminder_sent = True
                     await session.commit()
-                    logger.info("Business reminder sent to %s", tid)
+                    logger.info("Business reminder sent to %s (stage=%s)", tid, stage)
                 except Exception as e:
                     logger.warning("Business reminder failed for %s: %s", tid, e)
     except Exception as e:

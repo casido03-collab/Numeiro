@@ -438,11 +438,9 @@ async def _stage_accompaniment(
 async def _stage_waiting_upsell(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str = "",
 ) -> None:
-    """Пользователь написал пока ждём оплаты следующего тира — короткий ответ + кнопка."""
-    profile       = await get_profile(telegram_id)
-    next_tier_key = profile.get("next_tier", "t490")
-    tier          = get_tier(next_tier_key)
-    name          = tier.get("name", "")
+    """Пользователь написал пока ждём оплаты следующего тира — отвечаем по смыслу, без кнопки.
+    Кнопка вернётся только через 1 час неактивности (планировщик напоминаний)."""
+    profile = await get_profile(telegram_id)
 
     if text:
         context = json.dumps({
@@ -460,16 +458,7 @@ async def _stage_waiting_upsell(
         )
         await typing_for_text(bot, chat_id, biz_conn_id, reply)
         await _send(bot, chat_id, reply, biz_conn_id)
-        await typing_short(bot, chat_id, biz_conn_id)
-    else:
-        await typing_deflect(bot, chat_id, biz_conn_id)
-
-    await _send(
-        bot, chat_id,
-        f"Душа моя, я оставила «{name}» открытым для вас {_emo()} Когда будете готовы — просто нажмите кнопку.",
-        biz_conn_id,
-        reply_markup=payment_keyboard(next_tier_key),
-    )
+    # Кнопку НЕ повторяем — она придёт через планировщик после 1 часа тишины
 
 
 # ─── Этапы диалога ────────────────────────────────────────────────────────────
@@ -689,7 +678,8 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
 async def _stage_waiting_payment(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str = "",
 ) -> None:
-    """Пользователь задаёт вопрос пока не оплатил — короткий AI-ответ + кнопка."""
+    """Пользователь задаёт вопрос пока не оплатил — отвечаем по смыслу, без кнопки.
+    Кнопка вернётся только через 1 час неактивности (планировщик напоминаний)."""
     profile = await get_profile(telegram_id)
     context = json.dumps({
         "name":       profile.get("name", ""),
@@ -699,7 +689,6 @@ async def _stage_waiting_payment(
     }, ensure_ascii=False)
 
     if text:
-        # Короткий AI-ответ по смыслу вопроса — одно предложение
         reply = await generate_business(
             AISHA_FREE_PROMPT,
             f"Клиент уже получил предложение разбора и задаёт дополнительный вопрос: «{text}»\n\n"
@@ -711,16 +700,7 @@ async def _stage_waiting_payment(
         )
         await typing_for_text(bot, chat_id, biz_conn_id, reply)
         await _send(bot, chat_id, reply, biz_conn_id)
-        await typing_short(bot, chat_id, biz_conn_id)
-    else:
-        await typing_deflect(bot, chat_id, biz_conn_id)
-
-    await _send(
-        bot, chat_id,
-        f"Душа моя, я оставила ваш разбор открытым {_emo()} Когда будете готовы — просто нажмите кнопку.",
-        biz_conn_id,
-        reply_markup=return_payment_keyboard("t190"),
-    )
+    # Кнопку НЕ повторяем — она придёт через планировщик после 1 часа тишины
 
 
 async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
