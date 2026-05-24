@@ -54,18 +54,20 @@ async def handle_tribute_webhook(request: web.Request) -> web.Response:
         logger.warning("Tribute webhook: bad JSON")
         return web.Response(status=400, text="bad json")
 
-    telegram_id = body.get("telegram_id")
-    payment_id  = body.get("payment_id", "")
-    status      = body.get("status", "")
-    amount      = int(body.get("amount", 0))
-    product_id  = body.get("product_id", "")
+    # Tribute оборачивает данные в "payload"
+    payload     = body.get("payload", body)  # fallback на корень если нет обёртки
+    telegram_id = payload.get("telegram_user_id") or payload.get("telegram_id")
+    payment_id  = str(payload.get("purchase_id") or payload.get("payment_id") or body.get("purchase_id", ""))
+    status      = payload.get("status", "paid")  # Tribute шлёт webhook только при успехе
+    amount      = int(payload.get("amount", 0))
+    product_id  = str(payload.get("product_id", ""))
 
     logger.info(
         "Tribute webhook: tid=%s payment=%s status=%s amount=%s",
         telegram_id, payment_id, status, amount,
     )
 
-    if status != "paid" or not telegram_id:
+    if not telegram_id:
         return web.Response(status=200, text="ok")
 
     # Дедупликация
