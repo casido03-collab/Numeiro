@@ -13,6 +13,7 @@ from bot.business_dialog.session_manager import (
     get_followup_left, decrement_followup,
     set_followup_left, reset_session,
     set_payment_offered,
+    append_history, get_history, format_history,
 )
 
 _RESET_PHRASE = "сброс12"
@@ -227,13 +228,15 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
         "stage":      "initial_response",
     }, ensure_ascii=False)
 
+    await append_history(telegram_id, "user", text)
     response = await generate_business(
         AISHA_FREE_PROMPT,
         f"Человек описал свою ситуацию. Ответь тепло и очень коротко — покажи что начала смотреть. "
-        f"Задай один уточняющий вопрос. Обращайся на вы. Данные: {context}",
+        f"Задай один уточняющий вопрос, которого ещё не задавала. Обращайся на вы. Данные: {context}",
         complexity="simple",
         max_tokens=150,
     )
+    await append_history(telegram_id, "aisha", response)
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
     await increment_free_count(telegram_id)
@@ -278,40 +281,34 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
         await set_biz_stage(telegram_id, "waiting_payment")
         return
 
-    # Ещё в зоне бесплатного — короткий AI-ответ
+    # Ещё в зоне бесплатного — короткий AI-ответ с историей
     profile = await get_profile(telegram_id)
+    history = await get_history(telegram_id)
+    history_text = format_history(history)
+
+    await append_history(telegram_id, "user", text)
 
     context = json.dumps({
-        "name":            profile.get("name", ""),
-        "birth_date":      profile.get("birth_date", ""),
-        "problem":         profile.get("problem", ""),
-        "current_message": text,
-        "messages_used":   free_count,
+        "name":       profile.get("name", ""),
+        "birth_date": profile.get("birth_date", ""),
+        "problem":    profile.get("problem", ""),
     }, ensure_ascii=False)
 
     response = await generate_business(
         AISHA_FREE_PROMPT,
-        f"Продолжение диалога. Отвечай коротко (2–3 предложения), с теплом. Обращайся на вы. Данные: {context}",
+        f"ИСТОРИЯ ПЕРЕПИСКИ:\n{history_text}\n\n"
+        f"ПОСЛЕДНЕЕ СООБЩЕНИЕ КЛИЕНТА: {text}\n\n"
+        f"Данные клиента: {context}\n\n"
+        f"Ответь коротко (2–3 предложения). Не повторяй вопросы из истории. "
+        f"Если клиент говорит 'я уже сказал' или 'я писал' — признай это и двигайся вперёд. "
+        f"Обращайся на вы.",
         complexity="simple",
-        max_tokens=120,
+        max_tokens=140,
     )
+    await append_history(telegram_id, "aisha", response)
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
     await increment_free_count(telegram_id)
-
-    # После 4-го сообщения — мягкий намёк на оплату
-    new_count = await get_free_count(telegram_id)
-    if new_count == 4:
-        prod_name = profile.get("product_name", "Разбор ситуации")
-        await typing_short(bot, chat_id, biz_conn_id)
-        await set_payment_offered(telegram_id)
-        await _send(
-            bot, chat_id,
-            f"Я уже вижу некоторые важные моменты в вашей ситуации {_emo()}\n\n"
-            f"Если захотите — могу посмотреть глубже: «{prod_name}» — {TRIBUTE_PRICE} ₽",
-            biz_conn_id,
-            reply_markup=payment_keyboard(),
-        )
 
 
 async def _stage_waiting_payment(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None) -> None:
@@ -334,19 +331,17 @@ async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id:
     left = await decrement_followup(telegram_id)
 
     profile = await get_profile(telegram_id)
-    await typing_medium(bot, chat_id, biz_conn_id)
 
     context = json.dumps({
-        "name":              profile.get("name", ""),
-        "birth_date":        profile.get("birth_date", ""),
-        "problem":           profile.get("problem", ""),
-        "followup_question": text,
-        "followups_left":    left,
+        "name":           profile.get("name", ""),
+        "birth_date":     profile.get("birth_date", ""),
+        "problem":        profile.get("problem", ""),
+        "followups_left": left,
     }, ensure_ascii=False)
 
     response = await generate_business(
         AISHA_FOLLOWUP_PROMPT,
-        f"Уточняющий вопрос после консультации. Обращайся на вы. Данные: {context}",
+        f"Уточняющий вопрос после консультации: {text}\n\nДанные: {context}\n\nОбращайся на вы.",
         complexity="medium",
         max_tokens=300,
     )

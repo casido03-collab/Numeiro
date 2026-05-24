@@ -139,6 +139,35 @@ async def set_followup_left(telegram_id: int, n: int) -> None:
     await _set(telegram_id, sess)
 
 
+# ─── Conversation history ─────────────────────────────────────────────────────
+
+async def append_history(telegram_id: int, role: str, text: str) -> None:
+    """Добавить сообщение в историю диалога (хранится последние 30 реплик)."""
+    sess = await _get(telegram_id)
+    history = sess.get("history", [])
+    history.append({"role": role, "text": text[:600]})
+    if len(history) > 30:
+        history = history[-30:]
+    sess["history"] = history
+    await _set(telegram_id, sess)
+
+
+async def get_history(telegram_id: int) -> list:
+    sess = await _get(telegram_id)
+    return sess.get("history", [])
+
+
+def format_history(history: list) -> str:
+    """Отформатировать историю для передачи в промпт."""
+    if not history:
+        return ""
+    lines = []
+    for msg in history:
+        who = "Клиент" if msg["role"] == "user" else "Аиша"
+        lines.append(f"{who}: {msg['text']}")
+    return "\n".join(lines)
+
+
 # ─── Payment offered timestamp ────────────────────────────────────────────────
 
 async def set_payment_offered(telegram_id: int) -> None:
