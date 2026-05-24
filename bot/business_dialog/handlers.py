@@ -484,7 +484,9 @@ async def _stage_waiting_upsell(
 ) -> None:
     """Пользователь написал пока ждём оплаты следующего тира — отвечаем по смыслу, без кнопки.
     Кнопка вернётся только через 1 час неактивности (планировщик напоминаний)."""
-    profile = await get_profile(telegram_id)
+    profile       = await get_profile(telegram_id)
+    next_tier_key = profile.get("next_tier", "t490")
+    timing        = _tier_timing_hint(next_tier_key)
 
     if text:
         context = json.dumps({
@@ -492,7 +494,6 @@ async def _stage_waiting_upsell(
             "gender":  profile.get("gender", "unknown"),
             "problem": profile.get("problem", ""),
         }, ensure_ascii=False)
-        timing = _tier_timing_hint(next_tier_key)
         reply = await generate_business(
             AISHA_FREE_PROMPT,
             f"Клиент задаёт вопрос: «{text}»\n\n"
