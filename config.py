@@ -111,7 +111,7 @@ RATE_LIMITS = {
 
 # AI модели
 AI_MODELS = {
-    "simple": "gpt-4o-mini",
-    "medium": "gpt-4o-mini",
+    "simple": "gpt-4.1-mini",
+    "medium": "gpt-4.1-mini",
     "complex": "gpt-4o",
 }
