@@ -235,7 +235,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     elif stage == "free_dialog":
         await _stage_free_dialog(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "waiting_payment":
-        await _stage_waiting_payment(bot, chat_id, telegram_id, biz_conn_id)
+        await _stage_waiting_payment(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "paid":
         await _send(bot, chat_id, f"Душа моя {_emo()} Я уже смотрю вашу ситуацию. Совсем скоро…", biz_conn_id)
     elif stage == "followup":
@@ -243,7 +243,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     elif stage == "accompaniment":
         await _stage_accompaniment(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "waiting_upsell":
-        await _stage_waiting_upsell(bot, chat_id, telegram_id, biz_conn_id)
+        await _stage_waiting_upsell(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "completed":
         await _stage_completed(bot, chat_id, telegram_id, biz_conn_id)
     elif stage == "support":
@@ -436,20 +436,34 @@ async def _stage_accompaniment(
 # ─── Ожидание оплаты апсейла ─────────────────────────────────────────────────
 
 async def _stage_waiting_upsell(
-    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str = "",
 ) -> None:
-    """Пользователь написал пока ждём оплаты следующего тира — напоминаем."""
+    """Пользователь написал пока ждём оплаты следующего тира — короткий ответ + кнопка."""
     profile       = await get_profile(telegram_id)
     next_tier_key = profile.get("next_tier", "t490")
     tier          = get_tier(next_tier_key)
     name          = tier.get("name", "")
-    price         = tier.get("price", 0)
 
-    await typing_deflect(bot, chat_id, biz_conn_id)
-    deflect = await get_deflect_message(telegram_id)
-    await _send(bot, chat_id, deflect, biz_conn_id)
+    if text:
+        context = json.dumps({
+            "name":    profile.get("name", ""),
+            "gender":  profile.get("gender", "unknown"),
+            "problem": profile.get("problem", ""),
+        }, ensure_ascii=False)
+        reply = await generate_business(
+            AISHA_FREE_PROMPT,
+            f"Клиент задаёт вопрос: «{text}»\n\n"
+            f"Ответь ОДНИМ коротким предложением (максимум 15 слов) по смыслу. "
+            f"Не упоминай цену или слово 'оплата'. Обращайся на вы.\n\nДанные: {context}",
+            complexity="simple",
+            max_tokens=50,
+        )
+        await typing_for_text(bot, chat_id, biz_conn_id, reply)
+        await _send(bot, chat_id, reply, biz_conn_id)
+        await typing_short(bot, chat_id, biz_conn_id)
+    else:
+        await typing_deflect(bot, chat_id, biz_conn_id)
 
-    await typing_short(bot, chat_id, biz_conn_id)
     await _send(
         bot, chat_id,
         f"Душа моя, я оставила «{name}» открытым для вас {_emo()} Когда будете готовы — просто нажмите кнопку.",
@@ -672,13 +686,35 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
     await increment_free_count(telegram_id)
 
 
-async def _stage_waiting_payment(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None) -> None:
-    """Пользователь пишет, но ещё не оплатил — мягкий deflect + кнопка возврата."""
-    await typing_deflect(bot, chat_id, biz_conn_id)
-    deflect = await get_deflect_message(telegram_id)
-    await _send(bot, chat_id, deflect, biz_conn_id)
+async def _stage_waiting_payment(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str = "",
+) -> None:
+    """Пользователь задаёт вопрос пока не оплатил — короткий AI-ответ + кнопка."""
+    profile = await get_profile(telegram_id)
+    context = json.dumps({
+        "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
+        "birth_date": profile.get("birth_date", ""),
+        "problem":    profile.get("problem", ""),
+    }, ensure_ascii=False)
 
-    await typing_short(bot, chat_id, biz_conn_id)
+    if text:
+        # Короткий AI-ответ по смыслу вопроса — одно предложение
+        reply = await generate_business(
+            AISHA_FREE_PROMPT,
+            f"Клиент уже получил предложение разбора и задаёт дополнительный вопрос: «{text}»\n\n"
+            f"Ответь ОДНИМ коротким предложением (максимум 15 слов) точно по смыслу вопроса. "
+            f"Не называй цену и не упоминай слово 'оплата'. Обращайся на вы.\n\n"
+            f"Данные: {context}",
+            complexity="simple",
+            max_tokens=50,
+        )
+        await typing_for_text(bot, chat_id, biz_conn_id, reply)
+        await _send(bot, chat_id, reply, biz_conn_id)
+        await typing_short(bot, chat_id, biz_conn_id)
+    else:
+        await typing_deflect(bot, chat_id, biz_conn_id)
+
     await _send(
         bot, chat_id,
         f"Душа моя, я оставила ваш разбор открытым {_emo()} Когда будете готовы — просто нажмите кнопку.",
