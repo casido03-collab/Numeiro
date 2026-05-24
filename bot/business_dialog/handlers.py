@@ -78,6 +78,31 @@ def _support_category(text: str) -> str:
     return "📩 Входящее обращение"
 
 
+async def _notify_admin_day_limit(bot: Bot, telegram_id: int, day_count: int) -> None:
+    """Уведомить админов когда пользователь достиг дневного лимита AI-вызовов."""
+    from config import settings
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    admin_ids = settings.admin_ids_list
+    if not admin_ids:
+        return
+    profile  = await get_profile(telegram_id)
+    name     = profile.get("name") or "Гость"
+    username = profile.get("username", "")
+    username_str = f" @{username}" if username else ""
+    msg = (
+        f"⚠️ Дневной лимит AI\n\n"
+        f"👤 {name}{username_str} (tg_id: {telegram_id})\n"
+        f"💬 Использовано сообщений сегодня: {day_count}\n\n"
+        f"Проверьте диалог. Если клиент реальный — расширьте лимит командой:\n"
+        f"/unlimit {telegram_id} 50"
+    )
+    for admin_id in admin_ids:
+        try:
+            await bot.send_message(admin_id, msg, parse_mode=None)
+        except Exception as e:
+            logger.warning("day_limit notify failed for admin %s: %s", admin_id, e)
+
+
 async def _notify_admins(bot: Bot, telegram_id: int, name: str, text: str, username: str | None = None) -> None:
     """Уведомить всех админов о поступившем обращении в поддержку."""
     from config import settings
@@ -260,14 +285,25 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     # 2. Не более 15 сообщений за 60 секунд
     if not await rate_limit_check(telegram_id, "biz_min", 15, 60):
         return
-    # 3. Дневной лимит AI-вызовов: не более 120 в сутки на пользователя
-    day_key = f"biz_day:{telegram_id}:{date.today().isoformat()}"
-    r = await get_redis()
-    day_count = await r.incr(day_key)
+    # 3. Дневной лимит AI-вызовов (по умолчанию 120, admin может расширить)
+    today       = date.today().isoformat()
+    day_key     = f"biz_day:{telegram_id}:{today}"
+    r           = await get_redis()
+    day_count   = await r.incr(day_key)
     if day_count == 1:
         await r.expire(day_key, 86400)
-    if day_count > 120:
-        return  # тихо игнорируем — дневной лимит исчерпан
+
+    # Персональный лимит (admin мог расширить командой /unlimit)
+    user_limit_raw = await r.get(f"biz_day_limit:{telegram_id}:{today}")
+    user_limit     = int(user_limit_raw) if user_limit_raw else 120
+
+    if day_count > user_limit:
+        # Уведомить admin один раз при первом превышении
+        notif_key = f"biz_day_notif:{telegram_id}:{today}"
+        first_hit = await r.set(notif_key, "1", nx=True, ex=86400)
+        if first_hit:
+            await _notify_admin_day_limit(bot, telegram_id, day_count)
+        return  # тихо игнорируем
 
     # Всегда сохраняем актуальный business_connection_id
     if biz_conn_id:

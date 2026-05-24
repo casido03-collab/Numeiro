@@ -303,3 +303,68 @@ async def cmd_broadcast(message: Message, session: AsyncSession):
             failed += 1
 
     await message.answer(f"✅ Рассылка завершена: отправлено {sent}, ошибок {failed}")
+
+
+@router.message(Command("unlimit"))
+async def cmd_unlimit(message: Message):
+    """Расширить дневной лимит AI-сообщений для клиента бизнес-диалога.
+    Использование: /unlimit <telegram_id> <количество>
+    Пример: /unlimit 1715461306 50
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    parts = message.text.split()
+    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
+        await message.answer(
+            "Использование: /unlimit <telegram_id> <количество>\n"
+            "Пример: /unlimit 1715461306 50"
+        )
+        return
+
+    target_id = int(parts[1])
+    extra     = int(parts[2])
+
+    from datetime import date
+    from bot.services.cache import get_redis
+    from bot.business_dialog.session_manager import get_biz_conn, get_profile
+
+    r     = await get_redis()
+    today = date.today().isoformat()
+
+    # Текущее количество использованных сообщений
+    day_key   = f"biz_day:{target_id}:{today}"
+    day_count = int(await r.get(day_key) or 0)
+
+    # Устанавливаем персональный лимит = использовано + выданное дополнение
+    new_limit     = day_count + extra
+    limit_key     = f"biz_day_limit:{target_id}:{today}"
+    await r.set(limit_key, str(new_limit), ex=86400)
+
+    # Сбрасываем флаг уведомления чтобы при следующем превышении снова пришло
+    await r.delete(f"biz_day_notif:{target_id}:{today}")
+
+    # Получаем данные клиента для подтверждения
+    profile = await get_profile(target_id)
+    name    = profile.get("name") or str(target_id)
+
+    await message.answer(
+        f"✅ Лимит расширен для {name} (tg_id: {target_id})\n"
+        f"Использовано сегодня: {day_count}\n"
+        f"Новый лимит: {new_limit} (+{extra})"
+    )
+
+    # Отправляем клиенту сообщение от Аиши через business_connection
+    _RESUME_MSG = "🙏 Простите, отвлеклась — продолжаем с вами диалог."
+    biz_conn_id = await get_biz_conn(target_id)
+    try:
+        send_kw: dict = {
+            "chat_id":    target_id,
+            "text":       _RESUME_MSG,
+            "parse_mode": None,
+        }
+        if biz_conn_id:
+            send_kw["business_connection_id"] = biz_conn_id
+        await message.bot.send_message(**send_kw)
+    except Exception as e:
+        await message.answer(f"⚠️ Не удалось отправить сообщение клиенту: {e}")
