@@ -17,6 +17,13 @@ from bot.business_dialog.session_manager import (
 
 _RESET_PHRASE = "сброс12"
 
+_ESOTERIC_EMOJIS = ["🌙", "✨", "💫", "🔮", "🌟", "⭐", "🌌", "💎"]
+
+
+def _emo() -> str:
+    """Случайный эзотерический эмодзи."""
+    return random.choice(_ESOTERIC_EMOJIS)
+
 _PAYMENT_READY = [
     "я готова", "я готов", "давайте", "давай попробуем", "попробуем",
     "хочу попробовать", "хочу заказать", "хочу оплатить", "как оплатить",
@@ -113,7 +120,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     elif stage == "waiting_payment":
         await _stage_waiting_payment(bot, chat_id, telegram_id, biz_conn_id)
     elif stage in ("paid",):
-        await _send(bot, chat_id, "Душа моя 🌙\nЯ уже смотрю вашу ситуацию. Совсем скоро…", biz_conn_id)
+        await _send(bot, chat_id, f"Душа моя {_emo()} Я уже смотрю вашу ситуацию. Совсем скоро…", biz_conn_id)
     elif stage == "followup":
         await _stage_followup(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "completed":
@@ -134,14 +141,14 @@ async def _stage_new(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str 
     # Создаём запись в БД (нужна для системы напоминаний)
     await _ensure_db_session(telegram_id, biz_conn_id)
 
-    welcome = "Здравствуйте, душа моя 🌙\n\nРада, что вы написали. Скажите — как вас зовут?"
+    welcome = f"Здравствуйте, душа моя {_emo()}\n\nРада, что вы написали. Скажите — как вас зовут?"
     await typing_for_text(bot, chat_id, biz_conn_id, welcome)
     await _send(bot, chat_id, welcome, biz_conn_id)
 
 
 async def _stage_name(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
     if not text:
-        await _send(bot, chat_id, "Напишите своё имя 🌙", biz_conn_id)
+        await _send(bot, chat_id, f"Напишите своё имя {_emo()}", biz_conn_id)
         return
 
     name = text.strip().split()[0].capitalize()
@@ -149,9 +156,8 @@ async def _stage_name(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
     await set_biz_stage(telegram_id, "collecting_birth_date")
 
     response = (
-        f"Как хорошо, {name} 🌙\n\n"
-        f"Чтобы я смогла посмотреть вашу ситуацию глубже — скажите, когда вы родились?\n"
-        f"Напишите дату вот так: 15.03.1990"
+        f"Как хорошо, {name} {_emo()} Чтобы я смогла посмотреть вашу ситуацию глубже — "
+        f"скажите, когда вы родились?\nНапишите дату вот так: 15.03.1990"
     )
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
@@ -159,28 +165,30 @@ async def _stage_name(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
 
 async def _stage_birth_date(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
     if not text:
-        await _send(bot, chat_id, "Напишите дату рождения в формате дд.мм.гггг 🌙", biz_conn_id)
+        await _send(bot, chat_id, f"Напишите дату рождения в формате дд.мм.гггг {_emo()}", biz_conn_id)
         return
 
     await store_profile_field(telegram_id, "birth_date", text)
     await set_biz_stage(telegram_id, "collecting_city")
 
-    response = "Благодарю вас 🌙\n\nИ последний вопрос прежде чем мы начнём — в каком городе вы живёте?"
+    response = f"Благодарю вас {_emo()} И последний вопрос прежде чем мы начнём — в каком городе вы живёте?"
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
 
 
-_PROBLEM_INTROS = [
-    "Моя хорошая {name} 🌙\n\nРасскажите спокойно — что сейчас тревожит больше всего?\n\nНапишите своими словами, я слушаю.",
-    "{name}, я здесь рядом 🌙\n\nЧто сейчас лежит на сердце? Расскажите мне — не торопитесь.",
-    "Слышу вас, {name} 🌙\n\nЧто сейчас тревожит? Напишите своими словами.",
-    "{name} 🌙\n\nРасскажите — что сейчас беспокоит вас больше всего? Я здесь и слушаю.",
-]
+def _problem_intros(name: str) -> list[str]:
+    e = _emo()
+    return [
+        f"Моя хорошая {name} {e}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами, я слушаю.",
+        f"{name}, я здесь рядом {e}\n\nЧто сейчас лежит на сердце? Расскажите — не торопитесь.",
+        f"Слышу вас, {name} {e}\n\nЧто сейчас тревожит? Напишите своими словами.",
+        f"{name}, расскажите — что сейчас беспокоит больше всего? {e} Я здесь и слушаю.",
+    ]
 
 
 async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
     if not text:
-        await _send(bot, chat_id, "Напишите название города 🌙", biz_conn_id)
+        await _send(bot, chat_id, f"Напишите название города {_emo()}", biz_conn_id)
         return
 
     await store_profile_field(telegram_id, "city", text)
@@ -189,14 +197,14 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
     profile = await get_profile(telegram_id)
     name = profile.get("name", "вы")
 
-    intro = random.choice(_PROBLEM_INTROS).format(name=name)
+    intro = random.choice(_problem_intros(name))
     await typing_for_text(bot, chat_id, biz_conn_id, intro)
     await _send(bot, chat_id, intro, biz_conn_id)
 
 
 async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
     if not text or len(text) < 5:
-        await _send(bot, chat_id, "Расскажите подробнее, душа моя 🌙", biz_conn_id)
+        await _send(bot, chat_id, f"Расскажите подробнее, душа моя {_emo()}", biz_conn_id)
         return
 
     await store_profile_field(telegram_id, "problem", text)
@@ -239,7 +247,7 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
         await set_payment_offered(telegram_id)
         await set_biz_stage(telegram_id, "waiting_payment")
         msg = (
-            f"Хорошо, душа моя 🌙\n\n"
+            f"Хорошо, душа моя {_emo()}\n\n"
             f"✨ «{prod_name}» — {TRIBUTE_PRICE} ₽\n\n"
             f"Вот ссылка — нажмите и оплатите удобным способом."
         )
@@ -260,7 +268,7 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
         prod_name = profile.get("product_name", "Разбор ситуации")
         await _send(
             bot, chat_id,
-            f"Душа моя, вашу ситуацию лучше смотреть отдельно и внимательно 🌙\n\n"
+            f"Душа моя, вашу ситуацию лучше смотреть отдельно и внимательно {_emo()}\n\n"
             f"✨ «{prod_name}» — {TRIBUTE_PRICE} ₽\n\n"
             f"Это полный просмотр с советом и прогнозом.",
             biz_conn_id,
@@ -299,7 +307,7 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
         await set_payment_offered(telegram_id)
         await _send(
             bot, chat_id,
-            f"Я уже вижу некоторые важные моменты в вашей ситуации 🌙\n\n"
+            f"Я уже вижу некоторые важные моменты в вашей ситуации {_emo()}\n\n"
             f"Если захотите — могу посмотреть глубже: «{prod_name}» — {TRIBUTE_PRICE} ₽",
             biz_conn_id,
             reply_markup=payment_keyboard(),
@@ -315,7 +323,7 @@ async def _stage_waiting_payment(bot: Bot, chat_id: int, telegram_id: int, biz_c
     await typing_short(bot, chat_id, biz_conn_id)
     await _send(
         bot, chat_id,
-        "Душа моя, я оставила ваш разбор открытым 🌙\nКогда будете готовы — просто нажмите кнопку.",
+        f"Душа моя, я оставила ваш разбор открытым {_emo()} Когда будете готовы — просто нажмите кнопку.",
         biz_conn_id,
         reply_markup=return_payment_keyboard(),
     )
@@ -349,9 +357,9 @@ async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id:
         await set_biz_stage(telegram_id, "completed")
         await typing_short(bot, chat_id, biz_conn_id)
         closing = random.choice([
-            "Если почувствуете, что ситуация снова тревожит — можете написать мне 🌙",
-            "Если захотите посмотреть глубже — возвращайтесь. Иногда спустя время открываются новые линии 🌙",
-            "Берегите себя, душа моя 🌙\nЕсли понадоблюсь — я здесь.",
+            f"Если почувствуете, что ситуация снова тревожит — можете написать мне {_emo()}",
+            f"Если захотите посмотреть глубже — возвращайтесь. Иногда спустя время открываются новые линии {_emo()}",
+            f"Берегите себя, душа моя {_emo()} Если понадоблюсь — я здесь.",
         ])
         await _send(bot, chat_id, closing, biz_conn_id)
 
@@ -359,10 +367,10 @@ async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id:
 async def _stage_completed(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None) -> None:
     """Консультация завершена — тёплые завершающие фразы."""
     msgs = [
-        "Если почувствуете, что ситуация снова тревожит — можете написать мне 🌙",
-        "Иногда спустя время открываются новые линии ситуации 🌙",
-        "Если захотите посмотреть глубже — возвращайтесь, душа моя.",
-        "Я здесь 🌙",
+        f"Если почувствуете, что ситуация снова тревожит — можете написать мне {_emo()}",
+        f"Иногда спустя время открываются новые линии ситуации {_emo()}",
+        f"Если захотите посмотреть глубже — возвращайтесь, душа моя {_emo()}",
+        f"Я здесь {_emo()}",
     ]
     await typing_short(bot, chat_id, biz_conn_id)
     await _send(bot, chat_id, random.choice(msgs), biz_conn_id)
