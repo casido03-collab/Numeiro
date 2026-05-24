@@ -226,6 +226,11 @@ from bot.business_dialog.prompts import (
 )
 from bot.business_dialog.tribute_flow import payment_keyboard, return_payment_keyboard, TRIBUTE_PRICE
 from bot.business_dialog.upsell import get_tier, tier_link, upsell_bridge, is_accompaniment
+from bot.business_dialog.validators import (
+    validate_name, NAME_ERRORS,
+    validate_birth_date, BIRTH_DATE_ERRORS,
+    validate_city, CITY_ERRORS,
+)
 
 router = Router(name="business_handlers")
 logger = logging.getLogger(__name__)
@@ -640,11 +645,14 @@ async def _stage_new(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str 
 
 
 async def _stage_name(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
-    if not text:
-        await _send(bot, chat_id, f"Напишите своё имя {_emo()}", biz_conn_id)
+    ok, result = validate_name(text)
+    if not ok:
+        error_msg = NAME_ERRORS.get(result, f"Напишите своё имя {_emo()}")
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, error_msg, biz_conn_id)
         return
 
-    name = text.strip().split()[0].capitalize()
+    name   = result
     gender = _detect_gender(name)
     await store_profile_field(telegram_id, "name", name)
     await store_profile_field(telegram_id, "gender", gender)
@@ -659,11 +667,14 @@ async def _stage_name(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
 
 
 async def _stage_birth_date(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
-    if not text:
-        await _send(bot, chat_id, f"Напишите дату рождения в формате дд.мм.гггг {_emo()}", biz_conn_id)
+    ok, result = validate_birth_date(text)
+    if not ok:
+        error_msg = BIRTH_DATE_ERRORS.get(result, f"Напишите дату рождения вот так: 15.03.1990 {_emo()}")
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, error_msg, biz_conn_id)
         return
 
-    await store_profile_field(telegram_id, "birth_date", text)
+    await store_profile_field(telegram_id, "birth_date", result)
     await set_biz_stage(telegram_id, "collecting_city")
 
     response = f"Благодарю вас {_emo()} И последний вопрос прежде чем мы начнём — в каком городе вы живёте?"
@@ -682,11 +693,14 @@ def _problem_intros(name: str) -> list[str]:
 
 
 async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
-    if not text:
-        await _send(bot, chat_id, f"Напишите название города {_emo()}", biz_conn_id)
+    ok, result = validate_city(text)
+    if not ok:
+        error_msg = CITY_ERRORS.get(result, f"Напишите название города {_emo()}")
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, error_msg, biz_conn_id)
         return
 
-    await store_profile_field(telegram_id, "city", text)
+    await store_profile_field(telegram_id, "city", result)
     await set_biz_stage(telegram_id, "collecting_problem")
 
     profile = await get_profile(telegram_id)
