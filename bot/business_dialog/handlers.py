@@ -12,9 +12,25 @@ from bot.business_dialog.session_manager import (
     store_biz_conn, get_biz_conn,
     get_followup_left, decrement_followup,
     set_followup_left, reset_session,
+    set_payment_offered,
 )
 
 _RESET_PHRASE = "сброс12"
+
+_PAYMENT_READY = [
+    "я готова", "я готов", "давайте", "давай попробуем", "попробуем",
+    "хочу попробовать", "хочу заказать", "хочу оплатить", "как оплатить",
+    "где оплатить", "согласна", "согласен", "берём", "возьмём", "оплачу",
+    "закажу", "оформить", "хочу узнать больше", "интересно попробовать",
+    "готова платить", "готов платить", "давайте закажу", "давайте попробуем",
+    "да, давайте", "да давайте", "ок давайте", "окей давайте",
+]
+
+
+def _wants_to_pay(text: str) -> bool:
+    """Определить хочет ли пользователь перейти к оплате."""
+    t = text.lower().strip()
+    return any(phrase in t for phrase in _PAYMENT_READY)
 from bot.business_dialog.typing_simulation import (
     typing_short, typing_medium, typing_long, typing_deflect, typing_for_text
 )
@@ -216,6 +232,21 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
 
 
 async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
+    # Если пользователь сам выражает готовность оплатить — сразу даём ссылку
+    if _wants_to_pay(text):
+        profile = await get_profile(telegram_id)
+        prod_name = profile.get("product_name", "Разбор ситуации")
+        await set_payment_offered(telegram_id)
+        await set_biz_stage(telegram_id, "waiting_payment")
+        msg = (
+            f"Хорошо, душа моя 🌙\n\n"
+            f"✨ «{prod_name}» — {TRIBUTE_PRICE} ₽\n\n"
+            f"Вот ссылка — нажмите и оплатите удобным способом."
+        )
+        await typing_for_text(bot, chat_id, biz_conn_id, msg)
+        await _send(bot, chat_id, msg, biz_conn_id, reply_markup=payment_keyboard())
+        return
+
     free_count = await get_free_count(telegram_id)
 
     # После лимита — переключаемся на deflect + предложение оплаты
@@ -235,6 +266,7 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
             biz_conn_id,
             reply_markup=payment_keyboard(),
         )
+        await set_payment_offered(telegram_id)
         await set_biz_stage(telegram_id, "waiting_payment")
         return
 
@@ -264,6 +296,7 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
     if new_count == 4:
         prod_name = profile.get("product_name", "Разбор ситуации")
         await typing_short(bot, chat_id, biz_conn_id)
+        await set_payment_offered(telegram_id)
         await _send(
             bot, chat_id,
             f"Я уже вижу некоторые важные моменты в вашей ситуации 🌙\n\n"

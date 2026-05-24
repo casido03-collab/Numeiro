@@ -141,18 +141,17 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
 
 
 async def _send_business_reminders(bot: Bot, session_maker) -> None:
-    """Отправить reminder пользователям business-диалога не оплатившим через 1ч."""
+    """Отправить reminder пользователям которым была показана ссылка оплаты, но не оплатили (через 1ч)."""
     import logging
-    from datetime import datetime, timezone, timedelta
+    import time
     from sqlalchemy import select
     logger = logging.getLogger(__name__)
 
     try:
         from bot.business_dialog.models import BusinessSession, BusinessProfile
-        from bot.business_dialog.session_manager import get_biz_conn
-        from bot.business_dialog.tribute_flow import return_payment_keyboard
+        from bot.business_dialog.session_manager import get_biz_conn, get_payment_offered_at
 
-        threshold = datetime.now(timezone.utc) - timedelta(hours=1)
+        one_hour_ago = int(time.time()) - 3600
 
         async with session_maker() as session:
             result = await session.execute(
@@ -165,13 +164,18 @@ async def _send_business_reminders(bot: Bot, session_maker) -> None:
                 .where(
                     BusinessSession.status == "free",
                     BusinessSession.reminder_sent == False,  # noqa: E712
-                    BusinessSession.updated_at <= threshold,
                 )
             )
             rows = result.all()
 
             for biz_sess, profile in rows:
-                tid  = biz_sess.telegram_id
+                tid = biz_sess.telegram_id
+
+                # Напоминание только если ссылка на оплату уже была показана
+                offered_at = await get_payment_offered_at(tid)
+                if not offered_at or offered_at > one_hour_ago:
+                    continue  # ссылка не показывалась или показана менее часа назад
+
                 name = profile.name if profile else "друг"
                 biz_conn_id = await get_biz_conn(tid)
 
@@ -183,7 +187,6 @@ async def _send_business_reminders(bot: Bot, session_maker) -> None:
                     send_kw: dict = {
                         "chat_id": tid, "text": text,
                         "parse_mode": None,
-                        "reply_markup": return_payment_keyboard(),
                     }
                     if biz_conn_id:
                         send_kw["business_connection_id"] = biz_conn_id

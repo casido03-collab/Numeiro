@@ -139,6 +139,23 @@ async def set_followup_left(telegram_id: int, n: int) -> None:
     await _set(telegram_id, sess)
 
 
+# ─── Payment offered timestamp ────────────────────────────────────────────────
+
+async def set_payment_offered(telegram_id: int) -> None:
+    """Зафиксировать момент когда была показана ссылка на оплату (однократно)."""
+    import time
+    sess = await _get(telegram_id)
+    if "payment_offered_at" not in sess:
+        sess["payment_offered_at"] = int(time.time())
+        await _set(telegram_id, sess)
+
+
+async def get_payment_offered_at(telegram_id: int) -> int | None:
+    """Вернуть unix-timestamp когда была показана ссылка на оплату."""
+    sess = await _get(telegram_id)
+    return sess.get("payment_offered_at")
+
+
 # ─── Reset ────────────────────────────────────────────────────────────────────
 
 async def reset_session(telegram_id: int) -> None:
