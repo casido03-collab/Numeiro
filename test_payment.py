@@ -13,20 +13,24 @@ PURCHASE_ID = "test_pay_001"
 
 
 async def main():
-    # Подключаем окружение проекта
     from config import settings
+    from aiogram import Bot
     from bot.services.cache import get_redis
-    from bot.services.database import async_session_maker
-    from bot.business_dialog.tribute_flow import _process_payment
+    from database.base import async_session_maker
+    import bot.business_dialog.tribute_flow as tf
+
+    # Инициализируем бота (нужен для отправки сообщений внутри _process_payment)
+    bot = Bot(token=settings.bot_token)
+    tf._bot = bot
 
     print(f"Simulating payment: tg_id={TELEGRAM_ID}, amount={AMOUNT}")
 
-    # Дедупликация — сбрасываем ключ чтобы повторные тесты работали
+    # Сбрасываем дедупликацию чтобы повторные тесты работали
     r = await get_redis()
     await r.delete(f"trib_paid:{PURCHASE_ID}")
 
     async with async_session_maker() as session:
-        await _process_payment(
+        await tf._process_payment(
             session,
             telegram_id=TELEGRAM_ID,
             payment_id=PURCHASE_ID,
@@ -34,6 +38,7 @@ async def main():
             product_id="",
         )
 
+    await bot.session.close()
     print("Done.")
 
 asyncio.run(main())
