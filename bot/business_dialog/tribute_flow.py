@@ -1,4 +1,6 @@
 """Tribute payment integration — ссылка на оплату + обработка webhook."""
+import hashlib
+import hmac
 import json
 import logging
 
@@ -46,10 +48,29 @@ def return_payment_keyboard() -> InlineKeyboardMarkup:
 
 # ─── Webhook handler ──────────────────────────────────────────────────────────
 
+def _verify_tribute_signature(raw_body: bytes, signature: str, secret: str) -> bool:
+    """Проверить HMAC-SHA256 подпись от Tribute."""
+    if not secret:
+        return True  # ключ не настроен — пропускаем (dev-режим)
+    expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
 async def handle_tribute_webhook(request: web.Request) -> web.Response:
     """POST /webhooks/tribute — уведомление об оплате от Tribute."""
+    raw_body = await request.read()
+
+    # Проверка подписи
+    from config import settings
+    sig_header = request.headers.get("trbt-signature", "")
+    if settings.tribute_api_key and not _verify_tribute_signature(
+        raw_body, sig_header, settings.tribute_api_key
+    ):
+        logger.warning("Tribute webhook: invalid signature")
+        return web.Response(status=401, text="invalid signature")
+
     try:
-        body = await request.json()
+        body = json.loads(raw_body)
     except Exception:
         logger.warning("Tribute webhook: bad JSON")
         return web.Response(status=400, text="bad json")
@@ -138,7 +159,7 @@ async def _process_payment(
             logger.warning("Tribute: send failed for %s: %s", telegram_id, e)
 
     # Подтверждение оплаты
-    await _send("Оплата прошла, душа моя 🌙\n\nСейчас я спокойно посмотрю твою ситуацию…")
+    await _send("Оплата прошла, душа моя 🌙\n\nСейчас я спокойно посмотрю вашу ситуацию…")
 
     # Имитация работы (5–8 сек)
     await typing_long(_bot, telegram_id, biz_conn_id)
@@ -165,7 +186,7 @@ async def _process_payment(
     # Сообщение о follow-up
     await typing_long(_bot, telegram_id, biz_conn_id)
     await _send(
-        "После просмотра ты можешь задать ещё 2 уточняющих вопроса 🌙\n\nПросто напиши — я слушаю."
+        "После просмотра вы можете задать ещё 2 уточняющих вопроса 🌙\n\nНапишите — я слушаю."
     )
 
     # Обновить stage
