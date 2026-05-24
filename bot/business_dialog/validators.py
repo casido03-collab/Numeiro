@@ -11,6 +11,51 @@ _NAME_RE = re.compile(r"^[а-яёА-ЯЁa-zA-Z][а-яёА-ЯЁa-zA-Z\s\-]{1,29}$
 _JUNK_RE   = re.compile(r"(.)\1{2,}")                        # ааааа, 111, ...
 _QWERTY_RE = re.compile(r"(qwert|asdf|zxcv|йцукен|фыва|ячсм)", re.I)
 
+# Гласные русские и латинские
+_VOWELS = set("аеёиоуыэюяАЕЁИОУЫЭЮЯaeiouAEIOU")
+# Согласные русские (без ь/ъ которые не счит. полноценными согласными)
+_CONSONANTS = set("бвгджзйклмнпрстфхцчшщБВГДЖЗЙКЛМНПРСТФХЦЧШЩbcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ")
+
+
+def _max_consecutive(s: str, char_set: set) -> int:
+    """Максимальное количество символов из char_set подряд."""
+    max_c = cur = 0
+    for ch in s:
+        if ch in char_set:
+            cur += 1
+            max_c = max(max_c, cur)
+        else:
+            cur = 0
+    return max_c
+
+
+def _vowel_ratio(s: str) -> float:
+    """Доля гласных среди букв."""
+    letters = [c for c in s if c.isalpha()]
+    if not letters:
+        return 0.0
+    return sum(1 for c in letters if c in _VOWELS) / len(letters)
+
+
+def _looks_like_name(name: str) -> bool:
+    """Проверить что имя похоже на настоящее по фонетической структуре."""
+    # Хотя бы одна гласная
+    if not any(c in _VOWELS for c in name):
+        return False
+    # Не более 2 гласных подряд — в реальных именах 3+ не бывает
+    # (Аиша=2, Мария=2, ыоа=3 → мусор)
+    if _max_consecutive(name, _VOWELS) >= 3:
+        return False
+    # Не более 5 согласных подряд (Александр: "кса"=2, "ндр"=3 — норма)
+    if _max_consecutive(name, _CONSONANTS) > 5:
+        return False
+    # Доля гласных для имён длиннее 4 символов: 15–80%
+    if len(name) >= 5:
+        ratio = _vowel_ratio(name)
+        if ratio < 0.15 or ratio > 0.80:
+            return False
+    return True
+
 
 def validate_name(text: str) -> tuple[bool, str]:
     """
@@ -27,6 +72,8 @@ def validate_name(text: str) -> tuple[bool, str]:
     if not _NAME_RE.match(name):
         return False, "invalid_chars"
     if _JUNK_RE.search(name) or _QWERTY_RE.search(name):
+        return False, "junk"
+    if not _looks_like_name(name):
         return False, "junk"
     return True, name
 
