@@ -34,11 +34,25 @@ _PAYMENT_READY = [
     "да, давайте", "да давайте", "ок давайте", "окей давайте",
 ]
 
+_CLOSING_PHRASES = [
+    "спасибо", "благодарю", "благодарен", "благодарна", "понял", "поняла",
+    "понятно", "всё ясно", "все ясно", "ясно", "окей", "ок", "ok",
+    "ладно", "договорились", "пока", "до свидания", "всего доброго",
+    "хорошо", "всё понятно", "всё хорошо", "все хорошо",
+]
+
 
 def _wants_to_pay(text: str) -> bool:
     """Определить хочет ли пользователь перейти к оплате."""
     t = text.lower().strip()
     return any(phrase in t for phrase in _PAYMENT_READY)
+
+
+def _is_closing(text: str) -> bool:
+    """Определить завершает ли пользователь разговор."""
+    t = text.lower().strip()
+    # Только короткие фразы — длинный ответ не считается прощанием
+    return len(t) < 40 and any(phrase in t for phrase in _CLOSING_PHRASES)
 from bot.business_dialog.typing_simulation import (
     typing_short, typing_medium, typing_long, typing_deflect, typing_for_text
 )
@@ -142,6 +156,28 @@ _PAYMENT_TEXTS = [
     "Всё что нужно — уже у меня {e}\n\n✨ «{p}» — {price} ₽\n\nОплатите — и я немедленно начну смотреть.",
     "Я уже подготовила для вас разбор, он ждёт {e}\n\n✨ «{p}» — {price} ₽\n\nКак только оплата пройдёт — сразу приступлю.",
 ]
+
+
+_CLOSING_PIVOT_TEXTS = [
+    "Рада была поговорить с вами {e}\n\nЕсть кое-что, что я ещё не успела сказать — в вашей ситуации есть линии, которые стоит посмотреть глубже. Если интересно — могу сделать это прямо сейчас.",
+    "Подождите {e}\n\nЯ вижу в вашей ситуации кое-что важное — то, о чём мы пока не говорили. Хотите, я посмотрю это подробнее?",
+    "Прежде чем вы уйдёте {e}\n\nВ том, что вы рассказали, есть момент, который требует внимания. Я могу посмотреть его для вас — спокойно и полностью.",
+    "Одну минуту {e}\n\nВ вашей ситуации есть нить, которую я только начала видеть. Было бы жаль её не рассмотреть — если хотите, я могу сделать это сейчас.",
+]
+
+
+async def _send_closing_pivot(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
+    profile: dict,
+) -> None:
+    """Когда клиент прощается — мягко удержать и предложить углублённый разбор."""
+    pivot = random.choice(_CLOSING_PIVOT_TEXTS).format(e=_emo())
+    await typing_for_text(bot, chat_id, biz_conn_id, pivot)
+    await _send(bot, chat_id, pivot, biz_conn_id)
+
+    # Через паузу — полный оффер
+    await typing_long(bot, chat_id, biz_conn_id)
+    await _send_payment_offer(bot, chat_id, telegram_id, biz_conn_id, profile)
 
 
 async def _send_payment_offer(
@@ -303,10 +339,16 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
 
 
 async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
-    # Если пользователь сам выражает готовность оплатить — плавно переходим к оплате
+    # Если пользователь выражает готовность оплатить — плавно переходим к оплате
     if _wants_to_pay(text):
         profile = await get_profile(telegram_id)
         await _send_payment_offer(bot, chat_id, telegram_id, biz_conn_id, profile)
+        return
+
+    # Если пользователь прощается/благодарит — не отпускаем, предлагаем углублённый разбор
+    if _is_closing(text):
+        profile = await get_profile(telegram_id)
+        await _send_closing_pivot(bot, chat_id, telegram_id, biz_conn_id, profile)
         return
 
     free_count = await get_free_count(telegram_id)
