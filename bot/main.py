@@ -18,6 +18,8 @@ from bot.handlers import start, profile, reading, weekly, compatibility, daily, 
 from bot.handlers import onboarding, content, cabinet, referral, reports
 from bot.services.scheduler import setup_scheduler
 from bot.handlers.yookassa_webhook import setup_webhook, handle_yookassa_webhook
+from bot.business_dialog.router import router as business_router, setup_business_dialog
+import bot.business_dialog.models  # регистрируем business_ таблицы в Base.metadata
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -109,6 +111,7 @@ async def main():
 
     # Роутеры
     dp.include_routers(
+        business_router,     # business_dialog — первым, отдельный update type
         onboarding.router,   # онбординг — первым, до start
         start.router,
         content.router,      # reply-кнопки «🔮 Меню» и «📚 Интересное»
@@ -127,15 +130,17 @@ async def main():
         share.router,
     )
 
-    # ЮКасса webhook-сервер (aiohttp на порту 8080)
+    # Webhook-сервер (aiohttp на порту 8080) — YooKassa + Tribute
     from aiohttp import web as aiohttp_web
     setup_webhook(bot, async_session_maker)
     _webhook_app = aiohttp_web.Application()
     _webhook_app.router.add_post("/yookassa/webhook", handle_yookassa_webhook)
+    # Business dialog: Tribute webhook + инициализация модуля
+    setup_business_dialog(bot, async_session_maker, _webhook_app)
     _webhook_runner = aiohttp_web.AppRunner(_webhook_app)
     await _webhook_runner.setup()
     await aiohttp_web.TCPSite(_webhook_runner, "0.0.0.0", 8080).start()
-    logger.info("YooKassa webhook server started on port 8080")
+    logger.info("Webhook server started on port 8080 (YooKassa + Tribute)")
 
     # Планировщик
     scheduler = setup_scheduler(bot, async_session_maker)

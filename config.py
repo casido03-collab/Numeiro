@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     yookassa_shop_id: str = Field(default="", env="YOOKASSA_SHOP_ID")
     yookassa_secret_key: str = Field(default="", env="YOOKASSA_SECRET_KEY")
     yookassa_return_url: str = Field(default="https://t.me/numerelogia_astro_bot", env="YOOKASSA_RETURN_URL")
+    tribute_link: str = Field(default="", env="TRIBUTE_LINK")
     debug: bool = Field(default=False, env="DEBUG")
 
     @property

@@ -123,6 +123,9 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
         async with session_maker() as session:
             await run_trial_upsell(bot, session)
 
+    async def _business_reminders():
+        await _send_business_reminders(bot, session_maker)
+
     # Ежедневные пуши в 9:00 МСК
     scheduler.add_job(_daily_push, CronTrigger(hour=6, minute=0))
     # Напоминания об окончании подписки в 12:00 МСК
@@ -131,5 +134,64 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     scheduler.add_job(_retention, CronTrigger(minute="*/10"))
     # Trial upsell — каждые 5 минут (проверяет 1ч неактивности для free)
     scheduler.add_job(_trial_upsell, CronTrigger(minute="*/5"))
+    # Business dialog: напоминание неоплатившим (1ч, 1 раз)
+    scheduler.add_job(_business_reminders, CronTrigger(minute="*/15"))
 
     return scheduler
+
+
+async def _send_business_reminders(bot: Bot, session_maker) -> None:
+    """Отправить reminder пользователям business-диалога не оплатившим через 1ч."""
+    import logging
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select
+    logger = logging.getLogger(__name__)
+
+    try:
+        from bot.business_dialog.models import BusinessSession, BusinessProfile
+        from bot.business_dialog.session_manager import get_biz_conn
+        from bot.business_dialog.tribute_flow import return_payment_keyboard
+
+        threshold = datetime.now(timezone.utc) - timedelta(hours=1)
+
+        async with session_maker() as session:
+            result = await session.execute(
+                select(BusinessSession, BusinessProfile)
+                .join(
+                    BusinessProfile,
+                    BusinessProfile.telegram_id == BusinessSession.telegram_id,
+                    isouter=True,
+                )
+                .where(
+                    BusinessSession.status == "free",
+                    BusinessSession.reminder_sent == False,  # noqa: E712
+                    BusinessSession.updated_at <= threshold,
+                )
+            )
+            rows = result.all()
+
+            for biz_sess, profile in rows:
+                tid  = biz_sess.telegram_id
+                name = profile.name if profile else "друг"
+                biz_conn_id = await get_biz_conn(tid)
+
+                text = (
+                    f"{name}, я оставила твой разбор открытым 🌙\n\n"
+                    f"Если почувствуешь, что готова — можешь вернуться и спокойно продолжить просмотр."
+                )
+                try:
+                    send_kw: dict = {
+                        "chat_id": tid, "text": text,
+                        "parse_mode": None,
+                        "reply_markup": return_payment_keyboard(),
+                    }
+                    if biz_conn_id:
+                        send_kw["business_connection_id"] = biz_conn_id
+                    await bot.send_message(**send_kw)
+                    biz_sess.reminder_sent = True
+                    await session.commit()
+                    logger.info("Business reminder sent to %s", tid)
+                except Exception as e:
+                    logger.warning("Business reminder failed for %s: %s", tid, e)
+    except Exception as e:
+        logger.warning("_send_business_reminders error: %s", e)
