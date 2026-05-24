@@ -48,6 +48,14 @@ def _wants_to_pay(text: str) -> bool:
     return any(phrase in t for phrase in _PAYMENT_READY)
 
 
+def _detect_gender(name: str) -> str:
+    """Определить пол по имени (эвристика по окончанию)."""
+    n = name.strip().lower()
+    if n.endswith(('а', 'я')):
+        return 'female'
+    return 'male'
+
+
 def _is_closing(text: str) -> bool:
     """Определить завершает ли пользователь разговор."""
     t = text.lower().strip()
@@ -188,6 +196,7 @@ async def _send_payment_offer(
     prod_name = profile.get("product_name", "Разбор ситуации")
     context   = json.dumps({
         "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
         "birth_date": profile.get("birth_date", ""),
         "problem":    profile.get("problem", ""),
         "intent":     profile.get("intent", ""),
@@ -249,7 +258,9 @@ async def _stage_name(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
         return
 
     name = text.strip().split()[0].capitalize()
+    gender = _detect_gender(name)
     await store_profile_field(telegram_id, "name", name)
+    await store_profile_field(telegram_id, "gender", gender)
     await set_biz_stage(telegram_id, "collecting_birth_date")
 
     response = (
@@ -317,6 +328,7 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
     # Первый AI-ответ — тепло, коротко, показываем что начали смотреть
     context = json.dumps({
         "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
         "birth_date": profile.get("birth_date", ""),
         "city":       profile.get("city", ""),
         "problem":    text,
@@ -372,6 +384,7 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
 
     context = json.dumps({
         "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
         "birth_date": profile.get("birth_date", ""),
         "problem":    profile.get("problem", ""),
     }, ensure_ascii=False)
