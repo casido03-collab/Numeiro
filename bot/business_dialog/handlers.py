@@ -16,6 +16,7 @@ from bot.business_dialog.session_manager import (
     append_history, get_history, format_history,
     get_paid_tier, set_paid_tier,
     get_tier_msg_count, increment_tier_msg_count,
+    set_last_activity,
 )
 
 _RESET_PHRASE = "сброс12"
@@ -309,6 +310,9 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         if first_hit:
             await _notify_admin_day_limit(bot, telegram_id, day_count)
         return  # тихо игнорируем
+
+    # Трекаем активность (для планировщика напоминаний)
+    await set_last_activity(telegram_id)
 
     # Всегда сохраняем актуальный business_connection_id
     if biz_conn_id:

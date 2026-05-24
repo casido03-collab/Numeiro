@@ -217,6 +217,29 @@ async def reset_tier_msg_count(telegram_id: int) -> None:
     await _set(telegram_id, sess)
 
 
+# ─── Last activity tracking ──────────────────────────────────────────────────
+
+async def set_last_activity(telegram_id: int) -> None:
+    """Зафиксировать время последнего сообщения от пользователя."""
+    import time
+    try:
+        r = await get_redis()
+        await r.set(f"biz_activity:{telegram_id}", str(int(time.time())), ex=86400 * 30)
+    except Exception as e:
+        logger.warning("set_last_activity error: %s", e)
+
+
+async def get_last_activity(telegram_id: int) -> int | None:
+    """Вернуть unix-timestamp последней активности пользователя."""
+    try:
+        r = await get_redis()
+        val = await r.get(f"biz_activity:{telegram_id}")
+        return int(val) if val else None
+    except Exception as e:
+        logger.warning("get_last_activity error: %s", e)
+        return None
+
+
 # ─── Reset ────────────────────────────────────────────────────────────────────
 
 async def reset_session(telegram_id: int) -> None:

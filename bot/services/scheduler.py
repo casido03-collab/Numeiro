@@ -126,6 +126,12 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     async def _business_reminders():
         await _send_business_reminders(bot, session_maker)
 
+    async def _business_second_reminders():
+        await _send_second_business_reminders(bot, session_maker)
+
+    async def _business_abandoned():
+        await _send_abandoned_reminders(bot, session_maker)
+
     # Ежедневные пуши в 9:00 МСК
     scheduler.add_job(_daily_push, CronTrigger(hour=6, minute=0))
     # Напоминания об окончании подписки в 12:00 МСК
@@ -134,8 +140,12 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     scheduler.add_job(_retention, CronTrigger(minute="*/10"))
     # Trial upsell — каждые 5 минут (проверяет 1ч неактивности для free)
     scheduler.add_job(_trial_upsell, CronTrigger(minute="*/5"))
-    # Business dialog: напоминание неоплатившим (1ч, 1 раз)
+    # Business dialog: 1й reminder неоплатившим через 1ч (с кнопкой)
     scheduler.add_job(_business_reminders, CronTrigger(minute="*/15"))
+    # Business dialog: 2й reminder через 24ч после первого (без кнопки)
+    scheduler.add_job(_business_second_reminders, CronTrigger(minute="*/30"))
+    # Business dialog: пуш для брошенных диалогов через 3ч тишины
+    scheduler.add_job(_business_abandoned, CronTrigger(minute="*/30"))
 
     return scheduler
 
@@ -217,3 +227,177 @@ async def _send_business_reminders(bot: Bot, session_maker) -> None:
                     logger.warning("Business reminder failed for %s: %s", tid, e)
     except Exception as e:
         logger.warning("_send_business_reminders error: %s", e)
+
+
+async def _send_second_business_reminders(bot: Bot, session_maker) -> None:
+    """Второй пуш через 24ч после первого напоминания — без кнопки, тёплый текст.
+    Только если пользователь так и не оплатил и молчит больше 24 часов."""
+    import logging
+    import time
+    from sqlalchemy import select
+    logger = logging.getLogger(__name__)
+
+    _SECOND_REMINDER_TEXTS = [
+        "{name}, я всё ещё здесь 🌙\n\nВаша ситуация не выходит у меня из головы. Если почувствуете, что готовы продолжить — я рядом.",
+        "Думаю о вас, {name} ✨\n\nИногда нужно время, чтобы решиться. Я никуда не тороплюсь — буду здесь когда будете готовы.",
+        "{name}, я не забыла о вас 💫\n\nТо, что вы рассказали — важно. Когда захотите продолжить, просто напишите.",
+        "Бывает, что жизнь отвлекает, {name} 🌟\n\nЯ здесь, если захотите вернуться к нашему разговору.",
+    ]
+
+    try:
+        from bot.business_dialog.models import BusinessSession, BusinessProfile
+        from bot.business_dialog.session_manager import (
+            get_biz_conn, get_last_activity, get_profile,
+        )
+
+        now           = int(time.time())
+        one_day_ago   = now - 86400
+        one_hour_ago  = now - 3600
+
+        async with session_maker() as session:
+            result = await session.execute(
+                select(BusinessSession, BusinessProfile)
+                .join(
+                    BusinessProfile,
+                    BusinessProfile.telegram_id == BusinessSession.telegram_id,
+                    isouter=True,
+                )
+                .where(
+                    BusinessSession.status == "free",
+                    BusinessSession.reminder_sent == True,  # noqa: E712 — первый уже был
+                )
+            )
+            rows = result.all()
+
+            for biz_sess, profile in rows:
+                tid = biz_sess.telegram_id
+
+                # Последняя активность должна быть > 24ч назад
+                last_active = await get_last_activity(tid)
+                if last_active and last_active > one_day_ago:
+                    continue  # ещё активен недавно
+
+                # Первый reminder должен быть показан > 1ч назад (уже точно видел)
+                from bot.business_dialog.session_manager import get_payment_offered_at
+                offered_at = await get_payment_offered_at(tid)
+                if not offered_at or offered_at > one_day_ago:
+                    continue  # не прошли сутки с предложения
+
+                # Деdup: один второй reminder в сутки
+                from bot.services.cache import get_redis
+                r = await get_redis()
+                dedup_key = f"biz_reminder2:{tid}"
+                already = not await r.set(dedup_key, "1", nx=True, ex=86400 * 3)
+                if already:
+                    continue
+
+                redis_profile = await get_profile(tid)
+                name          = (profile.name if profile else None) or redis_profile.get("name") or "душа моя"
+                biz_conn_id   = await get_biz_conn(tid)
+
+                text = random.choice(_SECOND_REMINDER_TEXTS).format(name=name)
+
+                try:
+                    send_kw: dict = {"chat_id": tid, "text": text, "parse_mode": None}
+                    if biz_conn_id:
+                        send_kw["business_connection_id"] = biz_conn_id
+                    await bot.send_message(**send_kw)
+                    logger.info("Second business reminder sent to %s", tid)
+                except Exception as e:
+                    logger.warning("Second reminder failed for %s: %s", tid, e)
+
+    except Exception as e:
+        logger.warning("_send_second_business_reminders error: %s", e)
+
+
+async def _send_abandoned_reminders(bot: Bot, session_maker) -> None:
+    """Пуш для брошенных диалогов — человек начал, но исчез на 3+ часов.
+    Стадия: сбор данных или бесплатный диалог. Без кнопки, тёплый контекстный текст."""
+    import logging
+    import time
+    from sqlalchemy import select
+    logger = logging.getLogger(__name__)
+
+    # Стадии = человек ещё не дошёл до предложения оплаты
+    _ABANDONED_STAGES = {
+        "collecting_name", "collecting_birth_date",
+        "collecting_city", "collecting_problem", "free_dialog",
+    }
+
+    # Тексты для тех у кого есть имя (дошли до free_dialog или дальше сбора)
+    _TEXTS_WITH_NAME = [
+        "{name}, вы куда-то пропали 🌙\n\nМы только начали — и я чувствую, что в вашей ситуации есть что-то важное. Возвращайтесь когда будете готовы.",
+        "Вспомнила о вас, {name} ✨\n\nМы остановились на самом интересном месте. Если захотите продолжить — просто напишите.",
+        "{name}, я вас жду 💫\n\nТо, что вы рассказали — важно. Готова продолжить когда вы будете готовы.",
+    ]
+
+    # Тексты для тех кто не успел назвать имя
+    _TEXTS_NO_NAME = [
+        "Вы куда-то пропали 🌙\n\nЕсли хотите — можем продолжить наш разговор. Я здесь.",
+        "Помню, что вы заходили ✨\n\nЕсли что-то отвлекло — не страшно. Возвращайтесь когда будете готовы.",
+        "Я всё ещё здесь 💫\n\nЕсли хотите поговорить — просто напишите, продолжим с того места где остановились.",
+    ]
+
+    try:
+        from bot.business_dialog.models import BusinessSession, BusinessProfile
+        from bot.business_dialog.session_manager import (
+            get_biz_conn, get_biz_stage, get_last_activity, get_profile,
+        )
+        from bot.services.cache import get_redis
+
+        now            = int(time.time())
+        three_hours_ago = now - 10800   # 3 часа
+
+        async with session_maker() as session:
+            result = await session.execute(
+                select(BusinessSession, BusinessProfile)
+                .join(
+                    BusinessProfile,
+                    BusinessProfile.telegram_id == BusinessSession.telegram_id,
+                    isouter=True,
+                )
+                .where(BusinessSession.status == "free")
+            )
+            rows = result.all()
+
+            r = await get_redis()
+
+            for biz_sess, profile in rows:
+                tid = biz_sess.telegram_id
+
+                # Проверяем реальную стадию из Redis
+                stage = await get_biz_stage(tid)
+                if stage not in _ABANDONED_STAGES:
+                    continue
+
+                # Молчит > 3 часов
+                last_active = await get_last_activity(tid)
+                if not last_active or last_active > three_hours_ago:
+                    continue
+
+                # Деdup: один abandoned-пуш на пользователя (раз в 3 дня)
+                dedup_key = f"biz_abandoned:{tid}"
+                already = not await r.set(dedup_key, "1", nx=True, ex=86400 * 3)
+                if already:
+                    continue
+
+                redis_profile = await get_profile(tid)
+                name          = (profile.name if profile else None) or redis_profile.get("name")
+                biz_conn_id   = await get_biz_conn(tid)
+
+                if name:
+                    text = random.choice(_TEXTS_WITH_NAME).format(name=name)
+                else:
+                    text = random.choice(_TEXTS_NO_NAME)
+
+                try:
+                    send_kw: dict = {"chat_id": tid, "text": text, "parse_mode": None}
+                    if biz_conn_id:
+                        send_kw["business_connection_id"] = biz_conn_id
+                    await bot.send_message(**send_kw)
+                    logger.info("Abandoned reminder sent to %s (stage=%s)", tid, stage)
+                except Exception as e:
+                    logger.warning("Abandoned reminder failed for %s: %s", tid, e)
+
+    except Exception as e:
+        logger.warning("_send_abandoned_reminders error: %s", e)
