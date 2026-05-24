@@ -247,9 +247,39 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     biz_conn_id = message.business_connection_id
     username    = message.from_user.username
 
+    # ── Нетекстовые сообщения (стикеры, фото, голос и т.д.) ─────────────────
+    if not text:
+        return  # молча игнорируем — не тратим AI
+
+    # ── Rate limiting для business-сообщений (RateLimitMiddleware не покрывает) ─
+    from bot.services.cache import rate_limit_check, get_redis
+    from datetime import date
+    # 1. Не более 3 сообщений за 10 секунд
+    if not await rate_limit_check(telegram_id, "biz_10s", 3, 10):
+        return  # тихо игнорируем спам
+    # 2. Не более 15 сообщений за 60 секунд
+    if not await rate_limit_check(telegram_id, "biz_min", 15, 60):
+        return
+    # 3. Дневной лимит AI-вызовов: не более 120 в сутки на пользователя
+    day_key = f"biz_day:{telegram_id}:{date.today().isoformat()}"
+    r = await get_redis()
+    day_count = await r.incr(day_key)
+    if day_count == 1:
+        await r.expire(day_key, 86400)
+    if day_count > 120:
+        return  # тихо игнорируем — дневной лимит исчерпан
+
     # Всегда сохраняем актуальный business_connection_id
     if biz_conn_id:
         await store_biz_conn(telegram_id, biz_conn_id)
+
+    # ── Минимальная длина для осмысленного ответа ────────────────────────────
+    # Одиночные символы/смайлы в платных стадиях не генерируем AI-ответ
+    stage_now = await get_biz_stage(telegram_id)
+    if len(text) < 2 and stage_now in (
+        "waiting_payment", "waiting_upsell", "accompaniment", "followup"
+    ):
+        return
 
     # Кодовая фраза сброса сессии (для тестирования)
     if text.lower() == _RESET_PHRASE:
@@ -258,7 +288,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         await _send(bot, chat_id, "🔄 Сессия сброшена. Пишите — начнём заново.", biz_conn_id)
         return
 
-    stage = await get_biz_stage(telegram_id)
+    stage = stage_now  # уже получен выше
     logger.info("business_msg tid=%s stage=%s text=%.40s", telegram_id, stage, text)
 
     # Детект техподдержки — работает на любом этапе диалога
