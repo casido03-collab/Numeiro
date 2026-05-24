@@ -76,7 +76,7 @@ def _support_category(text: str) -> str:
     return "📩 Входящее обращение"
 
 
-async def _notify_admins(bot: Bot, telegram_id: int, name: str, text: str) -> None:
+async def _notify_admins(bot: Bot, telegram_id: int, name: str, text: str, username: str | None = None) -> None:
     """Уведомить всех админов о поступившем обращении в поддержку."""
     from config import settings
     admin_ids = settings.admin_ids_list
@@ -85,9 +85,10 @@ async def _notify_admins(bot: Bot, telegram_id: int, name: str, text: str) -> No
         return
 
     category = _support_category(text)
+    username_str = f" @{username}" if username else ""
     msg = (
         f"🔔 {category}\n\n"
-        f"👤 {name} (tg_id: {telegram_id})\n\n"
+        f"👤 {name}{username_str} (tg_id: {telegram_id})\n\n"
         f"💬 {text}\n\n"
         f"Подключитесь к чату и ответьте вручную."
     )
@@ -192,6 +193,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     chat_id     = message.chat.id
     text        = (message.text or "").strip()
     biz_conn_id = message.business_connection_id
+    username    = message.from_user.username
 
     # Всегда сохраняем актуальный business_connection_id
     if biz_conn_id:
@@ -209,7 +211,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
 
     # Детект техподдержки — работает на любом этапе диалога
     if _is_support_request(text) and stage not in ("support",):
-        await _handle_support(bot, chat_id, telegram_id, biz_conn_id, text, stage)
+        await _handle_support(bot, chat_id, telegram_id, biz_conn_id, text, stage, username)
         return
 
     if stage in ("new", ""):
@@ -233,7 +235,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     elif stage == "completed":
         await _stage_completed(bot, chat_id, telegram_id, biz_conn_id)
     elif stage == "support":
-        await _stage_support(bot, chat_id, telegram_id, biz_conn_id, text)
+        await _stage_support(bot, chat_id, telegram_id, biz_conn_id, text, username)
 
 
 # ─── Двухшаговое предложение оплаты ──────────────────────────────────────────
@@ -323,7 +325,7 @@ async def _send_payment_offer(
 
 async def _handle_support(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
-    text: str, prev_stage: str,
+    text: str, prev_stage: str, username: str | None = None,
 ) -> None:
     """Первичная обработка обращения в техподдержку."""
     profile = await get_profile(telegram_id)
@@ -339,18 +341,19 @@ async def _handle_support(
     await _send(bot, chat_id, hold, biz_conn_id)
 
     # Уведомление админам
-    await _notify_admins(bot, telegram_id, name, text)
+    await _notify_admins(bot, telegram_id, name, text, username)
 
 
 async def _stage_support(
-    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str,
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
+    text: str, username: str | None = None,
 ) -> None:
     """Режим ожидания: пересылаем сообщения админу, пользователю — hold-ответ."""
     profile = await get_profile(telegram_id)
     name = profile.get("name") or "Гость"
 
     # Пересылаем новое сообщение админам
-    await _notify_admins(bot, telegram_id, name, text)
+    await _notify_admins(bot, telegram_id, name, text, username)
 
     # Пользователю — краткое подтверждение
     await typing_short(bot, chat_id, biz_conn_id)
