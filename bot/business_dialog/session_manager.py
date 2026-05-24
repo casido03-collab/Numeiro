@@ -185,6 +185,38 @@ async def get_payment_offered_at(telegram_id: int) -> int | None:
     return sess.get("payment_offered_at")
 
 
+# ─── Paid tier tracking ───────────────────────────────────────────────────────
+
+async def get_paid_tier(telegram_id: int) -> str | None:
+    sess = await _get(telegram_id)
+    return sess.get("paid_tier")
+
+
+async def set_paid_tier(telegram_id: int, tier_key: str) -> None:
+    sess = await _get(telegram_id)
+    sess["paid_tier"] = tier_key
+    await _set(telegram_id, sess)
+
+
+async def get_tier_msg_count(telegram_id: int) -> int:
+    sess = await _get(telegram_id)
+    return sess.get("tier_msg_count", 0)
+
+
+async def increment_tier_msg_count(telegram_id: int) -> int:
+    sess = await _get(telegram_id)
+    count = sess.get("tier_msg_count", 0) + 1
+    sess["tier_msg_count"] = count
+    await _set(telegram_id, sess)
+    return count
+
+
+async def reset_tier_msg_count(telegram_id: int) -> None:
+    sess = await _get(telegram_id)
+    sess["tier_msg_count"] = 0
+    await _set(telegram_id, sess)
+
+
 # ─── Reset ────────────────────────────────────────────────────────────────────
 
 async def reset_session(telegram_id: int) -> None:

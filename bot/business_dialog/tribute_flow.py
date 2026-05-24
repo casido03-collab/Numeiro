@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 _bot: Bot | None = None
 _session_maker = None
 
-TRIBUTE_PRICE = 190  # ₽
+TRIBUTE_PRICE = 190  # ₽ — базовая цена первого тира (для обратной совместимости)
 
 
 def setup_tribute(bot: Bot, session_maker) -> None:
@@ -30,19 +30,25 @@ def _tribute_link() -> str:
 
 # ─── Клавиатуры ───────────────────────────────────────────────────────────────
 
-def payment_keyboard() -> InlineKeyboardMarkup:
-    link = _tribute_link()
-    rows = []
+def payment_keyboard(tier_key: str = "t190") -> InlineKeyboardMarkup:
+    """Кнопка оплаты для конкретного тира."""
+    from bot.business_dialog.upsell import tier_link, get_tier
+    link  = tier_link(tier_key)
+    price = get_tier(tier_key).get("price", TRIBUTE_PRICE)
+    rows  = []
     if link:
-        rows.append([InlineKeyboardButton(text=f"💎 Оплатить разбор — {TRIBUTE_PRICE} ₽", url=link)])
+        rows.append([InlineKeyboardButton(text=f"💎 Оплатить — {price} ₽", url=link)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def return_payment_keyboard() -> InlineKeyboardMarkup:
-    link = _tribute_link()
-    rows = []
+def return_payment_keyboard(tier_key: str = "t190") -> InlineKeyboardMarkup:
+    """Кнопка возврата к оплате для конкретного тира."""
+    from bot.business_dialog.upsell import tier_link, get_tier
+    link  = tier_link(tier_key)
+    price = get_tier(tier_key).get("price", TRIBUTE_PRICE)
+    rows  = []
     if link:
-        rows.append([InlineKeyboardButton(text="💎 Вернуться к оплате", url=link)])
+        rows.append([InlineKeyboardButton(text=f"💎 Вернуться к оплате — {price} ₽", url=link)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -109,15 +115,25 @@ async def handle_tribute_webhook(request: web.Request) -> web.Response:
 async def _process_payment(
     session, telegram_id: int, payment_id: str, amount: int, product_id: str
 ) -> None:
-    """Активировать консультацию после подтверждённой оплаты."""
+    """Активировать консультацию после подтверждённой оплаты (любой тир)."""
     from sqlalchemy import select
-    from bot.business_dialog.models import BusinessSession, BusinessPayment, BusinessProfile
+    from bot.business_dialog.models import BusinessSession, BusinessPayment
     from bot.business_dialog.session_manager import (
-        get_biz_conn, set_biz_stage, get_profile, set_followup_left
+        get_biz_conn, set_biz_stage, get_profile, set_followup_left,
+        set_paid_tier, reset_tier_msg_count,
     )
     from bot.business_dialog.typing_simulation import typing_long
     from bot.business_dialog.services import generate_business
-    from bot.business_dialog.prompts import AISHA_PAID_PROMPT
+    from bot.business_dialog.prompts import (
+        AISHA_PAID_PROMPT, AISHA_CAUSE_PROMPT,
+        AISHA_FORECAST_PROMPT, AISHA_ACCOMPANIMENT_PROMPT,
+    )
+    from bot.business_dialog.upsell import get_tier_by_amount, get_tier, is_accompaniment
+
+    # Определяем тир по сумме оплаты
+    tier_key = get_tier_by_amount(amount)
+    tier     = get_tier(tier_key)
+    followup_limit = tier.get("followup_limit") or 2
 
     # Запись платежа
     session.add(BusinessPayment(
@@ -136,12 +152,14 @@ async def _process_payment(
     if biz_sess:
         biz_sess.status = "paid"
         biz_sess.payment_id = payment_id
-        biz_sess.followup_questions_left = 2
+        biz_sess.followup_questions_left = followup_limit
     await session.commit()
 
-    # Redis: обновить stage и followup
+    # Redis: сохранить тир, сбросить счётчики
+    await set_paid_tier(telegram_id, tier_key)
+    await reset_tier_msg_count(telegram_id)
     await set_biz_stage(telegram_id, "paid")
-    await set_followup_left(telegram_id, 2)
+    await set_followup_left(telegram_id, followup_limit)
 
     biz_conn_id = await get_biz_conn(telegram_id)
 
@@ -159,20 +177,38 @@ async def _process_payment(
             logger.warning("Tribute: send failed for %s: %s", telegram_id, e)
 
     # Подтверждение оплаты
-    await _send("Оплата прошла, душа моя 🌙\n\nСейчас я спокойно посмотрю вашу ситуацию…")
+    confirm_msgs = {
+        "t190":  "Оплата прошла, душа моя 🌙\n\nСейчас я спокойно посмотрю вашу ситуацию…",
+        "t490":  "Получила, душа моя ✨\n\nСейчас буду смотреть причину — глубоко и внимательно…",
+        "t990":  "Оплата прошла 💫\n\nПосмотрю ближайший период вашей ситуации — уже начинаю…",
+        "t1990": "Я рядом, душа моя 🌟\n\nТеперь я буду наблюдать за вашей ситуацией — спокойно и внимательно…",
+        "t4990": "Оплата прошла 🔮\n\nНачинаю наблюдение — буду рядом…",
+        "t9900": "Получила, душа моя 💎\n\nЭто особенный просмотр — приступаю…",
+    }
+    await _send(confirm_msgs.get(tier_key, "Оплата прошла 🌙\n\nСейчас посмотрю вашу ситуацию…"))
 
-    # Имитация работы (5–8 сек)
+    # Имитация работы
     await typing_long(_bot, telegram_id, biz_conn_id)
 
-    # Генерация полного разбора
+    # Выбор промпта по тиру
+    _TIER_PROMPTS = {
+        "t190":  (AISHA_PAID_PROMPT,        "complex", 900),
+        "t490":  (AISHA_CAUSE_PROMPT,       "complex", 900),
+        "t990":  (AISHA_FORECAST_PROMPT,    "complex", 1000),
+        "t1990": (AISHA_ACCOMPANIMENT_PROMPT, "medium", 500),
+        "t4990": (AISHA_ACCOMPANIMENT_PROMPT, "medium", 500),
+        "t9900": (AISHA_ACCOMPANIMENT_PROMPT, "complex", 600),
+    }
+    prompt, complexity, max_tokens = _TIER_PROMPTS.get(tier_key, (AISHA_PAID_PROMPT, "complex", 900))
+
     profile = await get_profile(telegram_id)
     context = json.dumps(profile, ensure_ascii=False)
 
     consultation = await generate_business(
-        AISHA_PAID_PROMPT,
+        prompt,
         f"Данные клиента: {context}",
-        complexity="complex",
-        max_tokens=900,
+        complexity=complexity,
+        max_tokens=max_tokens,
     )
 
     # Сохранить текст консультации
@@ -183,11 +219,18 @@ async def _process_payment(
     # Отправить разбор
     await _send(consultation)
 
-    # Сообщение о follow-up
+    # Сообщение о возможностях после разбора
     await typing_long(_bot, telegram_id, biz_conn_id)
-    await _send(
-        "После просмотра вы можете задать ещё 2 уточняющих вопроса 🌙\n\nНапишите — я слушаю."
-    )
 
-    # Обновить stage
-    await set_biz_stage(telegram_id, "followup")
+    if is_accompaniment(tier_key):
+        # Сопровождение — без фиксированного числа вопросов
+        await _send(
+            "Я рядом, душа моя 🌙\n\nПишите когда почувствуете что-то важное — я буду отвечать."
+        )
+        await set_biz_stage(telegram_id, "accompaniment")
+    else:
+        # Разовый разбор — есть лимит follow-up
+        await _send(
+            f"После просмотра вы можете задать ещё {followup_limit} уточняющих вопроса 🌙\n\nНапишите — я слушаю."
+        )
+        await set_biz_stage(telegram_id, "followup")

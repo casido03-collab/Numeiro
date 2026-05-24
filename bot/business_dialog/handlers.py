@@ -14,6 +14,8 @@ from bot.business_dialog.session_manager import (
     set_followup_left, reset_session,
     set_payment_offered,
     append_history, get_history, format_history,
+    get_paid_tier, set_paid_tier,
+    get_tier_msg_count, increment_tier_msg_count,
 )
 
 _RESET_PHRASE = "сброс12"
@@ -141,14 +143,20 @@ def _is_closing(text: str) -> bool:
     t = text.lower().strip()
     # Только короткие фразы — длинный ответ не считается прощанием
     return len(t) < 40 and any(phrase in t for phrase in _CLOSING_PHRASES)
+
+
 from bot.business_dialog.typing_simulation import (
     typing_short, typing_medium, typing_long, typing_deflect, typing_for_text
 )
 from bot.business_dialog.anti_free_chat import get_deflect_message, FREE_MSG_LIMIT
 from bot.business_dialog.ai_router import detect_intent, get_product_name
 from bot.business_dialog.services import generate_business
-from bot.business_dialog.prompts import AISHA_FREE_PROMPT, AISHA_FOLLOWUP_PROMPT, AISHA_PITCH_PROMPT
+from bot.business_dialog.prompts import (
+    AISHA_FREE_PROMPT, AISHA_FOLLOWUP_PROMPT, AISHA_PITCH_PROMPT,
+    AISHA_ACCOMPANIMENT_PROMPT,
+)
 from bot.business_dialog.tribute_flow import payment_keyboard, return_payment_keyboard, TRIBUTE_PRICE
+from bot.business_dialog.upsell import get_tier, tier_link, upsell_bridge, is_accompaniment
 
 router = Router(name="business_handlers")
 logger = logging.getLogger(__name__)
@@ -228,10 +236,14 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         await _stage_free_dialog(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "waiting_payment":
         await _stage_waiting_payment(bot, chat_id, telegram_id, biz_conn_id)
-    elif stage in ("paid",):
+    elif stage == "paid":
         await _send(bot, chat_id, f"Душа моя {_emo()} Я уже смотрю вашу ситуацию. Совсем скоро…", biz_conn_id)
     elif stage == "followup":
         await _stage_followup(bot, chat_id, telegram_id, biz_conn_id, text)
+    elif stage == "accompaniment":
+        await _stage_accompaniment(bot, chat_id, telegram_id, biz_conn_id, text)
+    elif stage == "waiting_upsell":
+        await _stage_waiting_upsell(bot, chat_id, telegram_id, biz_conn_id)
     elif stage == "completed":
         await _stage_completed(bot, chat_id, telegram_id, biz_conn_id)
     elif stage == "support":
@@ -251,6 +263,12 @@ _PAYMENT_TEXTS = [
     "Разбор почти готов — осталось только ваше разрешение начать {e}\n\n✨ «{p}» — {price} ₽\n\nПосле оплаты приступлю сразу же.",
     "Всё что нужно — уже у меня {e}\n\n✨ «{p}» — {price} ₽\n\nОплатите — и я немедленно начну смотреть.",
     "Я уже подготовила для вас разбор, он ждёт {e}\n\n✨ «{p}» — {price} ₽\n\nКак только оплата пройдёт — сразу приступлю.",
+]
+
+_UPSELL_PAYMENT_TEXTS = [
+    "✨ «{p}» — {price} ₽\n\nОплатите — и я немедленно продолжу {e}",
+    "✨ «{p}» — {price} ₽\n\nОдна кнопка — и мы идём дальше {e}",
+    "✨ «{p}» — {price} ₽\n\nПосле оплаты сразу приступлю {e}",
 ]
 
 
@@ -278,10 +296,12 @@ async def _send_closing_pivot(
 
 async def _send_payment_offer(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
-    profile: dict,
+    profile: dict, tier_key: str = "t190",
 ) -> None:
     """Три сообщения с паузами: тизер → мягкий переход → счёт с кнопкой."""
-    prod_name = profile.get("product_name", "Разбор ситуации")
+    tier      = get_tier(tier_key)
+    price     = tier.get("price", TRIBUTE_PRICE)
+    prod_name = profile.get("product_name") or tier.get("name", "Разбор ситуации")
     context   = json.dumps({
         "name":       profile.get("name", ""),
         "gender":     profile.get("gender", "unknown"),
@@ -313,12 +333,129 @@ async def _send_payment_offer(
 
     # Сообщение 3 — счёт с кнопкой
     payment_text = random.choice(_PAYMENT_TEXTS).format(
-        e=_emo(), p=prod_name, price=TRIBUTE_PRICE
+        e=_emo(), p=prod_name, price=price
     )
     await typing_medium(bot, chat_id, biz_conn_id)
-    await _send(bot, chat_id, payment_text, biz_conn_id, reply_markup=payment_keyboard())
+    await _send(bot, chat_id, payment_text, biz_conn_id, reply_markup=payment_keyboard(tier_key))
 
     # (стадия и payment_offered уже выставлены в начале функции)
+
+
+# ─── Апсейл на следующий тир ─────────────────────────────────────────────────
+
+async def _offer_next_upsell(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
+    current_tier: str,
+) -> None:
+    """Предложить переход к следующему тиру после завершения текущего."""
+    tier          = get_tier(current_tier)
+    next_tier_key = tier.get("next_tier")
+
+    if not next_tier_key:
+        # Финальный тир — завершаем красиво
+        await set_biz_stage(telegram_id, "completed")
+        closing = random.choice([
+            f"Вы прошли весь путь {_emo()} Это редко — и это очень ценно.",
+            f"Наша работа стала по-настоящему глубокой {_emo()} Спасибо за доверие.",
+            f"Это было важное путешествие, душа моя {_emo()} Берегите себя.",
+        ])
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, closing, biz_conn_id)
+        return
+
+    next_tier = get_tier(next_tier_key)
+    price     = next_tier.get("price", 0)
+    name      = next_tier.get("name", "")
+
+    # Переводим в режим ожидания апсейла
+    await set_biz_stage(telegram_id, "waiting_upsell")
+    await store_profile_field(telegram_id, "next_tier", next_tier_key)
+
+    # Мостик-апсейл (атмосферный текст перехода)
+    bridge = upsell_bridge(next_tier_key, _emo())
+    if bridge:
+        await typing_for_text(bot, chat_id, biz_conn_id, bridge)
+        await _send(bot, chat_id, bridge, biz_conn_id)
+        await typing_medium(bot, chat_id, biz_conn_id)
+
+    # Предложение следующего тира с кнопкой
+    offer = random.choice(_UPSELL_PAYMENT_TEXTS).format(
+        e=_emo(), p=name, price=price
+    )
+    await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
+
+
+# ─── Режим сопровождения (t1990, t4990, t9900) ───────────────────────────────
+
+async def _stage_accompaniment(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str,
+) -> None:
+    """Режим личного наблюдения — живые ответы с историей, мягкий лимит сообщений."""
+    paid_tier = await get_paid_tier(telegram_id) or "t1990"
+    tier      = get_tier(paid_tier)
+    msg_soft_limit = tier.get("msg_soft_limit")
+
+    # Счётчик сообщений в текущем тире
+    msg_count = await get_tier_msg_count(telegram_id)
+
+    # Достигли мягкого лимита — предлагаем следующий тир
+    if msg_soft_limit and msg_count >= msg_soft_limit:
+        await _offer_next_upsell(bot, chat_id, telegram_id, biz_conn_id, paid_tier)
+        return
+
+    profile      = await get_profile(telegram_id)
+    history      = await get_history(telegram_id)
+    history_text = format_history(history)
+
+    context = json.dumps({
+        "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
+        "birth_date": profile.get("birth_date", ""),
+        "problem":    profile.get("problem", ""),
+        "tier":       paid_tier,
+        "msg_count":  msg_count,
+    }, ensure_ascii=False)
+
+    await append_history(telegram_id, "user", text)
+
+    response = await generate_business(
+        AISHA_ACCOMPANIMENT_PROMPT,
+        f"ИСТОРИЯ ПЕРЕПИСКИ:\n{history_text}\n\n"
+        f"СООБЩЕНИЕ КЛИЕНТА: {text}\n\n"
+        f"Данные: {context}\n\nОбращайся на вы.",
+        complexity="medium",
+        max_tokens=400,
+    )
+    await append_history(telegram_id, "aisha", response)
+    await increment_tier_msg_count(telegram_id)
+
+    await typing_for_text(bot, chat_id, biz_conn_id, response)
+    await _send(bot, chat_id, response, biz_conn_id)
+
+
+# ─── Ожидание оплаты апсейла ─────────────────────────────────────────────────
+
+async def _stage_waiting_upsell(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
+) -> None:
+    """Пользователь написал пока ждём оплаты следующего тира — напоминаем."""
+    profile       = await get_profile(telegram_id)
+    next_tier_key = profile.get("next_tier", "t490")
+    tier          = get_tier(next_tier_key)
+    name          = tier.get("name", "")
+    price         = tier.get("price", 0)
+
+    await typing_deflect(bot, chat_id, biz_conn_id)
+    deflect = await get_deflect_message(telegram_id)
+    await _send(bot, chat_id, deflect, biz_conn_id)
+
+    await typing_short(bot, chat_id, biz_conn_id)
+    await _send(
+        bot, chat_id,
+        f"Душа моя, я оставила «{name}» открытым для вас {_emo()} Когда будете готовы — просто нажмите кнопку.",
+        biz_conn_id,
+        reply_markup=payment_keyboard(next_tier_key),
+    )
 
 
 # ─── Этапы диалога ────────────────────────────────────────────────────────────
@@ -546,41 +683,43 @@ async def _stage_waiting_payment(bot: Bot, chat_id: int, telegram_id: int, biz_c
         bot, chat_id,
         f"Душа моя, я оставила ваш разбор открытым {_emo()} Когда будете готовы — просто нажмите кнопку.",
         biz_conn_id,
-        reply_markup=return_payment_keyboard(),
+        reply_markup=return_payment_keyboard("t190"),
     )
 
 
 async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
-    """Уточняющие вопросы после платной консультации (max 2)."""
+    """Уточняющие вопросы после платной консультации."""
     left = await decrement_followup(telegram_id)
 
-    profile = await get_profile(telegram_id)
+    profile    = await get_profile(telegram_id)
+    paid_tier  = await get_paid_tier(telegram_id) or "t190"
+    tier       = get_tier(paid_tier)
+    tier_name  = tier.get("name", "")
 
     context = json.dumps({
         "name":           profile.get("name", ""),
+        "gender":         profile.get("gender", "unknown"),
         "birth_date":     profile.get("birth_date", ""),
         "problem":        profile.get("problem", ""),
+        "tier":           tier_name,
         "followups_left": left,
     }, ensure_ascii=False)
 
+    await append_history(telegram_id, "user", text)
     response = await generate_business(
         AISHA_FOLLOWUP_PROMPT,
         f"Уточняющий вопрос после консультации: {text}\n\nДанные: {context}\n\nОбращайся на вы.",
         complexity="medium",
         max_tokens=300,
     )
+    await append_history(telegram_id, "aisha", response)
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
 
     if left == 0:
-        await set_biz_stage(telegram_id, "completed")
+        # Follow-up вопросы закончились → предлагаем следующий тир
         await typing_short(bot, chat_id, biz_conn_id)
-        closing = random.choice([
-            f"Если почувствуете, что ситуация снова тревожит — можете написать мне {_emo()}",
-            f"Если захотите посмотреть глубже — возвращайтесь. Иногда спустя время открываются новые линии {_emo()}",
-            f"Берегите себя, душа моя {_emo()} Если понадоблюсь — я здесь.",
-        ])
-        await _send(bot, chat_id, closing, biz_conn_id)
+        await _offer_next_upsell(bot, chat_id, telegram_id, biz_conn_id, paid_tier)
 
 
 async def _stage_completed(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None) -> None:
