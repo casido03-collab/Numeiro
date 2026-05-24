@@ -18,6 +18,52 @@ from bot.business_dialog.session_manager import (
 
 _RESET_PHRASE = "сброс12"
 
+# ─── Техподдержка ────────────────────────────────────────────────────────────
+
+_SUPPORT_KEYWORDS = [
+    "бот не работает", "бот не отвечает", "бот завис", "бот сломался",
+    "не работает бот", "проблема с ботом", "вопрос по боту", "вопрос о боте",
+    "ошибка в боте", "не могу войти", "не открывается бот",
+    "оплата не прошла", "деньги списали", "деньги не вернули", "возврат",
+    "подписка не работает", "подписка не активировалась", "не получил доступ",
+    "не приходит ответ", "не отвечает", "завис", "техническая проблема",
+    "техподдержка", "поддержка", "numerelogia", "@numerelogia_astro_bot",
+    "ваш бот", "этот бот", "в боте", "через бот",
+]
+
+_SUPPORT_HOLD_TEXTS = [
+    "Минуту — я уточню данную информацию и дам вам точный ответ 🌙",
+    "Подождите немного — я разберусь с этим вопросом и вернусь к вам ✨",
+    "Сейчас уточню все детали и дам вам точный ответ 💫",
+]
+
+
+def _is_support_request(text: str) -> bool:
+    """Определить является ли сообщение обращением в техподдержку."""
+    t = text.lower()
+    return any(kw in t for kw in _SUPPORT_KEYWORDS)
+
+
+async def _notify_admins(bot: Bot, telegram_id: int, name: str, text: str) -> None:
+    """Уведомить всех админов о поступившем обращении в поддержку."""
+    from config import settings
+    admin_ids = settings.admin_ids_list
+    if not admin_ids:
+        logger.warning("ADMIN_IDS не настроен — уведомление не отправлено")
+        return
+
+    msg = (
+        f"🔔 ОБРАЩЕНИЕ В ПОДДЕРЖКУ\n\n"
+        f"👤 {name} (tg_id: {telegram_id})\n\n"
+        f"💬 {text}\n\n"
+        f"Подключитесь к чату и ответьте вручную."
+    )
+    for admin_id in admin_ids:
+        try:
+            await bot.send_message(admin_id, msg, parse_mode=None)
+        except Exception as e:
+            logger.warning("admin notify failed for %s: %s", admin_id, e)
+
 _ESOTERIC_EMOJIS = ["🌙", "✨", "💫", "🔮", "🌟", "⭐", "🌌", "💎"]
 
 
@@ -128,6 +174,11 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     stage = await get_biz_stage(telegram_id)
     logger.info("business_msg tid=%s stage=%s text=%.40s", telegram_id, stage, text)
 
+    # Детект техподдержки — работает на любом этапе диалога
+    if _is_support_request(text) and stage not in ("support",):
+        await _handle_support(bot, chat_id, telegram_id, biz_conn_id, text, stage)
+        return
+
     if stage in ("new", ""):
         await _stage_new(bot, chat_id, telegram_id, biz_conn_id, message)
     elif stage == "collecting_name":
@@ -148,6 +199,8 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         await _stage_followup(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "completed":
         await _stage_completed(bot, chat_id, telegram_id, biz_conn_id)
+    elif stage == "support":
+        await _stage_support(bot, chat_id, telegram_id, biz_conn_id, text)
 
 
 # ─── Двухшаговое предложение оплаты ──────────────────────────────────────────
@@ -234,6 +287,46 @@ async def _send_payment_offer(
 
 
 # ─── Этапы диалога ────────────────────────────────────────────────────────────
+
+async def _handle_support(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
+    text: str, prev_stage: str,
+) -> None:
+    """Первичная обработка обращения в техподдержку."""
+    profile = await get_profile(telegram_id)
+    name = profile.get("name") or "Гость"
+
+    # Сохраняем предыдущую стадию чтобы можно было вернуться
+    await store_profile_field(telegram_id, "pre_support_stage", prev_stage)
+    await set_biz_stage(telegram_id, "support")
+
+    # Ответ пользователю
+    hold = random.choice(_SUPPORT_HOLD_TEXTS)
+    await typing_short(bot, chat_id, biz_conn_id)
+    await _send(bot, chat_id, hold, biz_conn_id)
+
+    # Уведомление админам
+    await _notify_admins(bot, telegram_id, name, text)
+
+
+async def _stage_support(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str,
+) -> None:
+    """Режим ожидания: пересылаем сообщения админу, пользователю — hold-ответ."""
+    profile = await get_profile(telegram_id)
+    name = profile.get("name") or "Гость"
+
+    # Пересылаем новое сообщение админам
+    await _notify_admins(bot, telegram_id, name, text)
+
+    # Пользователю — краткое подтверждение
+    await typing_short(bot, chat_id, biz_conn_id)
+    await _send(
+        bot, chat_id,
+        "Я уточняю — пожалуйста, немного подождите 🌙",
+        biz_conn_id,
+    )
+
 
 async def _stage_new(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, message: Message) -> None:
     """Первое сообщение — приветствие и запрос имени."""
