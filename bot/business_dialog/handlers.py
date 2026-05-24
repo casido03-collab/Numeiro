@@ -145,6 +145,20 @@ def _is_closing(text: str) -> bool:
     return len(t) < 40 and any(phrase in t for phrase in _CLOSING_PHRASES)
 
 
+def _tier_timing_hint(tier_key: str) -> str:
+    """Текстовое описание сроков выполнения тира для подстановки в промпт."""
+    tier = get_tier(tier_key)
+    days = tier.get("days")
+    if days is None:
+        return "сразу после оплаты — в течение нескольких минут"
+    elif days == 1:
+        return "в течение одного дня"
+    elif days == 3:
+        return "в течение трёх дней"
+    else:
+        return f"в течение {days} дней"
+
+
 from bot.business_dialog.typing_simulation import (
     typing_short, typing_medium, typing_long, typing_deflect, typing_for_text
 )
@@ -448,12 +462,15 @@ async def _stage_waiting_upsell(
             "gender":  profile.get("gender", "unknown"),
             "problem": profile.get("problem", ""),
         }, ensure_ascii=False)
+        timing = _tier_timing_hint(next_tier_key)
         reply = await generate_business(
             AISHA_FREE_PROMPT,
             f"Клиент задаёт вопрос: «{text}»\n\n"
             f"Ответь ОДНИМ коротким предложением (максимум 15 слов) по смыслу. "
             f"Не упоминай цену или слово 'оплата'. Обращайся на вы. "
-            f"НЕ задавай вопросов в конце, НЕ добавляй концовку-триггер — просто ответь и всё.\n\nДанные: {context}",
+            f"НЕ задавай вопросов в конце, НЕ добавляй концовку-триггер — просто ответь и всё.\n\n"
+            f"ВАЖНО: если клиент спрашивает о времени или сроках — ответь точно: {timing}. "
+            f"Никогда не придумывай сроки.\n\nДанные: {context}",
             complexity="simple",
             max_tokens=50,
         )
@@ -690,12 +707,15 @@ async def _stage_waiting_payment(
     }, ensure_ascii=False)
 
     if text:
+        timing = _tier_timing_hint("t190")
         reply = await generate_business(
             AISHA_FREE_PROMPT,
             f"Клиент уже получил предложение разбора и задаёт дополнительный вопрос: «{text}»\n\n"
             f"Ответь ОДНИМ коротким предложением (максимум 15 слов) точно по смыслу вопроса. "
             f"Не называй цену и не упоминай слово 'оплата'. Обращайся на вы. "
             f"НЕ задавай вопросов в конце, НЕ добавляй концовку-триггер — просто ответь и всё.\n\n"
+            f"ВАЖНО: если клиент спрашивает о времени или сроках — ответь точно: {timing}. "
+            f"Никогда не говори 'несколько дней' — это неправда.\n\n"
             f"Данные: {context}",
             complexity="simple",
             max_tokens=50,
