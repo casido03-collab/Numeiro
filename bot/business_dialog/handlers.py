@@ -130,52 +130,56 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
 
 # ─── Двухшаговое предложение оплаты ──────────────────────────────────────────
 
+_BRIDGE_TEXTS = [
+    "Но такие вещи я смотрю глубже и спокойно, чтобы ничего не упустить.\n\nЕсли хотите — я готова начать полный просмотр.",
+    "Это требует тихого и внимательного взгляда — не торопясь, по всем линиям.\n\nЯ готова, если вы разрешите.",
+    "Такие ситуации лучше смотреть целиком — иначе можно упустить самое важное.\n\nСкажите слово — и я приступлю.",
+    "Здесь есть то, что нужно рассмотреть спокойно и полностью.\n\nЕсли хотите — я могу сделать это прямо сейчас.",
+]
+
+_PAYMENT_TEXTS = [
+    "Разбор почти готов — осталось только ваше разрешение начать {e}\n\n✨ «{p}» — {price} ₽\n\nПосле оплаты приступлю сразу же.",
+    "Всё что нужно — уже у меня {e}\n\n✨ «{p}» — {price} ₽\n\nОплатите — и я немедленно начну смотреть.",
+    "Я уже подготовила для вас разбор, он ждёт {e}\n\n✨ «{p}» — {price} ₽\n\nКак только оплата пройдёт — сразу приступлю.",
+]
+
+
 async def _send_payment_offer(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
     profile: dict,
 ) -> None:
-    """Отправить два сообщения: мягкий питч → счёт с кнопкой."""
+    """Три сообщения с паузами: тизер → мягкий переход → счёт с кнопкой."""
     prod_name = profile.get("product_name", "Разбор ситуации")
-    name      = profile.get("name", "")
     context   = json.dumps({
-        "name":       name,
+        "name":       profile.get("name", ""),
         "birth_date": profile.get("birth_date", ""),
         "problem":    profile.get("problem", ""),
         "intent":     profile.get("intent", ""),
         "product":    prod_name,
     }, ensure_ascii=False)
 
-    # Сообщение 1 — эзотерический питч (AI)
-    pitch = await generate_business(
+    # Сообщение 1 — короткий AI-тизер (2 предложения + многоточие)
+    teaser = await generate_business(
         AISHA_PITCH_PROMPT,
-        f"Предложи свою помощь этому человеку. Данные: {context}",
+        f"Данные клиента: {context}",
         complexity="simple",
-        max_tokens=160,
+        max_tokens=90,
     )
-    await typing_for_text(bot, chat_id, biz_conn_id, pitch)
-    await _send(bot, chat_id, pitch, biz_conn_id)
+    await typing_for_text(bot, chat_id, biz_conn_id, teaser)
+    await _send(bot, chat_id, teaser, biz_conn_id)
 
-    # Сообщение 2 — счёт с кнопкой
-    _PAYMENT_TEXTS = [
-        f"Я уже подготовила для вас разбор — он ждёт {_emo()}\n\n"
-        f"✨ «{prod_name}» — {TRIBUTE_PRICE} ₽\n\n"
-        f"Как только оплата пройдёт — незамедлительно приступлю к работе.",
+    # Сообщение 2 — мягкий переход (рандом, пауза 5–8 сек)
+    bridge = random.choice(_BRIDGE_TEXTS)
+    await typing_long(bot, chat_id, biz_conn_id)
+    await _send(bot, chat_id, bridge, biz_conn_id)
 
-        f"Всё что нужно — уже у меня {_emo()}\n\n"
-        f"✨ «{prod_name}» — {TRIBUTE_PRICE} ₽\n\n"
-        f"Оплатите — и я сразу же начну смотреть вашу ситуацию.",
-
-        f"Разбор почти готов, осталось только ваше разрешение начать {_emo()}\n\n"
-        f"✨ «{prod_name}» — {TRIBUTE_PRICE} ₽\n\n"
-        f"После оплаты я сразу же приступлю.",
-    ]
-    await typing_short(bot, chat_id, biz_conn_id)
-    await _send(
-        bot, chat_id,
-        random.choice(_PAYMENT_TEXTS),
-        biz_conn_id,
-        reply_markup=payment_keyboard(),
+    # Сообщение 3 — счёт с кнопкой
+    payment_text = random.choice(_PAYMENT_TEXTS).format(
+        e=_emo(), p=prod_name, price=TRIBUTE_PRICE
     )
+    await typing_medium(bot, chat_id, biz_conn_id)
+    await _send(bot, chat_id, payment_text, biz_conn_id, reply_markup=payment_keyboard())
+
     await set_payment_offered(telegram_id)
     await set_biz_stage(telegram_id, "waiting_payment")
 
