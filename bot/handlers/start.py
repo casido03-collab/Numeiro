@@ -235,11 +235,13 @@ async def _process_referral(
 @router.callback_query(F.data == "menu:main")
 async def menu_main(callback: CallbackQuery, user: User):
     name = user.first_name or None
-    await callback.message.edit_text(
-        random_header(name),
-        reply_markup=main_menu(),
-        parse_mode="Markdown",
-    )
+    text = random_header(name)
+    # Фото-сообщение нельзя edit_text — удаляем и шлём новое
+    if callback.message.photo or callback.message.video or callback.message.document:
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=main_menu(), parse_mode="Markdown")
+    else:
+        await callback.message.edit_text(text, reply_markup=main_menu(), parse_mode="Markdown")
     # Восстановить reply-клавиатуру если пропала
     from bot.utils import ensure_keyboard
     await ensure_keyboard(callback.message, user.telegram_id)
