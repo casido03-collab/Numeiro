@@ -13,6 +13,7 @@ from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import COMPATIBILITY_PROMPT
 from bot.keyboards.main import relation_type_menu, limit_reached_keyboard, back_to_main
+from bot.services.thinking import random_thinking
 from bot.utils import parse_birth_date as _parse_compat_date, safe_edit_ai
 
 router = Router()
@@ -126,7 +127,7 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
         await callback.answer()
         return
 
-    thinking_msg = await callback.message.edit_text("✨ Изучаю совместимость ваших энергий...")
+    thinking_msg = await callback.message.edit_text(random_thinking())
 
     user_date = _parse_compat_date(user.birth_date)
     partner_date = _parse_compat_date(partner_date_str)

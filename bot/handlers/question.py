@@ -12,6 +12,7 @@ from bot.services.ai_service import generate
 from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
 from bot.keyboards.main import limit_reached_keyboard, after_reading_keyboard, back_to_main, main_menu
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
+from bot.services.thinking import random_thinking
 
 router = Router()
 
@@ -90,7 +91,7 @@ async def receive_question(message: Message, state: FSMContext, user: User, sess
         return
 
     await state.clear()
-    thinking_msg = await message.answer("🌙 Настраиваюсь на ваш запрос...")
+    thinking_msg = await message.answer(random_thinking())
 
     birth_date_obj = parse_birth_date(user.birth_date)
 

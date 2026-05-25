@@ -9,6 +9,7 @@ from bot.services.numerology import calculate_all, _reduce
 from bot.services.cache import get_cached, set_cached, make_cache_key
 from bot.services.limits import check_limit, consume_limit
 from bot.utils import parse_birth_date, safe_edit_ai
+from bot.services.thinking import random_thinking
 from bot.services.ai_service import generate
 from bot.prompts.prompts import WEEKLY_PREDICTION_PROMPT
 from bot.keyboards.main import sphere_menu, limit_reached_keyboard, back_to_main
@@ -83,7 +84,7 @@ async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSessio
 async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: AsyncSession):
     sphere = callback.data.split(":")[-1]
 
-    thinking_msg = await callback.message.edit_text("🔮 Формирую прогноз на ближайшие дни...")
+    thinking_msg = await callback.message.edit_text(random_thinking())
 
     today = date.today()
     week_start = today

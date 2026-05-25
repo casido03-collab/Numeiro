@@ -13,6 +13,7 @@ from bot.services.ai_service import generate
 from bot.prompts.prompts import DAILY_FORECAST_PROMPT
 from bot.keyboards.main import back_to_main, limit_reached_keyboard
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
+from bot.services.thinking import random_thinking
 from config import PLANS
 
 router = Router()
@@ -114,7 +115,7 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
         await callback.answer()
         return
 
-    thinking_msg = await callback.message.edit_text("⚡ Считываю энергию сегодняшнего дня...")
+    thinking_msg = await callback.message.edit_text(random_thinking())
 
     today = date.today()
     birth_date_obj = parse_birth_date(user.birth_date)

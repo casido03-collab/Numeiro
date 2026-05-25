@@ -13,6 +13,7 @@ from bot.services.ai_service import generate
 from bot.prompts.prompts import FREE_BIRTH_REPORT_PROMPT, FULL_MATRIX_PROMPT, UPSELL_PROMPT
 from bot.keyboards.main import sphere_menu, upsell_keyboard, limit_reached_keyboard, back_to_main, main_menu, upsell_keyboard_reading, after_reading_keyboard_matrix
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
+from bot.services.thinking import random_thinking
 
 router = Router()
 
@@ -25,13 +26,6 @@ SPHERE_NAMES = {
     "decision": "важные решения",
     "general": "общий прогноз",
 }
-
-THINKING_MESSAGES = [
-    "✨ Считываю энергетику вашей даты рождения...",
-    "🔮 Анализирую линии судьбы...",
-    "🌙 Настраиваюсь на ваш запрос...",
-    "✨ Изучаю числа вашей судьбы...",
-]
 
 
 async def show_sphere_selection(msg: Message, user: User):
@@ -82,7 +76,7 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
         return
 
     import random
-    thinking_msg = await callback.message.edit_text(random.choice(THINKING_MESSAGES))
+    thinking_msg = await callback.message.edit_text(random_thinking())
 
     birth_date = parse_birth_date(user.birth_date)
     if not birth_date:
@@ -152,7 +146,7 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
         return
 
     import random
-    thinking_msg = await callback.message.edit_text("🔮 Анализирую линии судьбы...")
+    thinking_msg = await callback.message.edit_text(random_thinking())
 
     birth_date = parse_birth_date(user.birth_date)
     cache_key = make_cache_key("full_matrix", user.birth_date)
