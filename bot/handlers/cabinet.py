@@ -119,13 +119,16 @@ async def _build_cabinet_text(session: AsyncSession, user: User) -> str:
 
     limits_block = "\n".join(lines_limits) if lines_limits else "• Лимиты недоступны на бесплатном тарифе"
 
+    # Лейбл блока лимитов: для бесплатного — "сегодня", для платных — "за период"
+    limits_label = "📊 *Остаток сегодня:*" if plan == "free" else "📊 *Остаток за период:*"
+
     text = (
         f"✨ *Персональное пространство — {name}*\n\n"
         f"━━━━━━━━━━━━━━━\n"
         f"👤 *Тариф:* {plan_label}\n"
         f"📅 *Активен до:* {expires_str}\n\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"📊 *Остаток сегодня:*\n"
+        f"{limits_label}\n"
         f"{limits_block}\n\n"
         f"━━━━━━━━━━━━━━━\n"
         f"{personality}"

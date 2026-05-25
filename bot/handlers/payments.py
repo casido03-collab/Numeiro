@@ -390,7 +390,10 @@ async def _activate_subscription(session: AsyncSession, user: User, plan_key: st
     if not plan:
         return
     days = plan.get("days", 30)
-    expires = datetime.now(timezone.utc) + timedelta(days=days)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=days)
+    # Дата активации = сегодня = ключ периода для этой подписки
+    period_key = now.strftime("%Y-%m-%d")
 
     result = await session.execute(select(Subscription).where(Subscription.user_id == user.id))
     sub = result.scalar_one_or_none()
@@ -405,11 +408,26 @@ async def _activate_subscription(session: AsyncSession, user: User, plan_key: st
             status=SubscriptionStatusEnum.active,
             expires_at=expires,
         ))
+        await session.flush()
 
-    from bot.services.limits import get_or_create_usage
-    usage = await get_or_create_usage(session, user.id)
+    # Сброс лимитов на новый период подписки
+    # Используем period_key напрямую (не через get_or_create_usage) — избегаем гонки с сессией
+    from bot.models.user import UsageLimits
+    usage_res = await session.execute(
+        select(UsageLimits).where(
+            UsageLimits.user_id == user.id,
+            UsageLimits.period_start == period_key,
+        )
+    )
+    usage = usage_res.scalar_one_or_none()
+    if not usage:
+        usage = UsageLimits(user_id=user.id, period_start=period_key)
+        session.add(usage)
+        await session.flush()
+
+    # Сбрасываем все периодные лимиты (daily_forecasts не трогаем — он сбрасывается сам каждый день)
     for field in ("ai_messages", "personal_questions", "weekly_reports",
-                  "compatibility", "daily_forecasts", "mini_readings", "date_selections"):
+                  "compatibility", "mini_readings", "date_selections"):
         setattr(usage, field, 0)
 
 
