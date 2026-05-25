@@ -136,44 +136,17 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
     await consume_limit(session, user.id, "tarot_cards")
     await consume_limit(session, user.id, "ai_messages")
 
-    # Отправляем изображение карты + текст
+    # Отправляем фото отдельным сообщением (визуал), текст+кнопки — редактируем thinking_msg
     image_path = ASSETS_DIR / f"{file_key}.png"
-    name = user.first_name or "друг"
-    caption = f"🃏 *Карта дня — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{cached_text}"
-
-    # Telegram ограничение caption: 1024 символа — если длиннее, шлём отдельно
     if image_path.exists():
         try:
-            photo = FSInputFile(str(image_path))
-            if len(caption) <= 1024:
-                await thinking_msg.delete()
-                await callback.message.answer_photo(
-                    photo=photo,
-                    caption=caption,
-                    parse_mode="Markdown",
-                    reply_markup=after_tarot_keyboard(),
-                )
-            else:
-                # Отправляем картинку без текста, потом текст
-                await thinking_msg.delete()
-                await callback.message.answer_photo(photo=photo)
-                await callback.message.answer(
-                    caption,
-                    parse_mode="Markdown",
-                    reply_markup=after_tarot_keyboard(),
-                )
+            await callback.message.answer_photo(photo=FSInputFile(str(image_path)))
         except Exception:
-            # Если что-то пошло не так с фото — текстом
-            await thinking_msg.edit_text(
-                caption,
-                parse_mode="Markdown",
-                reply_markup=after_tarot_keyboard(),
-            )
-    else:
-        await thinking_msg.edit_text(
-            caption,
-            parse_mode="Markdown",
-            reply_markup=after_tarot_keyboard(),
-        )
+            pass  # не критично — текст придёт в любом случае
+
+    name = user.first_name or "друг"
+    text = f"🃏 *Карта дня — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{cached_text}"
+    from bot.utils import safe_edit_ai
+    await safe_edit_ai(thinking_msg, text, reply_markup=after_tarot_keyboard())
 
     await callback.answer()
