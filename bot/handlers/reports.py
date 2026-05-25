@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # ─── Конфиг ───────────────────────────────────────────────────────────────────
 
 REPORT_TYPE_LABELS: dict[str, str] = {
+    "tarot_card":        "🃏 Карты дня",
     "weekly_forecast":   "📅 Прогнозы",
     "compatibility":     "💞 Совместимости",
     "personal_question": "🔮 Личные вопросы",
@@ -31,6 +32,7 @@ REPORT_TYPE_LABELS: dict[str, str] = {
 }
 
 CATEGORY_ORDER = [
+    "tarot_card",
     "weekly_forecast",
     "compatibility",
     "personal_question",

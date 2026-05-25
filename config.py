@@ -44,6 +44,7 @@ PLANS = {
             "daily_forecasts": 1,   # 1 Энергия дня в день
             "mini_readings": 1,
             "date_selections": 0,
+            "tarot_cards": 2,
         },
     },
     "lite": {
@@ -58,6 +59,7 @@ PLANS = {
             "daily_forecasts": 1,   # 1 Энергия дня в день (всего 3 за 7 дней — Redis)
             "mini_readings": 3,
             "date_selections": 0,
+            "tarot_cards": 5,
         },
         "energy_day_total": 3,      # всего за подписку (7 дней)
     },
@@ -73,6 +75,7 @@ PLANS = {
             "daily_forecasts": 1,   # 1 Энергия дня в день, без общего лимита
             "mini_readings": 15,
             "date_selections": 10,
+            "tarot_cards": 10,
         },
     },
     "pro": {
@@ -87,6 +90,7 @@ PLANS = {
             "daily_forecasts": 1,   # 1 Энергия дня в день (всего 30 за месяц — Redis)
             "mini_readings": 50,
             "date_selections": 40,
+            "tarot_cards": 30,
         },
         "energy_day_total": 30,     # всего за месяц (30 дней)
     },

@@ -103,6 +103,7 @@ LIMIT_FIELD_MAP = {
     "daily_forecasts":    "daily_forecasts",
     "mini_readings":      "mini_readings",
     "date_selections":    "date_selections",
+    "tarot_cards":        "tarot_cards",
 }
 
 

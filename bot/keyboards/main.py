@@ -5,6 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🃏 Карта дня", callback_data="menu:tarot")],
         [InlineKeyboardButton(text="⚡ Энергия дня", callback_data="menu:daily")],
         [InlineKeyboardButton(text="✨ Мой разбор", callback_data="menu:reading")],
         [InlineKeyboardButton(text="🌟 Полная матрица судьбы", callback_data="matrix:start")],
@@ -197,6 +198,15 @@ def after_reading_keyboard_weekly() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
         [InlineKeyboardButton(text="🌙 Как Луна влияет на настроение?", callback_data="content:astrology")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+    ])
+
+
+def after_tarot_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура после показа карты дня."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✨ Расшифровать глубже", callback_data="menu:question")],
+        [InlineKeyboardButton(text="💬 Задать вопрос Aisha", url="https://t.me/m/-Ekcn86bNmU0")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
     ])
 
 
