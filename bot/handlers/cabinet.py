@@ -77,6 +77,7 @@ LIMIT_LABELS = {
     "daily_forecasts":    "Ежедневных прогнозов",
     "mini_readings":      "Мини‑разборов",
     "date_selections":    "Подборов дат",
+    "tarot_cards":        "Карт дня",
 }
 
 PLAN_LABELS = {
