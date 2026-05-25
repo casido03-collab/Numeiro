@@ -215,22 +215,33 @@ async def view_report(callback: CallbackQuery, user: User, session: AsyncSession
 # ─── Upsell «Спросить глубже» ─────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("reports:deep:"))
-async def report_upsell(callback: CallbackQuery):
+async def report_upsell(callback: CallbackQuery, user: User, session: AsyncSession):
     try:
         report_id = callback.data.split(":")[2]
     except IndexError:
         report_id = "0"
+
+    plan = await get_user_plan(session, user.id)
+    is_paid = plan != "free"
 
     text = (
         "✨ *Хотите глубже раскрыть этот разбор?*\n\n"
         "Вы можете задать личный вопрос Тарологу — и получить более детальный ответ "
         "со скрытыми причинами, вероятным развитием событий и советом на ближайшие дни."
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔓 Задать вопрос Тарологу", callback_data="menu:question")],
-        [InlineKeyboardButton(text="📜 Тарифы", callback_data="menu:plans")],
+
+    # Для платных пользователей убираем замок — они уже оплатили
+    question_btn_text = "💬 Задать вопрос Тарологу" if is_paid else "🔒 Задать вопрос Тарологу"
+
+    rows = [
+        [InlineKeyboardButton(text=question_btn_text, callback_data="menu:question")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data=f"reports:view:{report_id}")],
-    ])
+    ]
+    # Кнопку «Тарифы» показываем только тем, у кого нет подписки
+    if not is_paid:
+        rows.insert(1, [InlineKeyboardButton(text="📜 Тарифы", callback_data="menu:plans")])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     await callback.answer()
 
