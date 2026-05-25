@@ -86,7 +86,7 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
     if already_today:
         time_left = _time_until_midnight_msk()
         await callback.message.edit_text(
-            f"🃏 *Карта дня уже получена*\n\n"
+            f"🃏 *Карта дня уже получена* — найди её выше в переписке ☝️\n\n"
             f"Следующая карта откроется через *{time_left}* 🌙\n\n"
             f"_Каждый день — новое послание Вселенной_",
             reply_markup=back_to_main(),
