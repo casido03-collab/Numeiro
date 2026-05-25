@@ -9,23 +9,39 @@ def _day_energy(d: date) -> int:
 
 
 FAVORABLE_ENERGIES = {
-    "project_launch": [1, 3, 5, 8],
-    "wedding": [2, 6, 9],
-    "purchase": [4, 6, 8],
-    "move": [3, 5, 1],
-    "conversation": [2, 3, 6],
-    "travel": [3, 5, 7],
-    "interview": [1, 3, 8],
+    "project_launch":      [1, 3, 5, 8],
+    "wedding":             [2, 6, 9],
+    "purchase":            [4, 6, 8],
+    "move":                [3, 5, 1],
+    "conversation":        [2, 3, 6],
+    "travel":              [3, 5, 7],
+    "interview":           [1, 3, 8],
+    # Новые события
+    "business_meeting":    [1, 3, 6, 8],
+    "contract":            [4, 6, 8],
+    "education":           [3, 5, 7],
+    "investment":          [1, 4, 8],
+    "medical":             [2, 6, 9],
+    "creative":            [3, 5, 6],
+    "spiritual":           [7, 9, 3],
 }
 
 EVENT_NAMES = {
-    "project_launch": "запуск проекта",
-    "wedding": "свадьба",
-    "purchase": "важная покупка",
-    "move": "переезд",
-    "conversation": "важный разговор",
-    "travel": "поездка",
-    "interview": "собеседование",
+    "project_launch":   "запуск проекта",
+    "wedding":          "свадьба",
+    "purchase":         "важная покупка",
+    "move":             "переезд",
+    "conversation":     "важный разговор",
+    "travel":           "поездка",
+    "interview":        "собеседование",
+    # Новые события
+    "business_meeting": "деловая встреча",
+    "contract":         "подписание договора",
+    "education":        "начало обучения",
+    "investment":       "крупная инвестиция",
+    "medical":          "медицинская процедура",
+    "creative":         "творческий проект",
+    "spiritual":        "духовная практика",
 }
 
 

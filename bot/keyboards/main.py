@@ -56,13 +56,20 @@ def relation_type_menu() -> InlineKeyboardMarkup:
 
 def event_type_menu() -> InlineKeyboardMarkup:
     events = [
-        ("🚀 Запуск проекта", "project_launch"),
-        ("💍 Свадьба", "wedding"),
-        ("🛍 Важная покупка", "purchase"),
-        ("🏠 Переезд", "move"),
-        ("🗣 Важный разговор", "conversation"),
-        ("✈️ Поездка", "travel"),
-        ("💼 Собеседование", "interview"),
+        ("🚀 Запуск проекта",        "project_launch"),
+        ("💍 Свадьба",               "wedding"),
+        ("🛍 Важная покупка",        "purchase"),
+        ("🏠 Переезд",               "move"),
+        ("🗣 Важный разговор",       "conversation"),
+        ("✈️ Поездка",               "travel"),
+        ("💼 Собеседование",         "interview"),
+        ("🤝 Деловая встреча",       "business_meeting"),
+        ("📝 Подписание договора",   "contract"),
+        ("🎓 Начало обучения",       "education"),
+        ("💰 Крупная инвестиция",    "investment"),
+        ("🏥 Медицинская процедура", "medical"),
+        ("🎨 Творческий проект",     "creative"),
+        ("🙏 Духовная практика",     "spiritual"),
     ]
     buttons = [[InlineKeyboardButton(text=name, callback_data=f"dates:event:{key}")] for name, key in events]
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
