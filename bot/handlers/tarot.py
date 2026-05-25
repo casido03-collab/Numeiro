@@ -136,17 +136,21 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
     await consume_limit(session, user.id, "tarot_cards")
     await consume_limit(session, user.id, "ai_messages")
 
-    # Отправляем фото отдельным сообщением (визуал), текст+кнопки — редактируем thinking_msg
+    # Правильный порядок: удаляем loading → фото сверху → текст+кнопки снизу
+    name = user.first_name or "друг"
+    text = f"🃏 *Карта дня — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{cached_text}"
+
     image_path = ASSETS_DIR / f"{file_key}.png"
+    try:
+        await thinking_msg.delete()
+    except Exception:
+        pass
+
     if image_path.exists():
         try:
             await callback.message.answer_photo(photo=FSInputFile(str(image_path)))
         except Exception:
-            pass  # не критично — текст придёт в любом случае
+            pass
 
-    name = user.first_name or "друг"
-    text = f"🃏 *Карта дня — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{cached_text}"
-    from bot.utils import safe_edit_ai
-    await safe_edit_ai(thinking_msg, text, reply_markup=after_tarot_keyboard())
-
+    await callback.message.answer(text, reply_markup=after_tarot_keyboard(), parse_mode="Markdown")
     await callback.answer()
