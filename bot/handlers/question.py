@@ -11,7 +11,7 @@ from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
 from bot.keyboards.main import limit_reached_keyboard, after_reading_keyboard, back_to_main, main_menu
-from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
+from bot.utils import parse_birth_date, safe_edit, safe_edit_ai, replace_message
 from bot.services.thinking import random_thinking
 
 router = Router()
@@ -25,10 +25,10 @@ class QuestionFSM(StatesGroup):
 async def question_cancel(callback: CallbackQuery, state: FSMContext, user: User):
     await state.clear()
     name = user.first_name or "друг"
-    await callback.message.edit_text(
+    await replace_message(
+        callback.message,
         f"✨ *{name}*, выберите что вас интересует:",
         reply_markup=main_menu(),
-        parse_mode="Markdown",
     )
     await callback.answer()
 
@@ -39,31 +39,32 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
 
     has_limit, used, max_val = await check_limit(session, user.id, "personal_questions")
     if not has_limit:
-        await callback.message.edit_text(
+        await replace_message(
+            callback.message,
             "🔒 *Вопрос Тарологу*\n\nЭта функция требует подписки или разовой покупки.\n\n"
             "• Lite: 2 вопроса\n"
             "• Premium: 15 вопросов\n"
             "• Pro: 60 вопросов",
             reply_markup=limit_reached_keyboard(),
-            parse_mode="Markdown",
         )
         await callback.answer()
         return
 
     if not user.birth_date:
-        await callback.message.edit_text(
+        await replace_message(
+            callback.message,
             "✨ Сначала укажи дату рождения.\n\nВведи в формате *ДД.ММ.ГГГГ*",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✨ Ввести дату", callback_data="free:start")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
             ]),
-            parse_mode="Markdown",
         )
         await callback.answer()
         return
 
     name = user.first_name or "друг"
-    await callback.message.edit_text(
+    await replace_message(
+        callback.message,
         f"🔮 *{name}*, задай свой вопрос Тарологу.\n\n"
         f"Осталось вопросов: *{max_val - used}*\n\n"
         f"Примеры:\n"
@@ -74,7 +75,6 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◀️ Назад", callback_data="question:cancel")]
         ]),
-        parse_mode="Markdown",
     )
     await state.set_state(QuestionFSM.waiting_question)
     await callback.answer()

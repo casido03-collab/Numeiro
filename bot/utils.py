@@ -204,6 +204,27 @@ async def safe_edit_ai(
     return None
 
 
+async def replace_message(
+    message: Message,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: str | None = "Markdown",
+) -> Optional[Message]:
+    """
+    Универсальная замена сообщения на текст.
+    - Фото/видео/документ: сначала удаляем, затем отправляем новое текстовое.
+    - Текстовое: редактируем на месте.
+    Используется при навигации из медиа-сообщений (карта дня и т.д.).
+    """
+    if message.photo or message.video or message.document or message.animation:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return await safe_answer(message, text, reply_markup=reply_markup, parse_mode=parse_mode)
+    return await safe_edit(message, text, reply_markup=reply_markup, parse_mode=parse_mode)
+
+
 async def safe_delete(message: Message, timeout: float = 3.0) -> None:
     """Удалить сообщение с таймаутом и тихим игнорированием ошибок."""
     try:
