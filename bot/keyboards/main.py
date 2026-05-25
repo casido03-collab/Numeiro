@@ -134,7 +134,6 @@ def upsell_keyboard() -> InlineKeyboardMarkup:
 def after_reading_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="▶️ Продолжить разбор", callback_data="matrix:start")],
-        [InlineKeyboardButton(text="🔮 Открыть полный прогноз", callback_data="weekly:start")],
         [InlineKeyboardButton(text="🌊 Спросить ещё глубже", callback_data="menu:question")],
         [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
@@ -158,7 +157,6 @@ def after_reading_keyboard_matrix() -> InlineKeyboardMarkup:
     """after_reading_keyboard + кнопка контентного CTA для матрицы."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="▶️ Другой разбор", callback_data="menu:reading")],
-        [InlineKeyboardButton(text="🔮 Открыть полный прогноз", callback_data="weekly:start")],
         [InlineKeyboardButton(text="🌊 Спросить ещё глубже", callback_data="menu:question")],
         [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
         [InlineKeyboardButton(text="👁 Тайна 11:11", callback_data="content:numerology")],
