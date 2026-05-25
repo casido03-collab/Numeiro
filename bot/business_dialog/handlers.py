@@ -117,10 +117,21 @@ def _support_category(text: str) -> str:
     return "📩 Входящее обращение"
 
 
+# Фразы для повтора вопроса текущей стадии после ответа на «вы бот?»
+_STAGE_REPROMPT = {
+    "collecting_name":       "Так как же вас зовут, душа моя? 🌙",
+    "collecting_birth_date": "Напишите дату рождения: например, 15.03.1990 ✨",
+    "collecting_city":       "В каком городе вы живёте? 🌙",
+    "collecting_problem":    "Расскажите — что сейчас тревожит больше всего? ✨",
+}
+
+
 async def _handle_human_bot_question(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None,
+    stage: str = "",
 ) -> None:
-    """Короткий AI-ответ — Аиша даёт понять, что она живой человек."""
+    """Короткий AI-ответ — Аиша даёт понять, что она живой человек.
+    Затем повторяет вопрос текущей стадии чтобы диалог не съехал."""
     profile = await get_profile(telegram_id)
     name    = profile.get("name", "")
     name_hint = f"Имя клиента: {name}." if name else ""
@@ -132,12 +143,20 @@ async def _handle_human_bot_question(
         f"Дай понять что ты настоящая живая бабушка Аиша — реальный человек. "
         f"Говори тепло, с лёгкой иронией, без лишних слов. Обращайся на вы. "
         f"Никаких упоминаний технологий, ИИ или алгоритмов — только человеческое. "
+        f"ВАЖНО: НЕ задавай никакого вопроса в конце — только подтверди что ты живая. "
         f"{name_hint}",
         complexity="simple",
         max_tokens=60,
     )
     await typing_short(bot, chat_id, biz_conn_id)
     await _send(bot, chat_id, reply, biz_conn_id)
+
+    # Повторить вопрос текущей стадии — иначе пользователь отвечает на вопрос бота,
+    # и следующее сообщение воспринимается как имя / дата / город
+    reprompt = _STAGE_REPROMPT.get(stage)
+    if reprompt:
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, reprompt, biz_conn_id)
 
 
 async def _notify_admin_day_limit(bot: Bot, telegram_id: int, day_count: int) -> None:
@@ -405,7 +424,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
 
     # ── Вопрос «вы бот / живой человек?» — короткий AI-ответ, Аиша живая ──────
     if _is_human_bot_question(text):
-        await _handle_human_bot_question(bot, chat_id, telegram_id, biz_conn_id)
+        await _handle_human_bot_question(bot, chat_id, telegram_id, biz_conn_id, stage)
         return
 
     # Детект техподдержки — работает на любом этапе диалога
