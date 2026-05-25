@@ -2,9 +2,9 @@
 import json
 import random
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, FSInputFile
+from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.user import User
@@ -48,6 +48,9 @@ MAJOR_ARCANA = [
 
 ASSETS_DIR = Path(__file__).parent.parent.parent / "assets" / "tarot"
 
+# Московское время UTC+3
+_MSK = timezone(timedelta(hours=3))
+
 
 def _pick_card_for_today(user_id: int) -> tuple[str, str, str]:
     """Детерминированно выбрать карту на сегодня для пользователя."""
@@ -57,14 +60,46 @@ def _pick_card_for_today(user_id: int) -> tuple[str, str, str]:
     return rng.choice(MAJOR_ARCANA)
 
 
+def _time_until_midnight_msk() -> str:
+    """Время до полуночи по московскому времени."""
+    now_msk = datetime.now(_MSK)
+    midnight_msk = (now_msk + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    delta = midnight_msk - now_msk
+    hours = int(delta.total_seconds()) // 3600
+    minutes = (int(delta.total_seconds()) % 3600) // 60
+    if hours > 0:
+        return f"{hours} ч {minutes} мин"
+    return f"{minutes} мин"
+
+
 # ─── Обработчики ──────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "menu:tarot")
 async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession):
+    today_str = date.today().strftime("%Y-%m-%d")
+    cache_key = make_cache_key("tarot_card", user.id, today_str)
+
+    # ── Уже получал сегодня → показываем таймер ──────────────────────────────
+    already_today = await get_cached(cache_key)
+    if already_today:
+        time_left = _time_until_midnight_msk()
+        await callback.message.edit_text(
+            f"🃏 *Карта дня уже получена*\n\n"
+            f"Следующая карта откроется через *{time_left}* 🌙\n\n"
+            f"_Каждый день — новое послание Вселенной_",
+            reply_markup=back_to_main(),
+            parse_mode="Markdown",
+        )
+        await callback.answer()
+        return
+
+    # ── Проверка лимита за период ─────────────────────────────────────────────
     has_limit, used, max_val = await check_limit(session, user.id, "tarot_cards")
     if not has_limit:
         await callback.message.edit_text(
-            "🔒 *Карта дня*\n\nЭта функция требует подписки или доступных лимитов.\n\n"
+            "🔒 *Карта дня*\n\nЛимит карт за этот период исчерпан.\n\n"
             "• Бесплатно: 2 карты за период\n"
             "• Lite: 5 карт за период\n"
             "• Premium: 10 карт за период\n"
@@ -75,8 +110,8 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
         await callback.answer()
         return
 
+    # ── Нет даты рождения ─────────────────────────────────────────────────────
     if not user.birth_date:
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         await callback.message.edit_text(
             "✨ Для карты дня нам нужна ваша дата рождения.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -88,11 +123,10 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
         await callback.answer()
         return
 
-    # Показываем загрузочную фразу
+    # ── Генерируем карту ──────────────────────────────────────────────────────
     thinking_msg = await callback.message.edit_text(random_thinking())
 
     file_key, card_name_ru, card_label = _pick_card_for_today(user.id)
-    today_str = date.today().strftime("%Y-%m-%d")
 
     birth_date_obj = parse_birth_date(user.birth_date)
     if not birth_date_obj:
@@ -100,45 +134,45 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
         await callback.answer()
         return
 
-    # Проверяем кэш (карта одна на день для пользователя)
-    cache_key = make_cache_key("tarot_card", user.id, today_str)
-    cached_text = await get_cached(cache_key)
+    nums = calculate_all(birth_date_obj)
+    context = {
+        "name": user.first_name or "друг",
+        "birth_date": user.birth_date,
+        "card": card_label,
+        "card_name": card_name_ru,
+        "numbers": nums,
+        "date": today_str,
+    }
+    user_msg = (
+        f"Дай интерпретацию карты дня «{card_label}».\n"
+        f"Данные: {json.dumps(context, ensure_ascii=False)}"
+    )
+    card_text = await generate(
+        session, user.id, "tarot_card",
+        TAROT_CARD_PROMPT, user_msg,
+        complexity="medium", max_tokens=500,
+    )
 
-    if not cached_text:
-        nums = calculate_all(birth_date_obj)
-        context = {
-            "name": user.first_name or "друг",
-            "birth_date": user.birth_date,
-            "card": card_label,
-            "card_name": card_name_ru,
-            "numbers": nums,
-            "date": today_str,
-        }
-        user_msg = (
-            f"Дай интерпретацию карты дня «{card_label}».\n"
-            f"Данные: {json.dumps(context, ensure_ascii=False)}"
-        )
-        cached_text = await generate(
-            session, user.id, "tarot_card",
-            TAROT_CARD_PROMPT, user_msg,
-            complexity="medium", max_tokens=500,
-        )
-        await set_cached(cache_key, cached_text, ttl=3600 * 20)  # до конца дня
+    # Сохраняем в кэш (до полуночи МСК)
+    now_msk = datetime.now(_MSK)
+    midnight_msk = (now_msk + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    ttl = int((midnight_msk - now_msk).total_seconds())
+    await set_cached(cache_key, card_text, ttl=ttl)
 
     # Сохраняем в историю
     from bot.services.reports_service import save_report
     await save_report(
         session, user.id, "tarot_card",
         title=f"Карта дня — {card_label} | {date.today().strftime('%d.%m.%Y')}",
-        content=cached_text,
+        content=card_text,
         metadata={"card_key": file_key, "card_name": card_name_ru, "date": today_str},
     )
     await consume_limit(session, user.id, "tarot_cards")
     await consume_limit(session, user.id, "ai_messages")
 
-    # Правильный порядок: удаляем loading → фото сверху → текст+кнопки снизу
+    # ── Отправляем: фото сверху, текст+кнопки снизу ───────────────────────────
     name = user.first_name or "друг"
-    text = f"🃏 *Карта дня — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{cached_text}"
+    text = f"🃏 *Карта дня — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{card_text}"
 
     image_path = ASSETS_DIR / f"{file_key}.png"
     try:
