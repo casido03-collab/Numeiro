@@ -23,15 +23,31 @@ def main_menu() -> InlineKeyboardMarkup:
 
 def sphere_menu(prefix: str, back: str = "menu:main") -> InlineKeyboardMarkup:
     spheres = [
-        ("❤️ Любовь", "love"),
-        ("💰 Деньги", "money"),
-        ("💼 Работа", "work"),
-        ("⚡ Здоровье / Энергия", "health"),
-        ("👨‍👩‍👧 Семья", "family"),
-        ("🎯 Важное решение", "decision"),
-        ("🔮 Общий прогноз", "general"),
+        ("❤️ Любовь",              "love"),
+        ("💰 Деньги",              "money"),
+        ("💼 Работа",              "work"),
+        ("⚡ Здоровье / Энергия",  "health"),
+        ("👨‍👩‍👧 Семья",              "family"),
+        ("🎯 Важное решение",      "decision"),
+        ("🔮 Общий прогноз",       "general"),
+        ("🌟 Предназначение",      "purpose"),
+        ("🧠 Личностный рост",     "growth"),
+        ("💑 Партнёрство",         "partnership"),
+        ("👶 Дети",                "children"),
+        ("🎓 Образование",         "education"),
+        ("✈️ Переезд / Поездка",   "relocation"),
+        ("🏠 Жильё / Дом",         "home"),
+        ("🌿 Духовность",          "spiritual"),
+        ("🎨 Творчество",          "creativity"),
+        ("🤝 Дружба",              "friendship"),
+        ("🔥 Мотивация",           "motivation"),
+        ("🧘 Внутренний мир",      "inner_peace"),
+        ("💫 Карма",               "karma"),
+        ("🚀 Карьерный рост",      "career"),
     ]
-    buttons = [[InlineKeyboardButton(text=name, callback_data=f"{prefix}:{key}")] for name, key in spheres]
+    # Два столбца
+    btns = [InlineKeyboardButton(text=name, callback_data=f"{prefix}:{key}") for name, key in spheres]
+    buttons = [btns[i:i+2] for i in range(0, len(btns), 2)]
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data=back)])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
