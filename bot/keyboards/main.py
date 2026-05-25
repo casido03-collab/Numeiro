@@ -71,7 +71,9 @@ def event_type_menu() -> InlineKeyboardMarkup:
         ("🎨 Творческий проект",     "creative"),
         ("🙏 Духовная практика",     "spiritual"),
     ]
-    buttons = [[InlineKeyboardButton(text=name, callback_data=f"dates:event:{key}")] for name, key in events]
+    # Два столбца: берём пары событий в одну строку
+    btns = [InlineKeyboardButton(text=name, callback_data=f"dates:event:{key}") for name, key in events]
+    buttons = [btns[i:i+2] for i in range(0, len(btns), 2)]
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
