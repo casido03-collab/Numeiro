@@ -63,7 +63,10 @@ async def horoscope_menu(callback: CallbackQuery, user: User, session: AsyncSess
             f"🔯 *Гороскоп дня уже получен* — найди его выше в переписке ☝️\n\n"
             f"Следующий гороскоп откроется через *{time_left}* 🌙\n\n"
             f"_Каждый день — новое послание звёзд_",
-            reply_markup=back_to_main(),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📋 История", callback_data="reports:menu")],
+                [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+            ]),
             parse_mode="Markdown",
         )
         await callback.answer()
