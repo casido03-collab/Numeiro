@@ -15,7 +15,7 @@ from database.base import create_tables, async_session_maker
 from bot.middlewares.user import UserMiddleware
 from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.handlers import start, profile, reading, weekly, compatibility, daily, question, dates, payments, admin, share
-from bot.handlers import onboarding, content, cabinet, referral, reports, tarot
+from bot.handlers import onboarding, content, cabinet, referral, reports, tarot, horoscope
 from bot.services.scheduler import setup_scheduler
 from bot.handlers.yookassa_webhook import setup_webhook, handle_yookassa_webhook
 from bot.business_dialog.router import router as business_router, setup_business_dialog
@@ -118,6 +118,7 @@ async def main():
         cabinet.router,      # reply-кнопка «💎 Подписка»
         referral.router,     # reply-кнопка «👥 Друзья»
         reports.router,      # 🌀 Мои Разборы
+        horoscope.router,    # 🔯 Гороскоп
         tarot.router,        # 🃏 Карта дня
         profile.router,
         reading.router,
