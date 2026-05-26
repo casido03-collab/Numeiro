@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, cast, Date
-from bot.models.user import User, Subscription, Payment, AIRequest, PlanEnum, SubscriptionStatusEnum
+from bot.models.user import User, Subscription, Payment, AIRequest, PlanEnum, SubscriptionStatusEnum, Referral
 from config import settings
 
 router = Router()
@@ -381,6 +381,92 @@ async def cmd_broadcast(message: Message, session: AsyncSession):
         await message.answer(f"✅ Рассылка завершена: отправлено *{sent}*, ошибок *{failed}*", parse_mode="Markdown")
     except Exception as e:
         logger.exception("cmd_broadcast error")
+        await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
+
+
+# ─── /referrals ───────────────────────────────────────────────────────────────
+
+@router.message(Command("referrals"))
+async def cmd_referrals(message: Message, session: AsyncSession):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=today_start.weekday())
+        month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # Общие цифры
+        total_refs = (await session.execute(select(func.count(Referral.id)))).scalar() or 0
+        refs_today = (await session.execute(
+            select(func.count(Referral.id)).where(Referral.created_at >= today_start)
+        )).scalar() or 0
+        refs_week = (await session.execute(
+            select(func.count(Referral.id)).where(Referral.created_at >= week_start)
+        )).scalar() or 0
+        refs_month = (await session.execute(
+            select(func.count(Referral.id)).where(Referral.created_at >= month_start)
+        )).scalar() or 0
+
+        # Сколько уникальных пользователей поделились ссылкой (привели хоть одного)
+        unique_inviters = (await session.execute(
+            select(func.count(func.distinct(Referral.inviter_telegram_id)))
+        )).scalar() or 0
+
+        # Сколько приглашённых совершили покупку
+        with_purchase = (await session.execute(
+            select(func.count(Referral.id)).where(Referral.purchase_status == True)
+        )).scalar() or 0
+
+        # Конверсия
+        conversion = (with_purchase / total_refs * 100) if total_refs > 0 else 0
+
+        # Топ-10 инвайтеров (по количеству приглашённых)
+        from sqlalchemy import Integer as SAInteger, case
+        top_inviters_q = await session.execute(
+            select(
+                Referral.inviter_telegram_id,
+                func.count(Referral.id).label("invited_count"),
+                func.sum(
+                    case((Referral.purchase_status == True, 1), else_=0)
+                ).label("purchases"),
+            )
+            .group_by(Referral.inviter_telegram_id)
+            .order_by(func.count(Referral.id).desc())
+            .limit(10)
+        )
+        top_rows = top_inviters_q.all()
+
+        # Собираем имена инвайтеров из таблицы users
+        inviter_ids = [row[0] for row in top_rows]
+        names_q = await session.execute(
+            select(User.telegram_id, User.first_name, User.username)
+            .where(User.telegram_id.in_(inviter_ids))
+        )
+        names_map = {row.telegram_id: (row.first_name or row.username or str(row.telegram_id)) for row in names_q}
+
+        top_lines = []
+        for i, (tg_id, count, purchases) in enumerate(top_rows, 1):
+            name = names_map.get(tg_id, str(tg_id))
+            purchases = purchases or 0
+            top_lines.append(f"{i}. {name} (`{tg_id}`): *{count}* чел. → {purchases} покупок")
+
+        top_block = "\n".join(top_lines) if top_lines else "нет данных"
+
+        text = (
+            f"🔗 *Реферальная статистика*\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"👥 Всего приглашено: *{total_refs}*\n"
+            f"• Сегодня: *{refs_today}*\n"
+            f"• Эта неделя: *{refs_week}*\n"
+            f"• Этот месяц: *{refs_month}*\n\n"
+            f"👤 Уникальных инвайтеров: *{unique_inviters}*\n"
+            f"💰 Совершили покупку: *{with_purchase}*\n"
+            f"📈 Конверсия в покупку: *{conversion:.1f}%*\n\n"
+            f"🏆 *Топ инвайтеры:*\n{top_block}"
+        )
+        await message.answer(text, parse_mode="Markdown")
+    except Exception as e:
+        logger.exception("cmd_referrals error")
         await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
 
 
