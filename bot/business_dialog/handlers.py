@@ -62,6 +62,17 @@ def _is_support_request(text: str) -> bool:
 # ─── Вопрос про поле «Комментарий» в Tribute ─────────────────────────────────
 
 # Статичный ответ — не требует AI-генерации
+# ─── Авто-сообщение при переходе с бота / канала ─────────────────────────────
+
+# Текст автосообщения, которое Telegram отправляет при переходе по кнопке бота/канала
+_AUTO_REFERRAL_TEXT = "здравствуйте бабушка aisha, могу задать свой личный вопрос?"
+
+
+def _is_auto_referral_greeting(text: str) -> bool:
+    """Определить — это автосообщение при переходе с бота или канала."""
+    return text.lower().strip() == _AUTO_REFERRAL_TEXT
+
+
 _TRIBUTE_COMMENT_REPLY = (
     "В строке «Комментарий» напишите что угодно — любое слово или фраза подойдёт "
     "🌙 Главное чтобы строка не была пустой, иначе оплата не пройдёт."
@@ -415,6 +426,13 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
 
     stage = stage_now  # уже получен выше
     logger.info("business_msg tid=%s stage=%s text=%.40s", telegram_id, stage, text)
+
+    # ── Авто-сообщение при переходе с бота / канала ──────────────────────────
+    # Для уже знакомых — тихий игнор (не дублируем приветствие).
+    # Для новых (stage="" / "new") — пропускаем дальше, диалог начнётся штатно.
+    if _is_auto_referral_greeting(text) and stage not in ("", "new"):
+        logger.info("business_msg: auto-referral greeting ignored for returning user tid=%s", telegram_id)
+        return
 
     # ── Вопрос про поле «Комментарий» в Tribute — статичный ответ, без AI ──────
     if _is_tribute_comment_question(text):
