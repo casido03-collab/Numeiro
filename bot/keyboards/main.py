@@ -19,7 +19,7 @@ def main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔮 Задать вопрос Тарологу", callback_data="menu:question")],
         [InlineKeyboardButton(text="📆 Подбор дат", callback_data="menu:dates")],
         [InlineKeyboardButton(text="⭐ Отзывы", url="https://t.me/ezoterika_aisha")],
-        [InlineKeyboardButton(text="💬 Написать бабушке", url="https://t.me/m/-Ekcn86bNmU0")],
+        [InlineKeyboardButton(text="💬 Написать бабушке Aisha", url="https://t.me/m/-Ekcn86bNmU0")],
         [
             InlineKeyboardButton(text="📜 Тарифы", callback_data="menu:plans"),
             InlineKeyboardButton(text="🌀 История", callback_data="reports:menu"),
