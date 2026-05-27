@@ -175,7 +175,7 @@ TRIAL_UPSELL_TEXT = (
     "🌙 {name}, бабушка Aisha просила передать…\n\n"
     "Иногда человек уходит именно в тот момент, когда ответы начинают становиться особенно важными.\n\n"
     "Если внутри остались вопросы — можешь вернуться в бот или написать Aisha лично.\n\n"
-    "✨ @babushka_aisha"
+    '✨ <a href="https://t.me/m/-Ekcn86bNmU0">Написать бабушке Aisha</a>'
 )
 
 
@@ -256,7 +256,7 @@ async def run_trial_upsell(bot: Bot, session: AsyncSession) -> None:
         name = user.first_name or "друг"
         text = TRIAL_UPSELL_TEXT.format(name=name)
         try:
-            await bot.send_message(user.telegram_id, text, parse_mode=None)
+            await bot.send_message(user.telegram_id, text, parse_mode="HTML")
             activity.trial_upsell_sent = True
             await session.commit()
             logger.info("Trial upsell sent to user %s", user.telegram_id)
