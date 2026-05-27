@@ -369,6 +369,11 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     biz_conn_id = message.business_connection_id
     username    = message.from_user.username
 
+    # ── Сообщение от владельца аккаунта (ручной ответ) — не трогаем диалог ───
+    from config import settings
+    if telegram_id in settings.admin_ids_list:
+        return
+
     # ── Нетекстовые сообщения (стикеры, фото, голос и т.д.) ─────────────────
     if not text:
         return  # молча игнорируем — не тратим AI
