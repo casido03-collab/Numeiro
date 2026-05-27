@@ -66,10 +66,13 @@ async def handle_tribute_webhook(request: web.Request) -> web.Response:
     """POST /webhooks/tribute — уведомление об оплате от Tribute."""
     raw_body = await request.read()
 
-    # Проверка подписи (логируем заголовки для отладки, но не блокируем)
+    # Логируем входящий запрос для отладки + проверка подписи (не блокируем — логируем несовпадение)
     from config import settings
     sig_header = request.headers.get("trbt-signature", "")
-    logger.info("Tribute webhook received: sig_header=%r body=%r", sig_header, raw_body[:200])
+    logger.info("Tribute webhook received: sig_header=%r body=%r", sig_header, raw_body[:500])
+    if settings.tribute_api_key and sig_header:
+        if not _verify_tribute_signature(raw_body, sig_header, settings.tribute_api_key):
+            logger.warning("Tribute webhook: signature mismatch (processing anyway)")
 
     try:
         body = json.loads(raw_body)
