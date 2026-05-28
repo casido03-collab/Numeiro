@@ -81,6 +81,30 @@ _TRIBUTE_COMMENT_REPLY = (
     "🌙 Главное чтобы строка не была пустой, иначе оплата не пройдёт."
 )
 
+# ─── Проблема с открытием ссылки / приложения ────────────────────────────────
+
+_PAYMENT_LINK_ISSUE_KEYWORDS = [
+    "не открывается", "не открыть", "не могу открыть", "не грузится",
+    "не загружается", "сайт не работает", "приложение не работает",
+    "ссылка не работает", "ссылка не открывается", "не переходит",
+    "не пускает", "ошибка", "недоступно", "недоступен",
+    "не могу зайти", "не заходит", "не могу перейти",
+]
+
+_VPN_REPLIES = [
+    "Скорее всего нужен VPN 🌙 Включите его и попробуйте открыть ссылку снова.",
+    "Попробуйте включить VPN и открыть ссылку ещё раз — обычно это помогает 🌙",
+    "Это чаще всего решается через VPN ✨ Включите и повторите попытку.",
+    "Включите VPN и попробуйте снова — скорее всего ссылка сразу откроется 🌙",
+    "Вероятно, нужен VPN 🌙 Включите его и попробуйте перейти по ссылке ещё раз.",
+]
+
+
+def _is_payment_link_issue(text: str) -> bool:
+    """Пользователь не может открыть ссылку на оплату."""
+    t = text.lower()
+    return any(kw in t for kw in _PAYMENT_LINK_ISSUE_KEYWORDS)
+
 
 def _is_tribute_comment_question(text: str) -> bool:
     """Пользователь спрашивает что писать в поле комментария при оплате через Tribute."""
@@ -555,6 +579,12 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     # Для новых (stage="" / "new") — пропускаем дальше, диалог начнётся штатно.
     if _is_auto_referral_greeting(text) and stage not in ("", "new"):
         logger.info("business_msg: auto-referral greeting ignored for returning user tid=%s", telegram_id)
+        return
+
+    # ── Проблема с открытием ссылки — VPN подсказка, без AI ─────────────────────
+    if _is_payment_link_issue(text):
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, random.choice(_VPN_REPLIES), biz_conn_id)
         return
 
     # ── Вопрос про поле «Комментарий» в Tribute — статичный ответ, без AI ──────
