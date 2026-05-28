@@ -238,7 +238,6 @@ async def _process_payment(
         await set_biz_stage(telegram_id, "accompaniment")
     else:
         # Разовый разбор — есть лимит follow-up
-        await _send(
-            f"После просмотра вы можете задать ещё {followup_limit} уточняющих вопроса 🌙\n\nНапишите — я слушаю."
-        )
+        from bot.business_dialog.utils import followup_invite
+        await _send(followup_invite(followup_limit))
         await set_biz_stage(telegram_id, "followup")

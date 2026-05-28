@@ -1050,13 +1050,9 @@ async def _deliver_tarot_reading(
 
         # Уведомление о follow-up вопросах
         followup_limit = 5
+        from bot.business_dialog.utils import followup_invite
         await typing_short(bot, chat_id, biz_conn_id)
-        await _send(
-            bot, chat_id,
-            f"После просмотра вы можете задать ещё {followup_limit} уточняющих вопроса 🌙\n\n"
-            f"Напишите — я слушаю.",
-            biz_conn_id,
-        )
+        await _send(bot, chat_id, followup_invite(followup_limit), biz_conn_id)
 
         # Переключаем стадию
         await set_biz_stage(telegram_id, "followup")
