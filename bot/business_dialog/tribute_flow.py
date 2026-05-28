@@ -125,7 +125,7 @@ async def _process_payment(
     from bot.business_dialog.services import generate_business
     from bot.business_dialog.prompts import (
         AISHA_PAID_PROMPT, AISHA_CAUSE_PROMPT,
-        AISHA_FORECAST_PROMPT, AISHA_ACCOMPANIMENT_PROMPT,
+        AISHA_ACCOMPANIMENT_PROMPT,
     )
     from bot.business_dialog.upsell import get_tier_by_amount, get_tier, is_accompaniment
 
@@ -189,13 +189,22 @@ async def _process_payment(
     # Имитация работы
     await typing_long(_bot, telegram_id, biz_conn_id)
 
-    # Выбор промпта по тиру
+    # ── t990: особый поток — Таро, просим задать конкретный вопрос ───────────────
+    if tier_key == "t990":
+        await typing_long(_bot, telegram_id, biz_conn_id)
+        await _send(
+            "Чтобы карты открыли именно то, что вам нужно — задайте мне один вопрос, "
+            "самый важный для вас сейчас 🔮\n\nНапишите его — я жду."
+        )
+        await set_biz_stage(telegram_id, "t990_waiting_question")
+        return
+
+    # ── Остальные тиры: немедленная генерация разбора ─────────────────────────
     _TIER_PROMPTS = {
-        "t190":  (AISHA_PAID_PROMPT,        "complex", 900),
-        "t490":  (AISHA_CAUSE_PROMPT,       "complex", 900),
-        "t990":  (AISHA_FORECAST_PROMPT,    "complex", 1000),
-        "t1990": (AISHA_ACCOMPANIMENT_PROMPT, "medium", 500),
-        "t4990": (AISHA_ACCOMPANIMENT_PROMPT, "medium", 500),
+        "t190":  (AISHA_PAID_PROMPT,          "complex", 900),
+        "t490":  (AISHA_CAUSE_PROMPT,         "complex", 900),
+        "t1990": (AISHA_ACCOMPANIMENT_PROMPT, "medium",  500),
+        "t4990": (AISHA_ACCOMPANIMENT_PROMPT, "medium",  500),
         "t9900": (AISHA_ACCOMPANIMENT_PROMPT, "complex", 600),
     }
     prompt, complexity, max_tokens = _TIER_PROMPTS.get(tier_key, (AISHA_PAID_PROMPT, "complex", 900))

@@ -1,9 +1,12 @@
 """Handlers для Telegram Business диалога с бабушкой Аишей."""
+import asyncio
 import json
 import logging
 import random
+import time
+from pathlib import Path
 from aiogram import Router, Bot
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 
 from bot.business_dialog.session_manager import (
     get_biz_stage, set_biz_stage,
@@ -217,6 +220,32 @@ async def _notify_admins(bot: Bot, telegram_id: int, name: str, text: str, usern
         except Exception as e:
             logger.warning("admin notify failed for %s: %s", admin_id, e)
 
+# ─── Возражения на апсейл t990 ────────────────────────────────────────────────
+
+_T990_OBJECTION_KEYWORDS = [
+    "ничего", "не сказали", "не раскрыли", "не объяснили", "непонятно",
+    "за что", "зачем платить", "не стоит", "пустые слова", "общие слова",
+    "конкретно", "конкретнее", "конкретику", "прямой ответ",
+    "и так знаю", "без вас", "сама знаю", "сам знаю", "слушать интуицию",
+    "слушать сердце", "повторные", "уже знаю", "не новое", "не помогло",
+    "зря", "потратила", "потратил",
+]
+
+# Статичные ответы на возражение «вы ничего конкретного не сказали»
+_T990_OBJECTION_RESPONSES = [
+    "{name}предыдущий шаг — это был разбор причины, фундамент 🌙\n\nСейчас я обращаюсь к картам Таро — и там будет прямой ответ на ваш конкретный вопрос. Карта не говорит общими словами — она открывает именно вашу ситуацию.",
+    "{name}разбор причины — это корень, который мы нашли вместе ✨\n\nПрогноз через карты Таро — это уже конкретный ответ: что будет, как развернётся ситуация, что нужно сделать. Совсем другой уровень.",
+    "{name}понимаю вас {e}\n\nПервый просмотр — это была основа. Карты Таро дают то, чего не даёт анализ — прямой образ вашей ситуации и конкретный путь вперёд. Одна карта иногда говорит больше, чем долгий разговор.",
+    "{name}слышу вас, душа моя {e}\n\nТо что мы делали — это была причина. Сейчас карты откроют развитие — что ждёт впереди именно по вашему вопросу. Это разные вещи, и второе — конкретнее.",
+]
+
+
+def _is_t990_objection(text: str) -> bool:
+    """Клиент возражает что предыдущие разборы были 'ни о чём'."""
+    t = text.lower()
+    return any(kw in t for kw in _T990_OBJECTION_KEYWORDS)
+
+
 _ESOTERIC_EMOJIS = ["🌙", "✨", "💫", "🔮", "🌟", "⭐", "🌌", "💎"]
 
 
@@ -314,8 +343,40 @@ from bot.business_dialog.ai_router import detect_intent, get_product_name
 from bot.business_dialog.services import generate_business
 from bot.business_dialog.prompts import (
     AISHA_FREE_PROMPT, AISHA_FOLLOWUP_PROMPT, AISHA_PITCH_PROMPT,
-    AISHA_ACCOMPANIMENT_PROMPT,
+    AISHA_ACCOMPANIMENT_PROMPT, AISHA_TAROT_BUSINESS_PROMPT,
 )
+
+# ─── Карты Таро (22 Старших Аркана) ──────────────────────────────────────────
+
+_MAJOR_ARCANA = [
+    ("00_fool",             "Шут",              "0 — Шут"),
+    ("01_magician",         "Маг",              "I — Маг"),
+    ("02_high_priestess",   "Верховная Жрица",  "II — Верховная Жрица"),
+    ("03_empress",          "Императрица",      "III — Императрица"),
+    ("04_emperor",          "Император",        "IV — Император"),
+    ("05_hierophant",       "Иерофант",         "V — Иерофант"),
+    ("06_lovers",           "Влюблённые",       "VI — Влюблённые"),
+    ("07_chariot",          "Колесница",        "VII — Колесница"),
+    ("08_strength",         "Сила",             "VIII — Сила"),
+    ("09_hermit",           "Отшельник",        "IX — Отшельник"),
+    ("10_wheel_of_fortune", "Колесо Фортуны",   "X — Колесо Фортуны"),
+    ("11_justice",          "Справедливость",   "XI — Справедливость"),
+    ("12_hanged_man",       "Повешенный",       "XII — Повешенный"),
+    ("13_death",            "Смерть",           "XIII — Смерть"),
+    ("14_temperance",       "Умеренность",      "XIV — Умеренность"),
+    ("15_devil",            "Дьявол",           "XV — Дьявол"),
+    ("16_tower",            "Башня",            "XVI — Башня"),
+    ("17_star",             "Звезда",           "XVII — Звезда"),
+    ("18_moon",             "Луна",             "XVIII — Луна"),
+    ("19_sun",              "Солнце",           "XIX — Солнце"),
+    ("20_judgement",        "Суд",              "XX — Суд"),
+    ("21_world",            "Мир",              "XXI — Мир"),
+]
+
+_TAROT_ASSETS = Path(__file__).parent.parent.parent / "assets" / "tarot"
+
+# Время ожидания перед отправкой карты (в секундах)
+_T990_WAIT_SECONDS = 480  # 8 минут
 from bot.business_dialog.tribute_flow import payment_keyboard, return_payment_keyboard, TRIBUTE_PRICE
 from bot.business_dialog.upsell import get_tier, tier_link, upsell_bridge, is_accompaniment
 from bot.business_dialog.validators import (
@@ -418,7 +479,8 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     # Одиночные символы/смайлы в платных стадиях не генерируем AI-ответ
     stage_now = await get_biz_stage(telegram_id)
     if len(text) < 2 and stage_now in (
-        "waiting_payment", "waiting_upsell", "accompaniment", "followup"
+        "waiting_payment", "waiting_upsell", "accompaniment", "followup",
+        "t990_preparing",
     ):
         return
 
@@ -477,6 +539,10 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         await _stage_accompaniment(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "waiting_upsell":
         await _stage_waiting_upsell(bot, chat_id, telegram_id, biz_conn_id, text)
+    elif stage == "t990_waiting_question":
+        await _stage_t990_waiting_question(bot, chat_id, telegram_id, biz_conn_id, text)
+    elif stage == "t990_preparing":
+        await _stage_t990_preparing(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "completed":
         await _stage_completed(bot, chat_id, telegram_id, biz_conn_id)
     elif stage == "support":
@@ -671,35 +737,252 @@ async def _stage_accompaniment(
 async def _stage_waiting_upsell(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str = "",
 ) -> None:
-    """Пользователь написал пока ждём оплаты следующего тира — отвечаем по смыслу, без кнопки.
-    Кнопка вернётся только через 1 час неактивности (планировщик напоминаний)."""
+    """Пользователь написал пока ждём оплаты следующего тира.
+
+    Для t990: если клиент возражает что предыдущие разборы «ни о чём» —
+    статичный ответ объясняющий ценность Таро-расклада.
+    Иначе: короткий AI-ответ по смыслу вопроса.
+    Кнопка НЕ повторяется — придёт через 1 час от планировщика."""
     profile       = await get_profile(telegram_id)
     next_tier_key = profile.get("next_tier", "t490")
     timing        = _tier_timing_hint(next_tier_key)
 
-    if text:
-        context = json.dumps({
-            "name":    profile.get("name", ""),
-            "gender":  profile.get("gender", "unknown"),
-            "problem": profile.get("problem", ""),
-        }, ensure_ascii=False)
-        reply = await generate_business(
-            AISHA_FREE_PROMPT,
-            f"Клиент задаёт вопрос: «{text}»\n\n"
-            f"Ответь ОДНИМ коротким предложением (максимум 15 слов) по смыслу. "
-            f"Не упоминай цену или слово 'оплата'. Обращайся на вы. "
-            f"НЕ задавай вопросов в конце, НЕ добавляй концовку-триггер — просто ответь и всё.\n\n"
-            f"ВАЖНО: если клиент спрашивает о времени или сроках выполнения — ответь точно: {timing}. "
-            f"Никогда не придумывай сроки.\n\n"
-            f"ВАЖНО: если клиент спрашивает о ссылке на оплату (как долго работает, истекает ли) — "
-            f"отвечай что ссылка работает в любой момент, без ограничений по времени, "
-            f"буду ждать вашего шага.\n\nДанные: {context}",
-            complexity="simple",
-            max_tokens=50,
+    if not text:
+        return
+
+    name = profile.get("name", "")
+
+    # ── Возражение на t990 («ничего не сказали, за что платить») ──────────────
+    if next_tier_key == "t990" and _is_t990_objection(text):
+        name_prefix = f"{name}, " if name else ""
+        reply = random.choice(_T990_OBJECTION_RESPONSES).format(
+            name=name_prefix, e=_emo()
         )
-        await typing_for_text(bot, chat_id, biz_conn_id, reply)
+        await typing_short(bot, chat_id, biz_conn_id)
         await _send(bot, chat_id, reply, biz_conn_id)
+        return
+
+    # ── Обычный вопрос / сомнение — AI с контекстом тира ─────────────────────
+    context = json.dumps({
+        "name":    name,
+        "gender":  profile.get("gender", "unknown"),
+        "problem": profile.get("problem", ""),
+    }, ensure_ascii=False)
+
+    # Для t990 — объясняем через Таро
+    extra_context = ""
+    if next_tier_key == "t990":
+        extra_context = (
+            "ВАЖНО: клиент сомневается в ценности следующего шага. "
+            "Следующий шаг — расклад карт Таро на конкретный вопрос клиента. "
+            "Мягко объясни что карты дают конкретный ответ именно на его вопрос, "
+            "а не общие слова. Предыдущий разбор был о причинах — теперь карты покажут путь вперёд. "
+            "Говори 1–2 предложения, тепло, без давления. "
+        )
+
+    reply = await generate_business(
+        AISHA_FREE_PROMPT,
+        f"Клиент задаёт вопрос или сомневается: «{text}»\n\n"
+        f"{extra_context}"
+        f"Ответь КОРОТКО (1–2 предложения) по смыслу. "
+        f"Не упоминай слово 'оплата'. Обращайся на вы. "
+        f"НЕ задавай вопросов в конце, НЕ добавляй концовку-триггер.\n\n"
+        f"ВАЖНО: если спрашивают о сроках — ответь точно: {timing}. "
+        f"ВАЖНО: если о ссылке — ссылка работает в любой момент без ограничений.\n\n"
+        f"Данные: {context}",
+        complexity="simple",
+        max_tokens=70,
+    )
+    await typing_for_text(bot, chat_id, biz_conn_id, reply)
+    await _send(bot, chat_id, reply, biz_conn_id)
     # Кнопку НЕ повторяем — она придёт через планировщик после 1 часа тишины
+
+
+# ─── t990: ожидание вопроса от клиента ───────────────────────────────────────
+
+async def _stage_t990_waiting_question(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str,
+) -> None:
+    """Клиент написал свой вопрос для расклада Таро."""
+    if not text or len(text) < 4:
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, "Напишите ваш вопрос — я жду 🔮", biz_conn_id)
+        return
+
+    # Сохраняем вопрос
+    await store_profile_field(telegram_id, "t990_question", text)
+
+    # Фиксируем время начала
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    await r.set(f"t990_start:{telegram_id}", str(time.time()), ex=86400)
+
+    # Переключаем стадию
+    await set_biz_stage(telegram_id, "t990_preparing")
+
+    # Подтверждение
+    await typing_short(bot, chat_id, biz_conn_id)
+    await _send(
+        bot, chat_id,
+        "Принято, душа моя 🔮\n\nОбращаюсь к картам — это займёт около 8 минут. "
+        "Не уходите далеко, скоро всё узнаете.",
+        biz_conn_id,
+    )
+
+    # Запускаем фоновую задачу доставки расклада
+    task_key = f"t990_task:{telegram_id}"
+    already_started = not await r.set(task_key, "1", nx=True, ex=3600)
+    if not already_started:
+        asyncio.create_task(
+            _deliver_tarot_reading(bot, telegram_id, chat_id, biz_conn_id)
+        )
+
+
+# ─── t990: парирование во время ожидания (8 минут) ───────────────────────────
+
+async def _stage_t990_preparing(
+    bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str,
+) -> None:
+    """Клиент пишет пока мы 'готовим' расклад карт."""
+    from bot.services.cache import get_redis
+    r = await get_redis()
+
+    # Проверка: не прошло ли уже 8 минут (восстановление после перезапуска)
+    already_delivered = await r.get(f"t990_delivered:{telegram_id}")
+    if not already_delivered:
+        start_raw = await r.get(f"t990_start:{telegram_id}")
+        if start_raw:
+            elapsed = time.time() - float(start_raw)
+            if elapsed >= _T990_WAIT_SECONDS:
+                # Время вышло — запускаем доставку сейчас
+                task_key = f"t990_task:{telegram_id}"
+                not_running = await r.set(task_key, "1", nx=True, ex=3600)
+                if not_running:
+                    asyncio.create_task(
+                        _deliver_tarot_reading(bot, telegram_id, chat_id, biz_conn_id)
+                    )
+                return
+
+    # Ещё готовим — парируем сообщение клиента через AI
+    profile = await get_profile(telegram_id)
+    name = profile.get("name", "")
+    reply = await generate_business(
+        AISHA_FREE_PROMPT,
+        f"Ты сейчас обращаешься к картам Таро для клиента {name}. Это занимает время.\n"
+        f"Клиент написал: «{text}»\n\n"
+        f"Ответь ОЧЕНЬ коротко (1–2 предложения) — дай понять что ты в процессе расклада, "
+        f"попроси немного подождать. Говори мягко, с теплом. Обращайся на вы. "
+        f"Не говори сколько ещё ждать — только что ты занята и скоро всё будет.",
+        complexity="simple",
+        max_tokens=50,
+    )
+    await typing_short(bot, chat_id, biz_conn_id)
+    await _send(bot, chat_id, reply, biz_conn_id)
+
+
+# ─── t990: фоновая задача — доставка карты и интерпретации ──────────────────
+
+async def _deliver_tarot_reading(
+    bot: Bot, telegram_id: int, chat_id: int, biz_conn_id: str | None,
+) -> None:
+    """Спать 8 минут, затем отправить карту Таро + AI-интерпретацию."""
+    from bot.services.cache import get_redis
+
+    # Ждём 8 минут
+    await asyncio.sleep(_T990_WAIT_SECONDS)
+
+    # Дедупликация — не отправляем дважды
+    r = await get_redis()
+    already = not await r.set(f"t990_delivered:{telegram_id}", "1", nx=True, ex=86400)
+    if already:
+        return
+
+    # Проверяем что стадия ещё t990_preparing (не изменили вручную)
+    current_stage = await get_biz_stage(telegram_id)
+    if current_stage != "t990_preparing":
+        logger.info("t990 delivery skipped: stage=%s for tid=%s", current_stage, telegram_id)
+        return
+
+    profile  = await get_profile(telegram_id)
+    question = profile.get("t990_question") or profile.get("problem", "")
+    name     = profile.get("name", "")
+
+    # Выбираем случайную карту
+    card_file, card_name, card_display = random.choice(_MAJOR_ARCANA)
+    card_path = _TAROT_ASSETS / f"{card_file}.png"
+
+    async def _send_photo() -> None:
+        kw: dict = {"chat_id": chat_id, "photo": FSInputFile(card_path)}
+        if biz_conn_id:
+            kw["business_connection_id"] = biz_conn_id
+        try:
+            await bot.send_photo(**kw)
+        except Exception as e:
+            logger.warning("t990 send_photo failed for tid=%s: %s", telegram_id, e)
+
+    try:
+        # Имитация загрузки фото
+        action_kw: dict = {"chat_id": chat_id, "action": "upload_photo"}
+        if biz_conn_id:
+            action_kw["business_connection_id"] = biz_conn_id
+        await bot.send_chat_action(**action_kw)
+        await asyncio.sleep(2)
+
+        # Отправляем карту
+        await _send_photo()
+
+        # Короткий анонс что это за карта
+        await typing_short(bot, chat_id, biz_conn_id)
+        card_intro = (
+            f"Карта открылась — {card_display} 🔮\n\n"
+            f"Сейчас расскажу, что она говорит о вашем вопросе…"
+        )
+        await _send(bot, chat_id, card_intro, biz_conn_id)
+
+        # Генерируем интерпретацию карты под вопрос клиента
+        context = json.dumps({
+            "name":       name,
+            "gender":     profile.get("gender", "unknown"),
+            "birth_date": profile.get("birth_date", ""),
+            "question":   question,
+            "card":       card_display,
+            "card_name":  card_name,
+        }, ensure_ascii=False)
+
+        await typing_long(bot, chat_id, biz_conn_id)
+
+        interpretation = await generate_business(
+            AISHA_TAROT_BUSINESS_PROMPT,
+            f"Данные клиента: {context}",
+            complexity="complex",
+            max_tokens=900,
+        )
+
+        await typing_for_text(bot, chat_id, biz_conn_id, interpretation)
+        await _send(bot, chat_id, interpretation, biz_conn_id)
+
+        # Уведомление о follow-up вопросах
+        followup_limit = 5
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(
+            bot, chat_id,
+            f"После просмотра вы можете задать ещё {followup_limit} уточняющих вопроса 🌙\n\n"
+            f"Напишите — я слушаю.",
+            biz_conn_id,
+        )
+
+        # Переключаем стадию
+        await set_biz_stage(telegram_id, "followup")
+        await set_followup_left(telegram_id, followup_limit)
+
+        # Обновляем paid_tier если не установлен
+        if not await get_paid_tier(telegram_id):
+            await set_paid_tier(telegram_id, "t990")
+
+        logger.info("t990 tarot reading delivered to tid=%s card=%s", telegram_id, card_display)
+
+    except Exception as e:
+        logger.error("t990 delivery failed for tid=%s: %s", telegram_id, e)
 
 
 # ─── Этапы диалога ────────────────────────────────────────────────────────────
