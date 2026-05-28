@@ -740,9 +740,17 @@ async def _offer_next_upsell(
         await typing_medium(bot, chat_id, biz_conn_id)
 
     # Предложение следующего тира с кнопкой
-    offer = random.choice(_UPSELL_PAYMENT_TEXTS).format(
-        e=_emo(), p=name, price=price
-    )
+    if next_tier_key == "t990":
+        # Для t990 — акцент на Таро и конкретный ответ
+        offer = random.choice([
+            f"🔮 Расклад карт Таро — {price} ₽\n\nОдна карта даст конкретный ответ именно на ваш вопрос {_emo()}",
+            f"✨ Карты Таро — прямой ответ на ваш вопрос — {price} ₽\n\nОплатите — и я сразу начну раскладывать {_emo()}",
+            f"🔮 Расклад Таро на вашу ситуацию — {price} ₽\n\nОдна кнопка — и карты откроют то, что слова не передают {_emo()}",
+        ])
+    else:
+        offer = random.choice(_UPSELL_PAYMENT_TEXTS).format(
+            e=_emo(), p=name, price=price
+        )
     await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
 
 
