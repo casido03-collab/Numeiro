@@ -19,5 +19,5 @@ jobs:
           script: |
             cd /opt/numeiro
             git pull origin master
-            docker compose restart bot
+            docker compose up -d --build bot
             echo "✅ Deploy done: $(date)"
