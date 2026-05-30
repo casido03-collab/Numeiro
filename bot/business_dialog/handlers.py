@@ -511,14 +511,21 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     biz_conn_id = message.business_connection_id
     username    = message.from_user.username
 
+    # ── Нетекстовые сообщения (стикеры, фото, голос и т.д.) ─────────────────
+    if not text:
+        return  # молча игнорируем — не тратим AI
+
+    # Кодовая фраза сброса сессии (для тестирования) — работает для всех, включая admin
+    if text.lower() == _RESET_PHRASE:
+        await reset_session(telegram_id)
+        await _reset_db_session(telegram_id)
+        await _send(bot, chat_id, "🔄 Сессия сброшена. Пишите — начнём заново.", biz_conn_id)
+        return
+
     # ── Сообщение от владельца аккаунта (ручной ответ) — не трогаем диалог ───
     from config import settings
     if telegram_id in settings.admin_ids_list:
         return
-
-    # ── Нетекстовые сообщения (стикеры, фото, голос и т.д.) ─────────────────
-    if not text:
-        return  # молча игнорируем — не тратим AI
 
     # ── Rate limiting для business-сообщений (RateLimitMiddleware не покрывает) ─
     from bot.services.cache import rate_limit_check, get_redis
@@ -564,12 +571,6 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         "t990_preparing",
     ):
         return
-
-    # Кодовая фраза сброса сессии (для тестирования)
-    if text.lower() == _RESET_PHRASE:
-        await reset_session(telegram_id)
-        await _reset_db_session(telegram_id)
-        await _send(bot, chat_id, "🔄 Сессия сброшена. Пишите — начнём заново.", biz_conn_id)
         return
 
     stage = stage_now  # уже получен выше
