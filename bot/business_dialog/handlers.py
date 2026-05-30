@@ -4,6 +4,7 @@ import json
 import logging
 import random
 import time
+from datetime import date
 from pathlib import Path
 from aiogram import Router, Bot
 from aiogram.types import Message, FSInputFile
@@ -777,11 +778,49 @@ async def _offer_next_upsell(
             f"✨ Расклад Таро на вашу ситуацию — {price} ₽\n\nОплатите — и карты дадут более глубокий взгляд на ваш вопрос {_emo()}",
             f"🔮 Карты Таро — {price} ₽\n\nОдна кнопка — и карты уточнят картину того, что происходит {_emo()}",
         ])
+        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
+
+    elif next_tier_key == "t1990":
+        # Для t1990 — сначала подробное описание сервиса, потом кнопка
+        description = random.choice([
+            (
+                "Позвольте объяснить, что это значит — семь дней рядом 🌟\n\n"
+                "Каждое утро в 8 часов я буду присылать вам личное послание — план на день. "
+                "Что несёт этот день, на что обратить внимание, что поддержит именно вас.\n\n"
+                "В течение дня вы можете задавать мне вопросы — до 6 в день. "
+                "Всё что тревожит, что происходит прямо сейчас, что хотите прояснить. "
+                "Я отвечу как эзотерик: с вниманием, без давления.\n\n"
+                "Семь дней живого присутствия рядом с вашей жизнью ✨"
+            ),
+            (
+                "Вот что значит неделя рядом со мной 🌟\n\n"
+                "Каждое утро в 8:00 вы будете получать от меня личное послание — "
+                "энергии дня, что важно, на что обратить внимание именно вам.\n\n"
+                "Весь день я открыта для вопросов — до 6 в сутки. "
+                "По ситуации, по чувствам, по любому моменту который беспокоит. "
+                "Я рядом как личный эзотерик — спокойно, без торопливости.\n\n"
+                "Семь дней. Каждый день. Рядом 💫"
+            ),
+            (
+                "Семь дней — это не разовый ответ 🌟\n\n"
+                "Каждое утро в 8 часов вы будете получать от меня личный план — "
+                "что несёт этот день и как к нему подойти.\n\n"
+                "В любое время дня вы можете написать мне — "
+                "вопрос по ситуации, совет, что-то что произошло. "
+                "До 6 вопросов в день — и я отвечу на каждый с полным вниманием.\n\n"
+                "Это неделя живого наблюдения за вашей ситуацией ✨"
+            ),
+        ])
+        await _send(bot, chat_id, description, biz_conn_id)
+        await typing_medium(bot, chat_id, biz_conn_id)
+        offer = random.choice(_UPSELL_PAYMENT_TEXTS).format(e=_emo(), p=name, price=price)
+        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
+
     else:
         offer = random.choice(_UPSELL_PAYMENT_TEXTS).format(
             e=_emo(), p=name, price=price
         )
-    await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
+        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
 
 
 # ─── Режим сопровождения (t1990, t4990, t9900) ───────────────────────────────
@@ -801,6 +840,28 @@ async def _stage_accompaniment(
     if msg_soft_limit and msg_count >= msg_soft_limit:
         await _offer_next_upsell(bot, chat_id, telegram_id, biz_conn_id, paid_tier)
         return
+
+    # ── Дневной лимит вопросов (t1990: 6 в день) ─────────────────────────────
+    daily_limit = tier.get("daily_limit")
+    if daily_limit:
+        from bot.services.cache import get_redis
+        r           = await get_redis()
+        today       = date.today().isoformat()
+        day_key     = f"accomp_day:{telegram_id}:{today}"
+        day_count   = await r.incr(day_key)
+        if day_count == 1:
+            await r.expire(day_key, 86400)
+
+        if day_count > daily_limit:
+            _DAY_LIMIT_MSGS = [
+                "На сегодня мы поговорили достаточно, душа моя 🌙\n\nОтдыхайте — завтра утром я буду снова рядом.",
+                "Сегодня на этом остановимся ✨\n\nЗавтра в 8 утра пришлю вам план на день. Отдыхайте, душа моя.",
+                "На сегодня достаточно, моя хорошая 🌙\n\nОтдыхайте — я рядом. Завтра утром напишу.",
+                "Мы сегодня уже хорошо поговорили 💫\n\nОтдыхайте — завтра в 8 утра буду снова рядом.",
+            ]
+            await typing_short(bot, chat_id, biz_conn_id)
+            await _send(bot, chat_id, random.choice(_DAY_LIMIT_MSGS), biz_conn_id)
+            return
 
     profile      = await get_profile(telegram_id)
     history      = await get_history(telegram_id)
@@ -1215,6 +1276,12 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
         return
 
     await store_profile_field(telegram_id, "city", result)
+
+    # Определяем часовой пояс по городу и сохраняем в профиль
+    from bot.business_dialog.timezone_utils import get_city_tz_offset
+    tz_offset = get_city_tz_offset(result)
+    await store_profile_field(telegram_id, "tz_offset", tz_offset)
+
     await set_biz_stage(telegram_id, "collecting_problem")
 
     profile = await get_profile(telegram_id)
@@ -1365,6 +1432,12 @@ async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id:
     - Реальный follow-up вопрос по ситуации
       → полный ответ, тратит слот
     """
+    # Пользователь вернулся — сбрасываем счётчик followup-пушей
+    from bot.services.cache import get_redis as _get_redis
+    _r = await _get_redis()
+    await _r.delete(f"followup_push_count:{telegram_id}")
+    await _r.delete(f"followup_push_dedup:{telegram_id}")
+
     profile   = await get_profile(telegram_id)
     paid_tier = await get_paid_tier(telegram_id) or "t190"
     tier      = get_tier(paid_tier)

@@ -20,6 +20,7 @@ from bot.services.scheduler import setup_scheduler
 from bot.handlers.yookassa_webhook import setup_webhook, handle_yookassa_webhook
 from bot.business_dialog.router import router as business_router, setup_business_dialog
 import bot.business_dialog.models  # регистрируем business_ таблицы в Base.metadata
+from bot.vk_dialog.router import create_vk_bot, run_vk_polling
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -132,17 +133,24 @@ async def main():
         share.router,
     )
 
-    # Webhook-сервер (aiohttp на порту 8080) — YooKassa + Tribute
+    # Webhook-сервер (aiohttp на порту 8080) — YooKassa + Tribute + VK
     from aiohttp import web as aiohttp_web
     setup_webhook(bot, async_session_maker)
     _webhook_app = aiohttp_web.Application()
+    # Единый webhook ЮКассы — маршрутизирует по metadata.platform (tg / vk)
     _webhook_app.router.add_post("/yookassa/webhook", handle_yookassa_webhook)
     # Business dialog: Tribute webhook + инициализация модуля
     setup_business_dialog(bot, async_session_maker, _webhook_app)
     _webhook_runner = aiohttp_web.AppRunner(_webhook_app)
     await _webhook_runner.setup()
     await aiohttp_web.TCPSite(_webhook_runner, "0.0.0.0", 8080).start()
-    logger.info("Webhook server started on port 8080 (YooKassa + Tribute)")
+    logger.info("Webhook server started on port 8080 (YooKassa + Tribute + VK)")
+
+    # VK Long Poll (запускаем параллельно с Telegram)
+    _vk_bot = create_vk_bot()
+    if _vk_bot:
+        asyncio.create_task(run_vk_polling(_vk_bot))
+        logger.info("VK Long Poll task created")
 
     # Планировщик
     scheduler = setup_scheduler(bot, async_session_maker)

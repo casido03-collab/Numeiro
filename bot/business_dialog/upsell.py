@@ -36,6 +36,7 @@ TIERS = {
         "name":           "Личная стратегия на 7 дней",
         "followup_limit": None,   # сопровождение — нет фиксированных follow-up
         "msg_soft_limit": 40,     # soft-limit 30-50 сообщений
+        "daily_limit":    6,      # лимит вопросов в день (40 сообщений / 7 дней ≈ 6)
         "days":           7,
         "next_tier":      "t4990",
         "link":           "https://t.me/tribute/app?startapp=pwvS",

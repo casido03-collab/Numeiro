@@ -132,6 +132,12 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     async def _business_abandoned():
         await _send_abandoned_reminders(bot, session_maker)
 
+    async def _followup_reminders():
+        await _send_followup_reminders(bot, session_maker)
+
+    async def _accompaniment_morning():
+        await _send_accompaniment_morning_plans(bot, session_maker)
+
     # Ежедневные пуши в 9:00 МСК
     scheduler.add_job(_daily_push, CronTrigger(hour=6, minute=0))
     # Напоминания об окончании подписки в 12:00 МСК
@@ -146,6 +152,11 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     scheduler.add_job(_business_second_reminders, CronTrigger(minute="*/30"))
     # Business dialog: пуш для брошенных диалогов через 3ч тишины
     scheduler.add_job(_business_abandoned, CronTrigger(minute="*/30"))
+    # Followup: напомнить что остались вопросы (24ч тишины, макс 2 пуша)
+    scheduler.add_job(_followup_reminders, CronTrigger(minute=0))
+    # Сопровождение: утреннее послание в 8:00 по местному времени пользователя
+    # Запускается каждый час — внутри проверяем у кого сейчас local_hour == 8
+    scheduler.add_job(_accompaniment_morning, CronTrigger(minute=0))
 
     return scheduler
 
@@ -401,3 +412,210 @@ async def _send_abandoned_reminders(bot: Bot, session_maker) -> None:
 
     except Exception as e:
         logger.warning("_send_abandoned_reminders error: %s", e)
+
+
+async def _send_followup_reminders(bot: Bot, session_maker) -> None:
+    """Напомнить followup-пользователям что у них остались вопросы.
+
+    Условия срабатывания:
+    — stage == "followup"
+    — followup_left > 0 (вопросы ещё есть)
+    — молчит 24ч+
+    — пушей отправлено < 2 (счётчик сбрасывается когда пользователь пишет)
+
+    Текст — короткий AI-пуш на основе профиля и проблемы клиента.
+    """
+    import logging
+    import json
+    import time
+    from sqlalchemy import select
+    logger = logging.getLogger(__name__)
+
+    try:
+        from bot.business_dialog.models import BusinessSession
+        from bot.business_dialog.session_manager import (
+            get_biz_conn, get_biz_stage, get_profile,
+            get_last_activity, get_followup_left,
+        )
+        from bot.business_dialog.services import generate_business
+        from bot.business_dialog.prompts import AISHA_FREE_PROMPT
+        from bot.services.cache import get_redis
+
+        r            = await get_redis()
+        one_day_ago  = int(time.time()) - 86400
+
+        async with session_maker() as session:
+            result = await session.execute(
+                select(BusinessSession).where(BusinessSession.status == "paid")
+            )
+            sessions = result.scalars().all()
+
+            for biz_sess in sessions:
+                tid = biz_sess.telegram_id
+
+                # Только стадия followup
+                stage = await get_biz_stage(tid)
+                if stage != "followup":
+                    continue
+
+                # Ещё есть вопросы
+                left = await get_followup_left(tid)
+                if not left or left <= 0:
+                    continue
+
+                # Молчит 24ч+
+                last_active = await get_last_activity(tid)
+                if not last_active or last_active > one_day_ago:
+                    continue
+
+                # Не более 2 пушей за эту «сессию молчания»
+                push_count_key = f"followup_push_count:{tid}"
+                push_count     = int(await r.get(push_count_key) or 0)
+                if push_count >= 2:
+                    continue
+
+                # Дедупликация — один пуш в 24ч
+                dedup_key = f"followup_push_dedup:{tid}"
+                already   = not await r.set(dedup_key, "1", nx=True, ex=86400)
+                if already:
+                    continue
+
+                profile     = await get_profile(tid)
+                biz_conn_id = await get_biz_conn(tid)
+                name        = profile.get("name", "")
+
+                context = json.dumps({
+                    "name":          name,
+                    "gender":        profile.get("gender", "unknown"),
+                    "problem":       profile.get("problem", ""),
+                    "followup_left": left,
+                }, ensure_ascii=False)
+
+                try:
+                    reminder = await generate_business(
+                        AISHA_FREE_PROMPT,
+                        f"Клиент получил консультацию. У него ещё осталось {left} уточняющих вопроса "
+                        f"которые он не задал — и он молчит больше суток.\n\n"
+                        f"Напиши ОЧЕНЬ короткое напоминание (1–2 предложения максимум).\n"
+                        f"Намекни что ты всё ещё думаешь об их ситуации и готова ответить.\n"
+                        f"Говори тепло, без давления. Обращайся на вы.\n"
+                        f"НЕ упоминай число вопросов, деньги и оплату.\n"
+                        f"НЕ задавай вопросов в конце — только тёплый импульс вернуться.\n\n"
+                        f"Данные: {context}",
+                        complexity="simple",
+                        max_tokens=55,
+                    )
+
+                    send_kw: dict = {"chat_id": tid, "text": reminder, "parse_mode": None}
+                    if biz_conn_id:
+                        send_kw["business_connection_id"] = biz_conn_id
+                    await bot.send_message(**send_kw)
+
+                    # Увеличиваем счётчик пушей (TTL 14 дней — пока не ответит)
+                    new_count = await r.incr(push_count_key)
+                    if new_count == 1:
+                        await r.expire(push_count_key, 86400 * 14)
+
+                    logger.info(
+                        "Followup reminder #%d sent to %s (left=%d questions)",
+                        new_count, tid, left,
+                    )
+
+                except Exception as e:
+                    logger.warning("Followup reminder failed for %s: %s", tid, e)
+
+    except Exception as e:
+        logger.warning("_send_followup_reminders error: %s", e)
+
+
+async def _send_accompaniment_morning_plans(bot: Bot, session_maker) -> None:
+    """Утреннее послание сопровождаемым пользователям — в 8:00 по местному времени.
+
+    Запускается каждый час. Для каждого пользователя проверяем:
+    UTC_hour + tz_offset == 8 → сейчас его утро, отправляем план.
+    Погрешность 0–12 минут — чтобы план приходил не ровно в 8:00 и было ожидание.
+    """
+    import asyncio
+    import logging
+    import json
+    from datetime import datetime, timezone, date
+    from sqlalchemy import select
+    logger = logging.getLogger(__name__)
+
+    try:
+        from bot.business_dialog.models import BusinessSession
+        from bot.business_dialog.session_manager import (
+            get_biz_conn, get_biz_stage, get_profile,
+        )
+        from bot.business_dialog.services import generate_business
+        from bot.business_dialog.prompts import AISHA_MORNING_PLAN_PROMPT
+        from bot.services.cache import get_redis
+
+        utc_hour = datetime.now(timezone.utc).hour
+        today    = date.today().isoformat()
+        r        = await get_redis()
+
+        async with session_maker() as session:
+            result = await session.execute(
+                select(BusinessSession).where(BusinessSession.status == "paid")
+            )
+            sessions = result.scalars().all()
+
+            for biz_sess in sessions:
+                tid = biz_sess.telegram_id
+
+                # Проверяем стадию из Redis — только "accompaniment"
+                stage = await get_biz_stage(tid)
+                if stage != "accompaniment":
+                    continue
+
+                # Проверяем локальный час пользователя
+                profile    = await get_profile(tid)
+                tz_offset  = int(profile.get("tz_offset", 3))   # fallback МСК
+                local_hour = (utc_hour + tz_offset) % 24
+                if local_hour != 8:
+                    continue  # не его утро — пропускаем
+
+                # Дедупликация — один утренний план в день
+                plan_key = f"morning_plan:{tid}:{today}"
+                already  = not await r.set(plan_key, "1", nx=True, ex=86400)
+                if already:
+                    continue
+
+                biz_conn_id = await get_biz_conn(tid)
+
+                context = json.dumps({
+                    "name":       profile.get("name", ""),
+                    "gender":     profile.get("gender", "unknown"),
+                    "birth_date": profile.get("birth_date", ""),
+                    "problem":    profile.get("problem", ""),
+                    "date":       today,
+                }, ensure_ascii=False)
+
+                try:
+                    # Погрешность 0–12 минут — план приходит в промежутке 8:00–8:12,
+                    # создаёт приятное ожидание вместо точного автоматного тика
+                    delay = random.randint(0, 720)
+                    await asyncio.sleep(delay)
+
+                    plan = await generate_business(
+                        AISHA_MORNING_PLAN_PROMPT,
+                        f"Данные клиента: {context}",
+                        complexity="medium",
+                        max_tokens=350,
+                    )
+
+                    send_kw: dict = {"chat_id": tid, "text": plan, "parse_mode": None}
+                    if biz_conn_id:
+                        send_kw["business_connection_id"] = biz_conn_id
+                    await bot.send_message(**send_kw)
+                    logger.info(
+                        "Morning plan sent to %s (tz=UTC+%d, delay=%ds)",
+                        tid, tz_offset, delay,
+                    )
+
+                except Exception as e:
+                    logger.warning("Morning plan failed for %s: %s", tid, e)
+
+    except Exception as e:
+        logger.warning("_send_accompaniment_morning_plans error: %s", e)

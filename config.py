@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     yookassa_return_url: str = Field(default="https://t.me/numerelogia_astro_bot", env="YOOKASSA_RETURN_URL")
     tribute_link: str = Field(default="", env="TRIBUTE_LINK")
     tribute_api_key: str = Field(default="", env="TRIBUTE_API_KEY")
+    vk_token: str = Field(default="", env="VK_TOKEN")
     debug: bool = Field(default=False, env="DEBUG")
 
     @property

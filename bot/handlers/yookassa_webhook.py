@@ -20,7 +20,12 @@ def setup_webhook(bot, session_maker):
 
 
 async def handle_yookassa_webhook(request: web.Request) -> web.Response:
-    """Обработчик POST /yookassa/webhook."""
+    """Обработчик POST /yookassa/webhook — единая точка входа для всех платежей ЮКассы.
+
+    Маршрутизация по metadata.platform:
+      - platform == "vk"  → VK-диалог (бабушка Аиша в ВКонтакте)
+      - иначе             → Telegram-подписки и разовые покупки
+    """
     try:
         body = await request.text()
         data = json.loads(body)
@@ -34,12 +39,19 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
         if payment_obj.get("status") != "succeeded":
             return web.Response(status=200)
 
-        payment_id = payment_obj.get("id")
         metadata = payment_obj.get("metadata", {})
+
+        # ── VK-платёж ─────────────────────────────────────────────────────────
+        if metadata.get("platform") == "vk":
+            from bot.vk_dialog.payments import handle_vk_payment_webhook
+            return await handle_vk_payment_webhook(request, _parsed=(data, payment_obj, metadata))
+
+        # ── Telegram-платёж ───────────────────────────────────────────────────
+        payment_id       = payment_obj.get("id")
         user_telegram_id = metadata.get("user_id")
-        product_type = metadata.get("product_type")
-        product_key = metadata.get("product_key")
-        amount = float(payment_obj.get("amount", {}).get("value", 0))
+        product_type     = metadata.get("product_type")
+        product_key      = metadata.get("product_key")
+        amount           = float(payment_obj.get("amount", {}).get("value", 0))
 
         if not all([user_telegram_id, product_type, product_key]):
             logger.error("Webhook: missing metadata in payment %s — %s", payment_id, metadata)
