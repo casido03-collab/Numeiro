@@ -56,5 +56,11 @@ async def run_vk_polling(bot) -> None:
     logger.info("VK Long Poll starting…")
     try:
         await bot.run_polling()
+    except RuntimeError as e:
+        if "LoopWrapper" in str(e):
+            # vkbottle запустил polling как фоновую задачу — это нормально
+            logger.info("VK polling running as background task")
+        else:
+            logger.exception("VK Long Poll crashed")
     except Exception:
         logger.exception("VK Long Poll crashed")
