@@ -170,24 +170,56 @@ async def _send(api, peer_id: int, text: str) -> None:
             await asyncio.sleep(0.5)  # небольшая пауза между частями
 
 
+_VK_TYPING_REFRESH = 5.0  # VK гасит индикатор через ~5 сек — обновляем чуть чаще
+
+
 async def _typing(api, peer_id: int, seconds: float = 2.0) -> None:
-    try:
-        await api.messages.set_activity(peer_id=peer_id, type="typing")
-    except Exception:
-        pass
-    await asyncio.sleep(seconds)
+    """Держать индикатор «печатает» ровно seconds секунд.
+    Повторяет set_activity каждые 5 сек чтобы индикатор не гас."""
+    elapsed = 0.0
+    while elapsed < seconds:
+        try:
+            await api.messages.set_activity(peer_id=peer_id, type="typing")
+        except Exception:
+            pass
+        sleep_for = min(_VK_TYPING_REFRESH, seconds - elapsed)
+        await asyncio.sleep(sleep_for)
+        elapsed += sleep_for
 
 
 async def _typing_short(api, peer_id: int) -> None:
+    """1.5–2.5 сек: системные сообщения, подтверждения."""
     await _typing(api, peer_id, random.uniform(1.5, 2.5))
 
 
 async def _typing_medium(api, peer_id: int) -> None:
+    """3–5 сек: средние сообщения, переходы."""
     await _typing(api, peer_id, random.uniform(3.0, 5.0))
 
 
 async def _typing_long(api, peer_id: int) -> None:
-    await _typing(api, peer_id, random.uniform(5.0, 8.0))
+    """6–10 сек: длинные ответы, AI-генерация."""
+    await _typing(api, peer_id, random.uniform(6.0, 10.0))
+
+
+async def _typing_deflect(api, peer_id: int) -> None:
+    """8–18 сек: deflect-сообщения — имитация занятости."""
+    await _typing(api, peer_id, random.uniform(8.0, 18.0))
+
+
+def _calc_typing_seconds(text: str) -> float:
+    """Рассчитать реалистичное время набора по длине текста."""
+    chars       = len(text)
+    think_pause = random.uniform(1.5, 3.0)
+    type_time   = chars / 4.0          # ~4 символа/сек
+    total       = think_pause + type_time
+    jitter      = random.uniform(0.85, 1.15)
+    return min(total * jitter, 22.0)   # не дольше 22 сек
+
+
+async def _typing_for_text(api, peer_id: int, text: str) -> None:
+    """Задержка точно под длину текста."""
+    await _typing(api, peer_id, _calc_typing_seconds(text))
 
 
 # ─── Платёжная ссылка ────────────────────────────────────────────────────────
