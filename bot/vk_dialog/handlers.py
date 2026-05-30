@@ -444,7 +444,7 @@ async def _stage_new(api, uid: int, first_name: str) -> None:
     if first_name:
         await store_field(uid, "vk_name_hint", first_name)
     welcome = f"Здравствуйте, душа моя {_emo()}\n\nРада, что вы написали. Скажите — как вас зовут?"
-    await _typing_medium(api, uid)
+    await _typing_for_text(api, uid, welcome)
     await _send(api, uid, welcome)
 
 
@@ -463,7 +463,7 @@ async def _stage_name(api, uid: int, text: str) -> None:
         f"Как хорошо, {name} {_emo()} Чтобы я смогла посмотреть вашу ситуацию глубже — "
         f"скажите, когда вы родились?\nНапишите дату вот так: 15.03.1990"
     )
-    await _typing_medium(api, uid)
+    await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
 
 
@@ -475,8 +475,8 @@ async def _stage_birth_date(api, uid: int, text: str) -> None:
         return
     await store_field(uid, "birth_date", result)
     await set_stage(uid, "collecting_city")
-    resp = f"Благодарю вас {_emo()} И последний вопрос — в каком городе вы живёте?"
-    await _typing_medium(api, uid)
+    resp = f"Благодарю вас {_emo()} И последний вопрос прежде чем мы начнём — в каком городе вы живёте?"
+    await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
 
 
@@ -497,7 +497,7 @@ async def _stage_city(api, uid: int, text: str) -> None:
         f"{name}, я здесь рядом {_emo()}\n\nЧто сейчас лежит на сердце? Расскажите.",
         f"Слышу вас, {name} {_emo()}\n\nЧто сейчас тревожит? Напишите своими словами.",
     ])
-    await _typing_medium(api, uid)
+    await _typing_for_text(api, uid, intro)
     await _send(api, uid, intro)
 
 
