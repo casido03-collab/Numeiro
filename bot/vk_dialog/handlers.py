@@ -589,9 +589,11 @@ async def _stage_waiting_payment(api, uid: int, text: str) -> None:
         name      = tier.get("name", "Разбор")
         try:
             link  = create_payment_link(uid, paid_tier)
-            await _send(api, uid, f"Ссылка на оплату {_emo()}\n\n✨ «{name}» — {price} ₽\n\n{link}")
+            msg   = f"Ссылка на оплату {_emo()}\n\n✨ «{name}» — {price} ₽\n\n{link}"
         except Exception:
-            await _send(api, uid, f"Напишите нам — поможем оформить оплату {_emo()}")
+            msg   = f"Напишите нам — поможем оформить оплату {_emo()}"
+        await _typing_short(api, uid)
+        await _send(api, uid, msg)
         return
 
     profile = await get_profile(uid)
@@ -601,7 +603,7 @@ async def _stage_waiting_payment(api, uid: int, text: str) -> None:
         f"Клиент написал пока ждёт: «{text}»\n\nОтветь одним коротким предложением. Не называй цену. Обращайся на вы.\n\nДанные: {context}",
         complexity="simple", max_tokens=50,
     )
-    await _typing_short(api, uid)
+    await _typing_for_text(api, uid, reply)
     await _send(api, uid, reply)
 
 
