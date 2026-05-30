@@ -24,7 +24,11 @@ from bot.business_dialog.prompts import (
     AISHA_ACCOMPANIMENT_PROMPT, AISHA_TAROT_BUSINESS_PROMPT,
 )
 from bot.business_dialog.upsell import get_tier, upsell_bridge, is_accompaniment
-from bot.business_dialog.handlers import _tier_timing_hint
+from bot.business_dialog.handlers import (
+    _tier_timing_hint,
+    _is_support_request, _is_payment_link_issue, _is_human_bot_question,
+    _VPN_REPLIES, _SUPPORT_HOLD_TEXTS, _STAGE_REPROMPT,
+)
 from bot.business_dialog.ai_router import detect_intent, get_product_name
 from bot.business_dialog.validators import (
     validate_name, NAME_ERRORS,
@@ -299,7 +303,7 @@ async def _send_payment_offer(api, peer_id: int, uid: int, tier_key: str = "t190
         complexity="simple",
         max_tokens=90,
     )
-    await _typing_medium(api, peer_id)
+    await _typing_for_text(api, peer_id, teaser)
     await _send(api, peer_id, teaser)
 
     # Переход
@@ -308,7 +312,7 @@ async def _send_payment_offer(api, peer_id: int, uid: int, tier_key: str = "t190
         "Это требует тихого и внимательного взгляда — не торопясь, по всем линиям.\n\nЯ готова, если вы разрешите.",
         "Такие ситуации лучше смотреть целиком — иначе можно упустить самое важное.\n\nСкажите слово — и я приступлю.",
     ])
-    await _typing_long(api, peer_id)
+    await _typing_for_text(api, peer_id, bridge)
     await _send(api, peer_id, bridge)
 
     # Ссылка на оплату + кнопка «Перейти к оплате»
@@ -384,6 +388,45 @@ async def _offer_next_upsell(api, peer_id: int, uid: int, current_tier: str) -> 
 
 # ─── Главный обработчик сообщения ─────────────────────────────────────────────
 
+async def _handle_human_bot_question_vk(api, uid: int, stage: str) -> None:
+    """Короткий AI-ответ — Аиша живой человек. Затем повторяет вопрос стадии."""
+    profile   = await get_profile(uid)
+    name      = profile.get("name", "")
+    name_hint = f"Имя клиента: {name}." if name else ""
+    reply = await generate_business(
+        AISHA_FREE_PROMPT,
+        f"Клиент спрашивает — живой ли ты человек или это бот, программа, нейросеть.\n\n"
+        f"Ответь ОЧЕНЬ коротко — ровно 1–2 предложения. "
+        f"Дай понять что ты настоящая живая бабушка Аиша — реальный человек. "
+        f"Говори тепло, с лёгкой иронией, без лишних слов. Обращайся на вы. "
+        f"Никаких упоминаний технологий, ИИ или алгоритмов — только человеческое. "
+        f"ВАЖНО: НЕ задавай никакого вопроса в конце — только подтверди что ты живая. "
+        f"{name_hint}",
+        complexity="simple", max_tokens=60,
+    )
+    await _typing_short(api, uid)
+    await _send(api, uid, reply)
+    reprompt = _STAGE_REPROMPT.get(stage)
+    if reprompt:
+        await _typing_short(api, uid)
+        await _send(api, uid, reprompt)
+
+
+async def _handle_support_vk(api, uid: int, prev_stage: str) -> None:
+    """Переводим в режим поддержки — шлём hold-текст."""
+    await store_field(uid, "pre_support_stage", prev_stage)
+    await set_stage(uid, "support")
+    hold = random.choice(_SUPPORT_HOLD_TEXTS)
+    await _typing_short(api, uid)
+    await _send(api, uid, hold)
+
+
+async def _stage_support_vk(api, uid: int) -> None:
+    """Стадия support — продолжаем присылать hold-сообщения."""
+    await _typing_short(api, uid)
+    await _send(api, uid, "Я уточняю — пожалуйста, немного подождите 🌙")
+
+
 async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> None:
     """Точка входа — вызывается из router.py на каждое входящее сообщение."""
     text = text.strip()
@@ -401,9 +444,36 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> N
         await _send(api, uid, "🔄 Сессия сброшена. Пишите — начнём заново.")
         return
 
-    # Короткий rate-limiting — тихо пропускаем очень частые сообщения
+    # Rate-limiting
     from bot.services.cache import get_redis, rate_limit_check
     if not await rate_limit_check(uid, "vk_10s", 3, 10):
+        return
+    if not await rate_limit_check(uid, "vk_min", 15, 60):
+        return
+
+    # Минимальная длина для осмысленного ответа на платных стадиях
+    if len(text) < 2 and stage in ("waiting_payment", "waiting_upsell", "accompaniment", "followup"):
+        return
+
+    # ── Проблема с открытием ссылки — VPN подсказка ───────────────────────────
+    if _is_payment_link_issue(text):
+        await _typing_short(api, uid)
+        await _send(api, uid, random.choice(_VPN_REPLIES))
+        return
+
+    # ── Вопрос «вы бот?» ──────────────────────────────────────────────────────
+    if _is_human_bot_question(text):
+        await _handle_human_bot_question_vk(api, uid, stage)
+        return
+
+    # ── Техподдержка ──────────────────────────────────────────────────────────
+    if _is_support_request(text) and stage not in ("support",):
+        await _handle_support_vk(api, uid, stage)
+        return
+
+    # ── Недовольство на платных стадиях ───────────────────────────────────────
+    if stage in ("followup", "accompaniment", "waiting_payment", "completed") and _is_dissatisfied(text):
+        await _handle_dissatisfaction(api, uid, text)
         return
 
     # Роутинг по стадиям
@@ -435,6 +505,8 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> N
         await _stage_t990_preparing(api, uid, text)
     elif stage == "completed":
         await _stage_completed(api, uid)
+    elif stage == "support":
+        await _stage_support_vk(api, uid)
 
 
 # ─── Стадии диалога ───────────────────────────────────────────────────────────
@@ -550,7 +622,7 @@ async def _stage_free_dialog(api, uid: int, text: str) -> None:
     free_count = await get_free_count(uid)
     if free_count >= FREE_MSG_LIMIT:
         deflect = await get_deflect_message(uid)
-        await _typing_medium(api, uid)
+        await _typing_deflect(api, uid)
         await _send(api, uid, deflect)
         await _send_payment_offer(api, uid, uid)
         return
