@@ -24,6 +24,7 @@ from bot.business_dialog.prompts import (
     AISHA_ACCOMPANIMENT_PROMPT, AISHA_TAROT_BUSINESS_PROMPT,
 )
 from bot.business_dialog.upsell import get_tier, upsell_bridge, is_accompaniment
+from bot.business_dialog.handlers import _tier_timing_hint
 from bot.business_dialog.ai_router import detect_intent, get_product_name
 from bot.business_dialog.validators import (
     validate_name, NAME_ERRORS,
@@ -567,8 +568,12 @@ async def _stage_free_dialog(api, uid: int, text: str) -> None:
     await append_history(uid, "user", text)
     resp = await generate_business(
         AISHA_FREE_PROMPT,
-        f"ИСТОРИЯ ПЕРЕПИСКИ:\n{history_text}\n\nПОСЛЕДНЕЕ СООБЩЕНИЕ КЛИЕНТА: {text}\n\n"
-        f"Данные клиента: {context}\n\nОтвечай на вы. Коротко.",
+        f"ИСТОРИЯ ПЕРЕПИСКИ:\n{history_text}\n\n"
+        f"ПОСЛЕДНЕЕ СООБЩЕНИЕ КЛИЕНТА: {text}\n\n"
+        f"Данные клиента: {context}\n\n"
+        f"Ответь коротко (2–3 предложения). Не повторяй вопросы из истории. "
+        f"Если клиент говорит 'я уже сказал' или 'я писал' — признай это и двигайся вперёд. "
+        f"Обращайся на вы.",
         complexity="simple", max_tokens=140,
     )
     await append_history(uid, "aisha", resp)
@@ -597,10 +602,18 @@ async def _stage_waiting_payment(api, uid: int, text: str) -> None:
         return
 
     profile = await get_profile(uid)
+    timing  = _tier_timing_hint(profile.get("next_tier") or "t190")
     context = json.dumps({"name": profile.get("name", ""), "problem": profile.get("problem", "")}, ensure_ascii=False)
     reply = await generate_business(
         AISHA_FREE_PROMPT,
-        f"Клиент написал пока ждёт: «{text}»\n\nОтветь одним коротким предложением. Не называй цену. Обращайся на вы.\n\nДанные: {context}",
+        f"Клиент уже получил предложение разбора и задаёт дополнительный вопрос: «{text}»\n\n"
+        f"Ответь ОДНИМ коротким предложением (максимум 15 слов) точно по смыслу вопроса. "
+        f"Не называй цену и не упоминай слово 'оплата'. Обращайся на вы. "
+        f"НЕ задавай вопросов в конце, НЕ добавляй концовку-триггер — просто ответь и всё.\n\n"
+        f"ВАЖНО: если клиент спрашивает о времени или сроках выполнения — ответь точно: {timing}.\n\n"
+        f"ВАЖНО: если клиент спрашивает о ссылке на оплату (как долго работает, истекает ли) — "
+        f"отвечай что ссылка работает в любой момент, без ограничений по времени.\n\n"
+        f"Данные: {context}",
         complexity="simple", max_tokens=50,
     )
     await _typing_for_text(api, uid, reply)
@@ -610,6 +623,7 @@ async def _stage_waiting_payment(api, uid: int, text: str) -> None:
 async def _stage_followup(api, uid: int, text: str) -> None:
     # Сброс счётчика followup-пушей при ответе
     from bot.services.cache import get_redis
+    from bot.business_dialog.handlers import _is_pre_question
     r = await get_redis()
     await r.delete(f"vk:followup_push_count:{uid}")
     await r.delete(f"vk:followup_push_dedup:{uid}")
@@ -618,10 +632,33 @@ async def _stage_followup(api, uid: int, text: str) -> None:
         await _handle_dissatisfaction(api, uid, text)
         return
 
-    profile      = await get_profile(uid)
-    paid_tier    = await get_paid_tier(uid) or "t190"
-    left         = await decrement_followup(uid)
+    profile   = await get_profile(uid)
+    paid_tier = await get_paid_tier(uid) or "t190"
+    context_base = json.dumps({
+        "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
+        "birth_date": profile.get("birth_date", ""),
+        "problem":    profile.get("problem", ""),
+    }, ensure_ascii=False)
 
+    # ── Мета-реплика (благодарность, короткое «ок») — не тратит слот ─────────
+    if _is_pre_question(text):
+        quick = await generate_business(
+            AISHA_FOLLOWUP_PROMPT,
+            f"Клиент написал попутную реплику или анонс вопроса: «{text}»\n\n"
+            f"Ответь очень коротко (1 предложение), по смыслу. "
+            f"Если это анонс вопроса — пригласи задать его. "
+            f"Если благодарность — тепло прими. "
+            f"НЕ задавай встречных вопросов. Обращайся на вы.\n\n"
+            f"Данные: {context_base}",
+            complexity="simple", max_tokens=60,
+        )
+        await _typing_for_text(api, uid, quick)
+        await _send(api, uid, quick)
+        return  # слот НЕ тратится
+
+    # ── Реальный follow-up вопрос — тратит слот ───────────────────────────────
+    left    = await decrement_followup(uid)
     context = json.dumps({
         "name":           profile.get("name", ""),
         "gender":         profile.get("gender", "unknown"),
@@ -706,13 +743,20 @@ async def _stage_waiting_upsell(api, uid: int, text: str) -> None:
         return
     profile       = await get_profile(uid)
     next_tier_key = profile.get("next_tier", "t490")
+    timing        = _tier_timing_hint(next_tier_key)
     context       = json.dumps({"name": profile.get("name", ""), "problem": profile.get("problem", "")}, ensure_ascii=False)
     reply = await generate_business(
         AISHA_FREE_PROMPT,
-        f"Клиент написал: «{text}»\n\nОтветь коротко (1–2 предложения). Обращайся на вы. Без упоминания цены.\n\nДанные: {context}",
-        complexity="simple", max_tokens=80,
+        f"Клиент задаёт вопрос: «{text}»\n\n"
+        f"Ответь КОРОТКО (1–2 предложения) по смыслу. "
+        f"Не упоминай слово 'оплата'. Обращайся на вы. "
+        f"НЕ задавай вопросов в конце.\n\n"
+        f"ВАЖНО: если спрашивают о сроках — ответь точно: {timing}. "
+        f"ВАЖНО: если о ссылке — ссылка работает в любой момент без ограничений.\n\n"
+        f"Данные: {context}",
+        complexity="simple", max_tokens=60,
     )
-    await _typing_short(api, uid)
+    await _typing_for_text(api, uid, reply)
     await _send(api, uid, reply)
 
 
