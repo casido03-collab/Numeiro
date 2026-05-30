@@ -14,13 +14,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
+        run: |
+          echo "🕐 $(date -u) — start"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} bash -s << 'ENDSSH'
+            set -e
+            echo "🕐 $(date -u) — connected"
             cd /opt/numeiro
             git pull origin master
             if git diff HEAD~1 --name-only | grep -qE "requirements.txt|Dockerfile|docker-compose.yml|pyproject.toml|poetry.lock"; then
@@ -30,4 +37,5 @@ jobs:
               echo "⚡ Code-only change — fast restart..."
               docker compose restart bot
             fi
-            echo "✅ Deploy done: $(date)"
+            echo "✅ $(date -u) — done"
+          ENDSSH
