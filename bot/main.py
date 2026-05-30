@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ─── Watchdog: timestamp последнего обработанного апдейта ─────────────────────
 # Пишется в файл чтобы Docker healthcheck мог его прочитать
 _HEALTH_FILE = "/tmp/bot_last_update"
-_WATCHDOG_TIMEOUT = 600  # 10 минут без апдейтов → считаем зависшим
+_WATCHDOG_TIMEOUT = 1800  # 30 минут без апдейтов → считаем зависшим
 
 
 def touch_health():
