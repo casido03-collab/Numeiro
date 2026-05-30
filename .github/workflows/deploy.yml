@@ -23,7 +23,7 @@ jobs:
           script: |
             cd /opt/numeiro
             git pull origin master
-            if git diff HEAD~1 --name-only | grep -qE "requirements.txt|Dockerfile"; then
+            if git diff HEAD~1 --name-only | grep -qE "requirements.txt|Dockerfile|docker-compose.yml|pyproject.toml|poetry.lock"; then
               echo "📦 Dependencies changed — rebuilding image..."
               docker compose up -d --build bot
             else
