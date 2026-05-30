@@ -23,5 +23,11 @@ jobs:
           script: |
             cd /opt/numeiro
             git pull origin master
-            docker compose up -d --build bot
+            if git diff HEAD~1 --name-only | grep -qE "requirements.txt|Dockerfile"; then
+              echo "📦 Dependencies changed — rebuilding image..."
+              docker compose up -d --build bot
+            else
+              echo "⚡ Code-only change — fast restart..."
+              docker compose restart bot
+            fi
             echo "✅ Deploy done: $(date)"
