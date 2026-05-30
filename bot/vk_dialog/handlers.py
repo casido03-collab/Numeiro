@@ -526,7 +526,7 @@ async def _stage_problem(api, uid: int, text: str) -> None:
         complexity="simple", max_tokens=150,
     )
     await append_history(uid, "aisha", resp)
-    await _typing_long(api, uid)
+    await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
     await increment_free_count(uid)
 
@@ -572,7 +572,7 @@ async def _stage_free_dialog(api, uid: int, text: str) -> None:
         complexity="simple", max_tokens=140,
     )
     await append_history(uid, "aisha", resp)
-    await _typing_long(api, uid)
+    await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
     await increment_free_count(uid)
 
@@ -635,7 +635,7 @@ async def _stage_followup(api, uid: int, text: str) -> None:
         complexity="medium", max_tokens=300,
     )
     await append_history(uid, "aisha", resp)
-    await _typing_long(api, uid)
+    await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
 
     if left == 0:
@@ -694,7 +694,7 @@ async def _stage_accompaniment(api, uid: int, text: str) -> None:
     )
     await append_history(uid, "aisha", resp)
     await increment_tier_msg_count(uid)
-    await _typing_long(api, uid)
+    await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
 
 
@@ -805,12 +805,12 @@ async def _deliver_tarot_reading_vk(api, uid: int) -> None:
         "card_name": card_name,
     }, ensure_ascii=False)
 
-    await _typing_long(api, uid)
     interpretation = await generate_business(
         AISHA_TAROT_BUSINESS_PROMPT,
         f"Данные клиента: {context}",
         complexity="complex", max_tokens=900,
     )
+    await _typing_for_text(api, uid, interpretation)
     await _send(api, uid, interpretation)
 
     followup_limit = 5
