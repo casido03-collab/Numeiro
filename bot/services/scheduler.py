@@ -138,6 +138,21 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     async def _accompaniment_morning():
         await _send_accompaniment_morning_plans(bot, session_maker)
 
+    async def _vk_reminders():
+        await _send_vk_business_reminders()
+
+    async def _vk_second_reminders():
+        await _send_vk_second_reminders()
+
+    async def _vk_abandoned():
+        await _send_vk_abandoned_reminders()
+
+    async def _vk_followup():
+        await _send_vk_followup_reminders()
+
+    async def _vk_morning():
+        await _send_vk_accompaniment_morning()
+
     # Ежедневные пуши в 9:00 МСК
     scheduler.add_job(_daily_push, CronTrigger(hour=6, minute=0))
     # Напоминания об окончании подписки в 12:00 МСК
@@ -157,6 +172,13 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     # Сопровождение: утреннее послание в 8:00 по местному времени пользователя
     # Запускается каждый час — внутри проверяем у кого сейчас local_hour == 8
     scheduler.add_job(_accompaniment_morning, CronTrigger(minute=0))
+
+    # ── VK пуши (аналог TG business пушей) ───────────────────────────────────
+    scheduler.add_job(_vk_reminders,        CronTrigger(minute="*/15"))
+    scheduler.add_job(_vk_second_reminders, CronTrigger(minute="*/30"))
+    scheduler.add_job(_vk_abandoned,        CronTrigger(minute="*/30"))
+    scheduler.add_job(_vk_followup,         CronTrigger(minute=0))
+    scheduler.add_job(_vk_morning,          CronTrigger(minute=0))
 
     return scheduler
 
@@ -619,3 +641,337 @@ async def _send_accompaniment_morning_plans(bot: Bot, session_maker) -> None:
 
     except Exception as e:
         logger.warning("_send_accompaniment_morning_plans error: %s", e)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VK ПУШИ — аналог TG business пушей
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _vk_send(vk_api, uid: int, text: str) -> bool:
+    """Отправить сообщение VK-пользователю. Возвращает True если успешно."""
+    import random as _random
+    try:
+        await vk_api.messages.send(peer_id=uid, message=text, random_id=_random.randint(1, 2**31))
+        return True
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("VK push failed for %s: %s", uid, e)
+        return False
+
+
+async def _send_vk_business_reminders() -> None:
+    """1й reminder: ссылка оплаты показана, но не оплатили — через 1ч."""
+    import logging
+    import time
+    logger = logging.getLogger(__name__)
+
+    from bot.vk_dialog.router import get_vk_api
+    from bot.vk_dialog.session_manager import (
+        get_all_user_ids, get_stage, get_profile,
+        get_payment_offered_at, get_last_activity,
+        get_vk_reminder_sent, set_vk_reminder_sent,
+    )
+    from bot.vk_dialog.payments import create_payment_link
+    from bot.business_dialog.upsell import get_tier
+
+    vk_api = get_vk_api()
+    if vk_api is None:
+        return
+
+    _TEXTS = [
+        "{name}, я оставила ваш разбор открытым 🌙\n\nКогда почувствуете, что готовы — просто перейдите по ссылке.",
+        "Хочу, чтобы вы знали — ваш разбор ещё ждёт вас, {name} ✨\n\nМожете вернуться в любой момент.",
+        "{name}, я никуда не ухожу 💫\n\nКогда будете готовы — просто перейдите по ссылке, и я сразу начну.",
+    ]
+
+    one_hour_ago = int(time.time()) - 3600
+    uids = await get_all_user_ids()
+
+    for uid in uids:
+        try:
+            stage = await get_stage(uid)
+            if stage not in ("waiting_payment", "waiting_upsell"):
+                continue
+
+            offered_at = await get_payment_offered_at(uid)
+            if not offered_at or offered_at > one_hour_ago:
+                continue
+
+            if await get_vk_reminder_sent(uid):
+                continue
+
+            profile   = await get_profile(uid)
+            name      = profile.get("name") or "душа моя"
+            tier_key  = profile.get("next_tier") or "t190"
+
+            try:
+                link = create_payment_link(uid, tier_key)
+                tier = get_tier(tier_key)
+                price = tier.get("price", 190)
+                tname = tier.get("name", "Разбор")
+                link_line = f"\n\n✨ «{tname}» — {price} ₽\n{link}"
+            except Exception:
+                link_line = ""
+
+            text = random.choice(_TEXTS).format(name=name) + link_line
+            if await _vk_send(vk_api, uid, text):
+                await set_vk_reminder_sent(uid)
+                logger.info("VK reminder sent to %s (stage=%s)", uid, stage)
+        except Exception as e:
+            logger.warning("VK reminder error for %s: %s", uid, e)
+
+
+async def _send_vk_second_reminders() -> None:
+    """2й reminder: 24ч тишины после первого — тёплый текст без ссылки."""
+    import logging
+    import time
+    logger = logging.getLogger(__name__)
+
+    from bot.vk_dialog.router import get_vk_api
+    from bot.vk_dialog.session_manager import (
+        get_all_user_ids, get_stage, get_profile,
+        get_last_activity, get_payment_offered_at,
+        get_vk_reminder_sent,
+    )
+    from bot.services.cache import get_redis
+
+    vk_api = get_vk_api()
+    if vk_api is None:
+        return
+
+    _TEXTS = [
+        "{name}, я всё ещё здесь 🌙\n\nВаша ситуация не выходит у меня из головы. Если почувствуете, что готовы продолжить — я рядом.",
+        "Думаю о вас, {name} ✨\n\nИногда нужно время, чтобы решиться. Я никуда не тороплюсь — буду здесь когда будете готовы.",
+        "{name}, я не забыла о вас 💫\n\nТо, что вы рассказали — важно. Когда захотите продолжить, просто напишите.",
+    ]
+
+    now          = int(time.time())
+    one_day_ago  = now - 86400
+    r            = await get_redis()
+    uids         = await get_all_user_ids()
+
+    for uid in uids:
+        try:
+            stage = await get_stage(uid)
+            if stage not in ("waiting_payment", "waiting_upsell"):
+                continue
+
+            if not await get_vk_reminder_sent(uid):
+                continue  # первый ещё не был
+
+            last_active = await get_last_activity(uid)
+            if not last_active or last_active > one_day_ago:
+                continue
+
+            offered_at = await get_payment_offered_at(uid)
+            if not offered_at or offered_at > one_day_ago:
+                continue
+
+            dedup_key = f"vk:reminder2:{uid}"
+            if not await r.set(dedup_key, "1", nx=True, ex=86400 * 3):
+                continue
+
+            profile = await get_profile(uid)
+            name    = profile.get("name") or "душа моя"
+            text    = random.choice(_TEXTS).format(name=name)
+
+            if await _vk_send(vk_api, uid, text):
+                logger.info("VK second reminder sent to %s", uid)
+        except Exception as e:
+            logger.warning("VK second reminder error for %s: %s", uid, e)
+
+
+async def _send_vk_abandoned_reminders() -> None:
+    """Пуш для брошенных диалогов — 3ч тишины на ранних стадиях."""
+    import logging
+    import time
+    logger = logging.getLogger(__name__)
+
+    from bot.vk_dialog.router import get_vk_api
+    from bot.vk_dialog.session_manager import (
+        get_all_user_ids, get_stage, get_profile, get_last_activity,
+    )
+    from bot.services.cache import get_redis
+
+    vk_api = get_vk_api()
+    if vk_api is None:
+        return
+
+    _ABANDONED_STAGES = {"collecting_name", "collecting_birth_date", "collecting_city", "collecting_problem", "free_dialog"}
+
+    _TEXTS_WITH_NAME = [
+        "{name}, вы куда-то пропали 🌙\n\nМы только начали — и я чувствую, что в вашей ситуации есть что-то важное. Возвращайтесь когда будете готовы.",
+        "Вспомнила о вас, {name} ✨\n\nМы остановились на самом интересном месте. Если захотите продолжить — просто напишите.",
+    ]
+    _TEXTS_NO_NAME = [
+        "Вы куда-то пропали 🌙\n\nЕсли хотите — можем продолжить наш разговор. Я здесь.",
+        "Помню, что вы заходили ✨\n\nЕсли что-то отвлекло — не страшно. Возвращайтесь когда будете готовы.",
+    ]
+
+    three_hours_ago = int(time.time()) - 10800
+    r               = await get_redis()
+    uids            = await get_all_user_ids()
+
+    for uid in uids:
+        try:
+            stage = await get_stage(uid)
+            if stage not in _ABANDONED_STAGES:
+                continue
+
+            last_active = await get_last_activity(uid)
+            if not last_active or last_active > three_hours_ago:
+                continue
+
+            dedup_key = f"vk:abandoned:{uid}"
+            if not await r.set(dedup_key, "1", nx=True, ex=86400 * 3):
+                continue
+
+            profile = await get_profile(uid)
+            name    = profile.get("name")
+            text    = (random.choice(_TEXTS_WITH_NAME).format(name=name) if name
+                       else random.choice(_TEXTS_NO_NAME))
+
+            if await _vk_send(vk_api, uid, text):
+                logger.info("VK abandoned reminder sent to %s (stage=%s)", uid, stage)
+        except Exception as e:
+            logger.warning("VK abandoned error for %s: %s", uid, e)
+
+
+async def _send_vk_followup_reminders() -> None:
+    """Followup-пуш: остались вопросы, молчит 24ч+, макс 2 пуша."""
+    import logging
+    import json
+    import time
+    logger = logging.getLogger(__name__)
+
+    from bot.vk_dialog.router import get_vk_api
+    from bot.vk_dialog.session_manager import (
+        get_all_user_ids, get_stage, get_profile,
+        get_last_activity, get_followup_left,
+    )
+    from bot.business_dialog.services import generate_business
+    from bot.business_dialog.prompts import AISHA_FREE_PROMPT
+    from bot.services.cache import get_redis
+
+    vk_api      = get_vk_api()
+    if vk_api is None:
+        return
+
+    one_day_ago = int(time.time()) - 86400
+    r           = await get_redis()
+    uids        = await get_all_user_ids()
+
+    for uid in uids:
+        try:
+            if await get_stage(uid) != "followup":
+                continue
+
+            left = await get_followup_left(uid)
+            if not left or left <= 0:
+                continue
+
+            last_active = await get_last_activity(uid)
+            if not last_active or last_active > one_day_ago:
+                continue
+
+            push_count_key = f"vk:followup_push_count:{uid}"
+            push_count     = int(await r.get(push_count_key) or 0)
+            if push_count >= 2:
+                continue
+
+            dedup_key = f"vk:followup_push_dedup:{uid}"
+            if not await r.set(dedup_key, "1", nx=True, ex=86400):
+                continue
+
+            profile = await get_profile(uid)
+            name    = profile.get("name", "")
+            context = json.dumps({
+                "name":          name,
+                "gender":        profile.get("gender", "unknown"),
+                "problem":       profile.get("problem", ""),
+                "followup_left": left,
+            }, ensure_ascii=False)
+
+            reminder = await generate_business(
+                AISHA_FREE_PROMPT,
+                f"Клиент получил консультацию. У него ещё осталось {left} уточняющих вопроса "
+                f"которые он не задал — и он молчит больше суток.\n\n"
+                f"Напиши ОЧЕНЬ короткое напоминание (1–2 предложения максимум).\n"
+                f"Намекни что ты всё ещё думаешь об их ситуации и готова ответить.\n"
+                f"Говори тепло, без давления. Обращайся на вы.\n"
+                f"НЕ упоминай число вопросов, деньги и оплату.\n"
+                f"НЕ задавай вопросов в конце — только тёплый импульс вернуться.\n\n"
+                f"Данные: {context}",
+                complexity="simple", max_tokens=55,
+            )
+
+            if await _vk_send(vk_api, uid, reminder):
+                new_count = await r.incr(push_count_key)
+                if new_count == 1:
+                    await r.expire(push_count_key, 86400 * 14)
+                logger.info("VK followup reminder #%d sent to %s", new_count, uid)
+        except Exception as e:
+            logger.warning("VK followup error for %s: %s", uid, e)
+
+
+async def _send_vk_accompaniment_morning() -> None:
+    """Утреннее послание VK-сопровождаемым в 8:00 по местному времени."""
+    import logging
+    import json
+    import asyncio
+    from datetime import datetime, timezone, date
+    logger = logging.getLogger(__name__)
+
+    from bot.vk_dialog.router import get_vk_api
+    from bot.vk_dialog.session_manager import (
+        get_all_user_ids, get_stage, get_profile,
+    )
+    from bot.business_dialog.services import generate_business
+    from bot.business_dialog.prompts import AISHA_MORNING_PLAN_PROMPT
+    from bot.services.cache import get_redis
+
+    vk_api   = get_vk_api()
+    if vk_api is None:
+        return
+
+    utc_hour = datetime.now(timezone.utc).hour
+    today    = date.today().isoformat()
+    r        = await get_redis()
+    uids     = await get_all_user_ids()
+
+    for uid in uids:
+        try:
+            if await get_stage(uid) != "accompaniment":
+                continue
+
+            profile    = await get_profile(uid)
+            tz_offset  = int(profile.get("tz_offset", 3))
+            local_hour = (utc_hour + tz_offset) % 24
+            if local_hour != 8:
+                continue
+
+            plan_key = f"vk:morning_plan:{uid}:{today}"
+            if not await r.set(plan_key, "1", nx=True, ex=86400):
+                continue
+
+            context = json.dumps({
+                "name":       profile.get("name", ""),
+                "gender":     profile.get("gender", "unknown"),
+                "birth_date": profile.get("birth_date", ""),
+                "problem":    profile.get("problem", ""),
+                "date":       today,
+            }, ensure_ascii=False)
+
+            delay = random.randint(0, 720)
+            await asyncio.sleep(delay)
+
+            plan = await generate_business(
+                AISHA_MORNING_PLAN_PROMPT,
+                f"Данные клиента: {context}",
+                complexity="medium", max_tokens=350,
+            )
+
+            if await _vk_send(vk_api, uid, plan):
+                logger.info("VK morning plan sent to %s (tz=UTC+%d)", uid, tz_offset)
+        except Exception as e:
+            logger.warning("VK morning plan error for %s: %s", uid, e)

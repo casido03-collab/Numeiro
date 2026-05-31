@@ -167,3 +167,35 @@ async def get_last_activity(uid: int) -> int | None:
 async def reset_session(uid: int) -> None:
     r = await get_redis()
     await r.delete(f"vk:{uid}")
+
+
+# ─── Реестр пользователей (для планировщика пушей) ───────────────────────────
+
+async def register_user(uid: int) -> None:
+    """Добавить uid в глобальный реестр VK-пользователей."""
+    try:
+        r = await get_redis()
+        await r.sadd("vk:users", uid)
+    except Exception as e:
+        logger.warning("vk register_user error: %s", e)
+
+
+async def get_all_user_ids() -> list[int]:
+    """Вернуть список всех VK user ID из реестра."""
+    try:
+        r = await get_redis()
+        members = await r.smembers("vk:users")
+        return [int(m) for m in members]
+    except Exception as e:
+        logger.warning("vk get_all_user_ids error: %s", e)
+        return []
+
+
+async def get_vk_reminder_sent(uid: int) -> bool:
+    r = await get_redis()
+    return bool(await r.get(f"vk:reminder_sent:{uid}"))
+
+
+async def set_vk_reminder_sent(uid: int) -> None:
+    r = await get_redis()
+    await r.set(f"vk:reminder_sent:{uid}", "1", ex=86400 * 7)

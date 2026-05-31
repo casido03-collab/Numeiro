@@ -16,7 +16,7 @@ from bot.vk_dialog.session_manager import (
     get_paid_tier, set_paid_tier, set_payment_offered,
     get_tier_msg_count, increment_tier_msg_count,
     append_history, get_history, format_history,
-    set_last_activity, reset_session,
+    set_last_activity, reset_session, register_user,
 )
 from bot.business_dialog.services import generate_business
 from bot.business_dialog.prompts import (
@@ -434,6 +434,7 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> N
         return
 
     await set_last_activity(uid)
+    await register_user(uid)  # реестр для планировщика пушей
 
     stage = await get_stage(uid)
     logger.info("vk msg uid=%s stage=%s text=%.40s", uid, stage, text)

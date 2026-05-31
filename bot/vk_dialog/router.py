@@ -8,6 +8,12 @@ from bot.vk_dialog.payments import setup_vk_payments
 logger = logging.getLogger(__name__)
 
 _vk_bot = None  # глобальный экземпляр VKBot
+_vk_api = None  # глобальный VK API для планировщика пушей
+
+
+def get_vk_api():
+    """Вернуть VK API (None если VK не настроен)."""
+    return _vk_api
 
 
 def create_vk_bot():
@@ -16,9 +22,11 @@ def create_vk_bot():
         logger.warning("VK_TOKEN not set — VK bot disabled")
         return None
 
+    global _vk_api
     from vkbottle.bot import Bot as VKBot, Message
 
     bot = VKBot(token=settings.vk_token)
+    _vk_api = bot.api  # сохраняем для планировщика
 
     # Передаём VK API в payments.py
     setup_vk_payments(bot.api)
