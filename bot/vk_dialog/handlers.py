@@ -564,11 +564,14 @@ async def _stage_city(api, uid: int, text: str) -> None:
     await store_field(uid, "tz_offset", tz_offset)
     await set_stage(uid, "collecting_problem")
     profile = await get_profile(uid)
-    name = profile.get("name", "вы")
+    name    = profile.get("name", "вы")
+    gender  = profile.get("gender", "unknown")
+    adj     = "хорошая" if gender == "female" else "хороший"
     intro = random.choice([
-        f"Моя хорошая {name} {_emo()}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами.",
+        f"Мой {adj} {name} {_emo()}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами.",
         f"{name}, я здесь рядом {_emo()}\n\nЧто сейчас лежит на сердце? Расскажите.",
         f"Слышу вас, {name} {_emo()}\n\nЧто сейчас тревожит? Напишите своими словами.",
+        f"{name}, расскажите — что сейчас беспокоит больше всего? {_emo()} Я здесь и слушаю.",
     ])
     await _typing_for_text(api, uid, intro)
     await _send(api, uid, intro)

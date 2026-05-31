@@ -1258,10 +1258,11 @@ async def _stage_birth_date(bot: Bot, chat_id: int, telegram_id: int, biz_conn_i
     await _send(bot, chat_id, response, biz_conn_id)
 
 
-def _problem_intros(name: str) -> list[str]:
-    e = _emo()
+def _problem_intros(name: str, gender: str = "unknown") -> list[str]:
+    e   = _emo()
+    adj = "хорошая" if gender == "female" else "хороший"
     return [
-        f"Моя хорошая {name} {e}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами, я слушаю.",
+        f"Мой {adj} {name} {e}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами, я слушаю.",
         f"{name}, я здесь рядом {e}\n\nЧто сейчас лежит на сердце? Расскажите — не торопитесь.",
         f"Слышу вас, {name} {e}\n\nЧто сейчас тревожит? Напишите своими словами.",
         f"{name}, расскажите — что сейчас беспокоит больше всего? {e} Я здесь и слушаю.",
@@ -1286,9 +1287,10 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
     await set_biz_stage(telegram_id, "collecting_problem")
 
     profile = await get_profile(telegram_id)
-    name = profile.get("name", "вы")
+    name   = profile.get("name", "вы")
+    gender = profile.get("gender", "unknown")
 
-    intro = random.choice(_problem_intros(name))
+    intro = random.choice(_problem_intros(name, gender))
     await typing_for_text(bot, chat_id, biz_conn_id, intro)
     await _send(bot, chat_id, intro, biz_conn_id)
 
