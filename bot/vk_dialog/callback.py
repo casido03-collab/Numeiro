@@ -49,29 +49,47 @@ async def handle_vk_callback(request: web.Request) -> web.Response:
         logger.warning("VK callback: invalid secret")
         return web.Response(text="ok")
 
-    # 3. Входящее сообщение — обрабатываем синхронно (таймаут VK = 30 сек, AI = 1-5 сек)
-    # При рестарте бота VK получит ошибку соединения и повторит запрос — сообщение не потеряется
+    # 3. Входящее сообщение
     if event_type == "message_new":
-        msg = data.get("object", {}).get("message", {})
-        uid  = msg.get("from_id")
-        text = msg.get("text", "")
+        msg      = data.get("object", {}).get("message", {})
+        uid      = msg.get("from_id")
+        text     = msg.get("text", "")
+        event_id = data.get("event_id", "")
 
         if uid and text and _vk_api is not None:
-            first_name = ""
-            try:
-                users = await _vk_api.users.get(user_ids=[uid])
-                if users:
-                    first_name = users[0].first_name or ""
-            except Exception:
-                pass
-            try:
-                await handle_vk_message(
-                    api=_vk_api,
-                    uid=uid,
-                    text=text,
-                    first_name=first_name,
-                )
-            except Exception:
-                logger.exception("VK callback handler error (uid=%s)", uid)
+            # Дедупликация по event_id — защита от повторов при retry
+            if event_id:
+                try:
+                    from bot.services.cache import get_redis
+                    r = await get_redis()
+                    already = not await r.set(f"vk:event:{event_id}", "1", nx=True, ex=300)
+                    if already:
+                        logger.info("VK callback: duplicate event_id=%s skipped", event_id)
+                        return web.Response(text="ok")
+                except Exception:
+                    pass  # если Redis недоступен — обрабатываем без дедупа
 
+            import asyncio
+
+            async def _process():
+                first_name = ""
+                try:
+                    users = await _vk_api.users.get(user_ids=[uid])
+                    if users:
+                        first_name = users[0].first_name or ""
+                except Exception:
+                    pass
+                try:
+                    await handle_vk_message(
+                        api=_vk_api,
+                        uid=uid,
+                        text=text,
+                        first_name=first_name,
+                    )
+                except Exception:
+                    logger.exception("VK callback handler error (uid=%s)", uid)
+
+            asyncio.create_task(_process())
+
+    # Отвечаем VK сразу — не ждём завершения обработки
     return web.Response(text="ok")
