@@ -133,26 +133,28 @@ async def main():
         share.router,
     )
 
+    # VK бот создаём ДО старта сервера — чтобы зарегистрировать маршрут /vk/callback
+    from bot.vk_dialog.callback import setup_vk_callback
+    _vk_bot = create_vk_bot()
+
     # Webhook-сервер (aiohttp на порту 8080) — YooKassa + Tribute + VK
     from aiohttp import web as aiohttp_web
-    from bot.vk_dialog.callback import setup_vk_callback
     setup_webhook(bot, async_session_maker)
     _webhook_app = aiohttp_web.Application()
     # Единый webhook ЮКассы — маршрутизирует по metadata.platform (tg / vk)
     _webhook_app.router.add_post("/yookassa/webhook", handle_yookassa_webhook)
     # Business dialog: Tribute webhook + инициализация модуля
     setup_business_dialog(bot, async_session_maker, _webhook_app)
+    # VK Callback API — регистрируем ДО запуска сервера
+    if _vk_bot:
+        setup_vk_callback(_vk_bot.api, _webhook_app)
     _webhook_runner = aiohttp_web.AppRunner(_webhook_app)
     await _webhook_runner.setup()
     await aiohttp_web.TCPSite(_webhook_runner, "0.0.0.0", 8080).start()
     logger.info("Webhook server started on port 8080 (YooKassa + Tribute + VK)")
 
-    # VK Long Poll + Callback API
-    _vk_bot = create_vk_bot()
+    # VK Long Poll — резерв на время пока Callback API не подтверждён
     if _vk_bot:
-        # Callback API — основной способ (сообщения не теряются при рестарте)
-        setup_vk_callback(_vk_bot.api, _webhook_app)
-        # Long Poll — оставляем как резерв, пока Callback API не подтверждён
         asyncio.create_task(run_vk_polling(_vk_bot))
         logger.info("VK Callback API + Long Poll started")
 
