@@ -303,24 +303,32 @@ async def _send_payment_offer(api, peer_id: int, uid: int, tier_key: str = "t190
     await set_stage(uid, "waiting_payment")
     await set_payment_offered(uid)
 
-    # Тизер
-    teaser = await generate_business(
-        AISHA_PITCH_PROMPT,
-        f"Данные клиента: {context}",
-        complexity="simple",
-        max_tokens=90,
-    )
-    await _typing_for_text(api, peer_id, teaser)
-    await _send(api, peer_id, teaser)
+    # Блокировка — пока идёт отправка оффера, новые сообщения игнорируются
+    from bot.services.cache import get_redis as _get_redis
+    _r = await _get_redis()
+    await _r.set(f"vk:sending:{uid}", "1", ex=60)
 
-    # Переход
-    bridge = random.choice([
-        "Но такие вещи я смотрю глубже и спокойно, чтобы ничего не упустить.\n\nЕсли хотите — я готова начать полный просмотр.",
-        "Это требует тихого и внимательного взгляда — не торопясь, по всем линиям.\n\nЯ готова, если вы разрешите.",
-        "Такие ситуации лучше смотреть целиком — иначе можно упустить самое важное.\n\nКогда почувствуете, что готовы — я сразу начну.",
-    ])
-    await _typing_for_text(api, peer_id, bridge)
-    await _send(api, peer_id, bridge)
+    try:
+        # Тизер
+        teaser = await generate_business(
+            AISHA_PITCH_PROMPT,
+            f"Данные клиента: {context}",
+            complexity="simple",
+            max_tokens=90,
+        )
+        await _typing_medium(api, peer_id)
+        await _send(api, peer_id, teaser)
+
+        # Переход
+        bridge = random.choice([
+            "Но такие вещи я смотрю глубже и спокойно, чтобы ничего не упустить.\n\nЕсли хотите — я готова начать полный просмотр.",
+            "Это требует тихого и внимательного взгляда — не торопясь, по всем линиям.\n\nЯ готова, если вы разрешите.",
+            "Такие ситуации лучше смотреть целиком — иначе можно упустить самое важное.\n\nКогда почувствуете, что готовы — я сразу начну.",
+        ])
+        await _typing_medium(api, peer_id)
+        await _send(api, peer_id, bridge)
+    finally:
+        await _r.delete(f"vk:sending:{uid}")
 
     # Ссылка на оплату + кнопка «Перейти к оплате»
     try:
@@ -457,6 +465,11 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> N
     if not await rate_limit_check(uid, "vk_10s", 3, 10):
         return
     if not await rate_limit_check(uid, "vk_min", 15, 60):
+        return
+
+    # Блокировка на время отправки payment offer — не перебиваем поток
+    _r = await get_redis()
+    if await _r.exists(f"vk:sending:{uid}"):
         return
 
     # Минимальная длина для осмысленного ответа на платных стадиях
