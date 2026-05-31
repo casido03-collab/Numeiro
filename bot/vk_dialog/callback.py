@@ -49,34 +49,29 @@ async def handle_vk_callback(request: web.Request) -> web.Response:
         logger.warning("VK callback: invalid secret")
         return web.Response(text="ok")
 
-    # 3. Входящее сообщение — отвечаем VK НЕМЕДЛЕННО, обрабатываем в фоне
+    # 3. Входящее сообщение — обрабатываем синхронно (таймаут VK = 30 сек, AI = 1-5 сек)
+    # При рестарте бота VK получит ошибку соединения и повторит запрос — сообщение не потеряется
     if event_type == "message_new":
         msg = data.get("object", {}).get("message", {})
         uid  = msg.get("from_id")
         text = msg.get("text", "")
 
         if uid and text and _vk_api is not None:
-            import asyncio
+            first_name = ""
+            try:
+                users = await _vk_api.users.get(user_ids=[uid])
+                if users:
+                    first_name = users[0].first_name or ""
+            except Exception:
+                pass
+            try:
+                await handle_vk_message(
+                    api=_vk_api,
+                    uid=uid,
+                    text=text,
+                    first_name=first_name,
+                )
+            except Exception:
+                logger.exception("VK callback handler error (uid=%s)", uid)
 
-            async def _process():
-                first_name = ""
-                try:
-                    users = await _vk_api.users.get(user_ids=[uid])
-                    if users:
-                        first_name = users[0].first_name or ""
-                except Exception:
-                    pass
-                try:
-                    await handle_vk_message(
-                        api=_vk_api,
-                        uid=uid,
-                        text=text,
-                        first_name=first_name,
-                    )
-                except Exception:
-                    logger.exception("VK callback handler error (uid=%s)", uid)
-
-            asyncio.create_task(_process())
-
-    # Отвечаем VK сразу — иначе VK повторит событие через ~10 сек
     return web.Response(text="ok")
