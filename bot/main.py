@@ -153,10 +153,8 @@ async def main():
     await aiohttp_web.TCPSite(_webhook_runner, "0.0.0.0", 8080).start()
     logger.info("Webhook server started on port 8080 (YooKassa + Tribute + VK)")
 
-    # VK Long Poll — резерв на время пока Callback API не подтверждён
     if _vk_bot:
-        asyncio.create_task(run_vk_polling(_vk_bot))
-        logger.info("VK Callback API + Long Poll started")
+        logger.info("VK Callback API ready at /vk/callback")
 
     # Планировщик
     scheduler = setup_scheduler(bot, async_session_maker)
