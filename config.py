@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     tribute_link: str = Field(default="", env="TRIBUTE_LINK")
     tribute_api_key: str = Field(default="", env="TRIBUTE_API_KEY")
     vk_token: str = Field(default="", env="VK_TOKEN")
+    vk_callback_confirm: str = Field(default="", env="VK_CALLBACK_CONFIRM")
+    vk_callback_secret: str = Field(default="", env="VK_CALLBACK_SECRET")
     debug: bool = Field(default=False, env="DEBUG")
 
     @property

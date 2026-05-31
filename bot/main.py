@@ -135,6 +135,7 @@ async def main():
 
     # Webhook-сервер (aiohttp на порту 8080) — YooKassa + Tribute + VK
     from aiohttp import web as aiohttp_web
+    from bot.vk_dialog.callback import setup_vk_callback
     setup_webhook(bot, async_session_maker)
     _webhook_app = aiohttp_web.Application()
     # Единый webhook ЮКассы — маршрутизирует по metadata.platform (tg / vk)
@@ -146,11 +147,14 @@ async def main():
     await aiohttp_web.TCPSite(_webhook_runner, "0.0.0.0", 8080).start()
     logger.info("Webhook server started on port 8080 (YooKassa + Tribute + VK)")
 
-    # VK Long Poll (запускаем параллельно с Telegram)
+    # VK Long Poll + Callback API
     _vk_bot = create_vk_bot()
     if _vk_bot:
+        # Callback API — основной способ (сообщения не теряются при рестарте)
+        setup_vk_callback(_vk_bot.api, _webhook_app)
+        # Long Poll — оставляем как резерв, пока Callback API не подтверждён
         asyncio.create_task(run_vk_polling(_vk_bot))
-        logger.info("VK Long Poll task created")
+        logger.info("VK Callback API + Long Poll started")
 
     # Планировщик
     scheduler = setup_scheduler(bot, async_session_maker)
