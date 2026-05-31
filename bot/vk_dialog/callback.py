@@ -49,36 +49,34 @@ async def handle_vk_callback(request: web.Request) -> web.Response:
         logger.warning("VK callback: invalid secret")
         return web.Response(text="ok")
 
-    # 3. Входящее сообщение
+    # 3. Входящее сообщение — отвечаем VK НЕМЕДЛЕННО, обрабатываем в фоне
     if event_type == "message_new":
         msg = data.get("object", {}).get("message", {})
         uid  = msg.get("from_id")
         text = msg.get("text", "")
 
-        if not uid or not text:
-            return web.Response(text="ok")
+        if uid and text and _vk_api is not None:
+            import asyncio
 
-        if _vk_api is None:
-            logger.warning("VK callback: API not initialized")
-            return web.Response(text="ok")
+            async def _process():
+                first_name = ""
+                try:
+                    users = await _vk_api.users.get(user_ids=[uid])
+                    if users:
+                        first_name = users[0].first_name or ""
+                except Exception:
+                    pass
+                try:
+                    await handle_vk_message(
+                        api=_vk_api,
+                        uid=uid,
+                        text=text,
+                        first_name=first_name,
+                    )
+                except Exception:
+                    logger.exception("VK callback handler error (uid=%s)", uid)
 
-        # Получаем имя пользователя асинхронно
-        first_name = ""
-        try:
-            users = await _vk_api.users.get(user_ids=[uid])
-            if users:
-                first_name = users[0].first_name or ""
-        except Exception:
-            pass
+            asyncio.create_task(_process())
 
-        try:
-            await handle_vk_message(
-                api=_vk_api,
-                uid=uid,
-                text=text,
-                first_name=first_name,
-            )
-        except Exception:
-            logger.exception("VK callback handler error (uid=%s)", uid)
-
+    # Отвечаем VK сразу — иначе VK повторит событие через ~10 сек
     return web.Response(text="ok")
