@@ -367,9 +367,16 @@ def _detect_gender(name: str) -> str:
 
 def _is_closing(text: str) -> bool:
     """Определить завершает ли пользователь разговор."""
+    import re
     t = text.lower().strip()
-    # Только короткие фразы — длинный ответ не считается прощанием
-    return len(t) < 40 and any(phrase in t for phrase in _CLOSING_PHRASES)
+    if len(t) >= 40:
+        return False
+    # Проверяем целые слова/фразы — «покой» не должно совпадать с «ок»
+    for phrase in _CLOSING_PHRASES:
+        pattern = r'(?<![а-яёa-z])' + re.escape(phrase) + r'(?![а-яёa-z])'
+        if re.search(pattern, t):
+            return True
+    return False
 
 
 _PRE_QUESTION_PHRASES = [

@@ -86,7 +86,14 @@ def _is_closing(text: str) -> bool:
     _CLOSING = ["спасибо", "благодарю", "понял", "поняла", "понятно", "ясно",
                 "окей", "ок", "пока", "до свидания", "хорошо"]
     t = text.lower().strip()
-    return len(t) < 40 and any(p in t for p in _CLOSING)
+    if len(t) >= 40:
+        return False
+    # Проверяем целые слова — «покой» не должно совпадать с «ок»
+    for phrase in _CLOSING:
+        pattern = r'(?<![а-яёa-z])' + re.escape(phrase) + r'(?![а-яёa-z])'
+        if re.search(pattern, t):
+            return True
+    return False
 
 
 def _wants_to_pay(text: str) -> bool:
