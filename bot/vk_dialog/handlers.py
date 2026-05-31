@@ -499,7 +499,7 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> N
 
     # Роутинг по стадиям
     if stage in ("new", ""):
-        await _stage_new(api, uid, first_name)
+        await _stage_new(api, uid, first_name, text)
     elif stage == "collecting_name":
         await _stage_name(api, uid, text)
     elif stage == "collecting_birth_date":
@@ -532,11 +532,14 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> N
 
 # ─── Стадии диалога ───────────────────────────────────────────────────────────
 
-async def _stage_new(api, uid: int, first_name: str) -> None:
+async def _stage_new(api, uid: int, first_name: str, text: str = "") -> None:
     await set_stage(uid, "collecting_name")
     if first_name:
         await store_field(uid, "vk_name_hint", first_name)
-    welcome = f"Здравствуйте, душа моя {_emo()}\n\nРада, что вы написали. Скажите — как вас зовут?"
+    # Сохраняем первое сообщение как подсказку к проблеме
+    if text and len(text) > 5:
+        await store_field(uid, "first_message_hint", text[:300])
+    welcome = f"Здравствуйте, душа моя {_emo()}\n\nРада, что вы написали — я обязательно посмотрю вашу ситуацию. Прежде чем начнём — скажите, как вас зовут?"
     await _typing_for_text(api, uid, welcome)
     await _send(api, uid, welcome)
 
