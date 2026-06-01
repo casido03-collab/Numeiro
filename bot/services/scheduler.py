@@ -52,7 +52,7 @@ async def send_daily_pushes(bot: Bot, session: AsyncSession):
         ("🌟 Полная матрица судьбы", "matrix:start"),
         ("📅 Прогноз на неделю", "weekly:start"),
         ("💞 Совместимость", "menu:compatibility"),
-        ("🔮 Задать вопрос Тарологу", "menu:question"),
+        ("🔮 Задать вопрос Бабушке Aisha", "menu:question"),
         ("📆 Подбор дат", "menu:dates"),
     ]
 

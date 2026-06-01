@@ -16,10 +16,9 @@ def main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🌟 Полная матрица судьбы", callback_data="matrix:start")],
         [InlineKeyboardButton(text="📅 Расклад на неделю", callback_data="menu:weekly")],
         [InlineKeyboardButton(text="💞 Совместимость", callback_data="menu:compatibility")],
-        [InlineKeyboardButton(text="🔮 Задать вопрос Тарологу", callback_data="menu:question")],
+        [InlineKeyboardButton(text="🔮 Задать вопрос Бабушке Aisha", callback_data="menu:question")],
         [InlineKeyboardButton(text="📆 Подбор дат", callback_data="menu:dates")],
         [InlineKeyboardButton(text="⭐ Отзывы", url="https://t.me/ezoterika_aisha")],
-        [InlineKeyboardButton(text="💬 Написать бабушке Aisha", url="https://t.me/m/-Ekcn86bNmU0")],
         [
             InlineKeyboardButton(text="📜 Тарифы", callback_data="menu:plans"),
             InlineKeyboardButton(text="🌀 История", callback_data="reports:menu"),

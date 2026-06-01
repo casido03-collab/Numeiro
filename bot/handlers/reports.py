@@ -235,7 +235,7 @@ async def report_upsell(callback: CallbackQuery, user: User, session: AsyncSessi
     )
 
     # Для платных пользователей убираем замок — они уже оплатили
-    question_btn_text = "💬 Задать вопрос Тарологу" if is_paid else "🔒 Задать вопрос Тарологу"
+    question_btn_text = "🔮 Задать вопрос Бабушке Aisha" if is_paid else "🔒 Задать вопрос Бабушке Aisha"
 
     rows = [
         [InlineKeyboardButton(text=question_btn_text, callback_data="menu:question")],
