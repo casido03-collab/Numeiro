@@ -118,6 +118,43 @@ async def profile_cancel(callback: CallbackQuery, state: FSMContext, user: User)
     await callback.answer()
 
 
+async def _navigate_to_section(section: str, callback, user, session, state=None) -> None:
+    """Открыть нужный раздел сразу после ввода профиля — без промежуточных экранов."""
+    if section == "menu:daily":
+        from bot.handlers.daily import daily_forecast
+        await daily_forecast(callback, user, session)
+    elif section == "menu:weekly":
+        from bot.handlers.weekly import weekly_start
+        await weekly_start(callback, user, session)
+    elif section == "menu:horoscope":
+        from bot.handlers.horoscope import horoscope_menu
+        await horoscope_menu(callback, user, session)
+    elif section == "menu:tarot":
+        from bot.handlers.tarot import tarot_menu
+        await tarot_menu(callback, user, session)
+    elif section == "menu:compatibility":
+        from bot.handlers.compatibility import compat_start
+        if state is not None:
+            await compat_start(callback, user, session, state)
+        else:
+            # Показываем меню без FSM
+            await callback.message.edit_text(
+                "💞 *Совместимость*\n\nНажми кнопку ниже чтобы начать:",
+                reply_markup=_return_keyboard(section),
+                parse_mode="Markdown",
+            )
+    elif section == "matrix:start":
+        from bot.handlers.reading import show_sphere_selection
+        await show_sphere_selection(callback.message, user)
+    else:
+        name = user.first_name or "друг"
+        await callback.message.edit_text(
+            f"✅ Профиль сохранён, *{name}*!",
+            reply_markup=main_menu(),
+            parse_mode="Markdown",
+        )
+
+
 # ─── Получение даты рождения ──────────────────────────────────────────────────
 
 _MENU_TEXTS = {"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}
@@ -180,18 +217,9 @@ async def receive_gender(callback: CallbackQuery, state: FSMContext, user: User,
             reply_markup=sphere_menu("sphere", back="menu:main"),
             parse_mode="Markdown",
         )
-    elif next_action and next_action.startswith("menu:"):
-        # Возврат в конкретный раздел (daily, weekly, tarot и т.д.)
-        await callback.message.edit_text(
-            "✅ Дата рождения сохранена! Возвращаю вас в раздел…",
-            parse_mode="Markdown",
-        )
-        # Эмулируем нажатие нужной кнопки
-        await callback.message.edit_text(
-            "✅ *Дата сохранена.* Нажмите кнопку ниже чтобы продолжить:",
-            reply_markup=_return_keyboard(next_action),
-            parse_mode="Markdown",
-        )
+    elif next_action and (next_action.startswith("menu:") or next_action == "matrix:start"):
+        # Сразу открываем нужный раздел без промежуточных экранов
+        await _navigate_to_section(next_action, callback, user, session, state)
     else:
         name = user.first_name or "друг"
         await callback.message.edit_text(
