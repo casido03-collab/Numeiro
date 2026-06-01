@@ -239,9 +239,9 @@ async def _send_business_reminders(bot: Bot, session_maker) -> None:
                 # Кнопка зависит от стадии: waiting_payment → t190, waiting_upsell → следующий тир
                 if stage == "waiting_upsell":
                     next_tier_key = redis_profile.get("next_tier", "t490")
-                    kb = payment_keyboard(next_tier_key)
+                    kb = payment_keyboard(tid, next_tier_key)
                 else:
-                    kb = return_payment_keyboard("t190")
+                    kb = return_payment_keyboard(tid, "t190")
 
                 try:
                     send_kw: dict = {

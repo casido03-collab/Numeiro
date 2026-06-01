@@ -745,7 +745,7 @@ async def _send_payment_offer(
             e=_emo(), p=prod_name, price=price
         )
         await typing_medium(bot, chat_id, biz_conn_id)
-        await _send(bot, chat_id, payment_text, biz_conn_id, reply_markup=payment_keyboard(tier_key))
+        await _send(bot, chat_id, payment_text, biz_conn_id, reply_markup=payment_keyboard(telegram_id, tier_key))
     finally:
         await _r.delete(f"tg:sending:{telegram_id}")
 
@@ -795,7 +795,7 @@ async def _offer_next_upsell(
             f"✨ Расклад Таро на вашу ситуацию — {price} ₽\n\nОплатите — и карты дадут более глубокий взгляд на ваш вопрос {_emo()}",
             f"🔮 Карты Таро — {price} ₽\n\nОдна кнопка — и карты уточнят картину того, что происходит {_emo()}",
         ])
-        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
+        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(telegram_id, next_tier_key))
 
     elif next_tier_key == "t1990":
         # Для t1990 — сначала подробное описание сервиса, потом кнопка
@@ -831,13 +831,13 @@ async def _offer_next_upsell(
         await _send(bot, chat_id, description, biz_conn_id)
         await typing_medium(bot, chat_id, biz_conn_id)
         offer = random.choice(_UPSELL_PAYMENT_TEXTS).format(e=_emo(), p=name, price=price)
-        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
+        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(telegram_id, next_tier_key))
 
     else:
         offer = random.choice(_UPSELL_PAYMENT_TEXTS).format(
             e=_emo(), p=name, price=price
         )
-        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(next_tier_key))
+        await _send(bot, chat_id, offer, biz_conn_id, reply_markup=payment_keyboard(telegram_id, next_tier_key))
 
 
 # ─── Режим сопровождения (t1990, t4990, t9900) ───────────────────────────────

@@ -28,27 +28,60 @@ def _tribute_link() -> str:
     return getattr(settings, "tribute_link", "")
 
 
+def create_tg_business_payment_link(telegram_id: int, tier_key: str) -> str:
+    """Создать платёж ЮКассы для TG бизнес-диалога."""
+    import uuid
+    from yookassa import Payment, Configuration
+    from bot.business_dialog.upsell import get_tier
+    from config import settings
+
+    Configuration.account_id = settings.yookassa_shop_id
+    Configuration.secret_key = settings.yookassa_secret_key
+
+    tier  = get_tier(tier_key)
+    price = tier.get("price", TRIBUTE_PRICE)
+    name  = tier.get("name", "Консультация")
+
+    payment = Payment.create({
+        "amount":       {"value": f"{price}.00", "currency": "RUB"},
+        "confirmation": {"type": "redirect", "return_url": "https://t.me/numerelogia_astro_bot"},
+        "capture":      True,
+        "description":  f"Аиша — {name}",
+        "metadata": {
+            "platform":    "tg_business",
+            "telegram_id": str(telegram_id),
+            "tier_key":    tier_key,
+        },
+    }, str(uuid.uuid4()))
+
+    return payment.confirmation.confirmation_url
+
+
 # ─── Клавиатуры ───────────────────────────────────────────────────────────────
 
-def payment_keyboard(tier_key: str = "t190") -> InlineKeyboardMarkup:
-    """Кнопка оплаты для конкретного тира."""
-    from bot.business_dialog.upsell import tier_link, get_tier
-    link  = tier_link(tier_key)
+def payment_keyboard(telegram_id: int = 0, tier_key: str = "t190") -> InlineKeyboardMarkup:
+    """Кнопка оплаты через ЮКассу для конкретного тира."""
+    from bot.business_dialog.upsell import get_tier
     price = get_tier(tier_key).get("price", TRIBUTE_PRICE)
     rows  = []
-    if link:
+    try:
+        link = create_tg_business_payment_link(telegram_id, tier_key)
         rows.append([InlineKeyboardButton(text=f"💎 Оплатить — {price} ₽", url=link)])
+    except Exception as e:
+        logger.warning("payment_keyboard: YooKassa link failed: %s", e)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def return_payment_keyboard(tier_key: str = "t190") -> InlineKeyboardMarkup:
-    """Кнопка возврата к оплате для конкретного тира."""
-    from bot.business_dialog.upsell import tier_link, get_tier
-    link  = tier_link(tier_key)
+def return_payment_keyboard(telegram_id: int = 0, tier_key: str = "t190") -> InlineKeyboardMarkup:
+    """Кнопка возврата к оплате через ЮКассу."""
+    from bot.business_dialog.upsell import get_tier
     price = get_tier(tier_key).get("price", TRIBUTE_PRICE)
     rows  = []
-    if link:
+    try:
+        link = create_tg_business_payment_link(telegram_id, tier_key)
         rows.append([InlineKeyboardButton(text=f"💎 Вернуться к оплате — {price} ₽", url=link)])
+    except Exception as e:
+        logger.warning("return_payment_keyboard: YooKassa link failed: %s", e)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

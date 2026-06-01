@@ -46,6 +46,24 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
             from bot.vk_dialog.payments import handle_vk_payment_webhook
             return await handle_vk_payment_webhook(request, _parsed=(data, payment_obj, metadata))
 
+        # ── TG бизнес-диалог (бабушка Аиша) ───────────────────────────────────
+        if metadata.get("platform") == "tg_business":
+            telegram_id = int(metadata.get("telegram_id", 0))
+            tier_key    = metadata.get("tier_key", "t190")
+            payment_id  = payment_obj.get("id", "")
+            amount      = int(float(payment_obj.get("amount", {}).get("value", 0)))
+            if telegram_id:
+                from bot.services.cache import get_redis
+                _r = await get_redis()
+                already = not await _r.set(f"tg_biz_paid:{payment_id}", "1", nx=True, ex=86400)
+                if not already:
+                    from bot.business_dialog.tribute_flow import _process_payment, _session_maker as _trib_sm
+                    if _trib_sm:
+                        async with _trib_sm() as session:
+                            await _process_payment(session, telegram_id, payment_id, amount, tier_key)
+                        logger.info("TG business payment processed: tid=%s tier=%s", telegram_id, tier_key)
+            return web.Response(status=200)
+
         # ── Telegram-платёж ───────────────────────────────────────────────────
         payment_id       = payment_obj.get("id")
         user_telegram_id = metadata.get("user_id")
