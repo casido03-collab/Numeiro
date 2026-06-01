@@ -27,6 +27,59 @@ def _parse_date(text: str) -> date | None:
     return None
 
 
+_SECTION_LABELS = {
+    "menu:daily":         "⚡ Энергия дня",
+    "menu:weekly":        "📅 Расклад на неделю",
+    "menu:horoscope":     "🔯 Гороскоп",
+    "menu:tarot":         "🃏 Карта дня",
+    "menu:compatibility": "💞 Совместимость",
+    "menu:question":      "🔮 Задать вопрос",
+    "matrix:start":       "🌟 Матрица судьбы",
+}
+
+
+def _return_keyboard(callback_data: str):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    label = _SECTION_LABELS.get(callback_data, "▶️ Продолжить")
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, callback_data=callback_data)],
+        [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+    ])
+
+
+# ─── Универсальный сбор даты рождения с возвратом в раздел ────────────────────
+
+@router.callback_query(F.data.startswith("birth_date:collect:"))
+async def collect_birth_date_for_section(
+    callback: CallbackQuery, user: User, state: FSMContext, session: AsyncSession
+):
+    """Запросить дату рождения и после сохранения вернуть в нужный раздел."""
+    return_to = callback.data[len("birth_date:collect:"):]
+
+    if user.birth_date:
+        # Дата уже есть — сразу в нужный раздел
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        label = _SECTION_LABELS.get(return_to, "▶️ Продолжить")
+        await callback.message.edit_text(
+            "✅ Дата рождения уже указана. Нажмите чтобы продолжить:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=label, callback_data=return_to)],
+            ]),
+            parse_mode="Markdown",
+        )
+        await callback.answer()
+        return
+
+    await callback.message.edit_text(
+        "✨ *Введите вашу дату рождения* в формате ДД.ММ.ГГГГ\n\nНапример: *15.03.1995*",
+        reply_markup=cancel_fsm_keyboard(),
+        parse_mode="Markdown",
+    )
+    await state.set_state(ProfileFSM.waiting_birth_date)
+    await state.update_data(next_action=return_to, origin_chat_id=callback.message.chat.id)
+    await callback.answer()
+
+
 # ─── Запуск бесплатного разбора ───────────────────────────────────────────────
 
 @router.callback_query(F.data == "free:start")
@@ -125,6 +178,18 @@ async def receive_gender(callback: CallbackQuery, state: FSMContext, user: User,
         await callback.message.edit_text(
             "🔮 *Выбери сферу для разбора:*",
             reply_markup=sphere_menu("sphere", back="menu:main"),
+            parse_mode="Markdown",
+        )
+    elif next_action and next_action.startswith("menu:"):
+        # Возврат в конкретный раздел (daily, weekly, tarot и т.д.)
+        await callback.message.edit_text(
+            "✅ Дата рождения сохранена! Возвращаю вас в раздел…",
+            parse_mode="Markdown",
+        )
+        # Эмулируем нажатие нужной кнопки
+        await callback.message.edit_text(
+            "✅ *Дата сохранена.* Нажмите кнопку ниже чтобы продолжить:",
+            reply_markup=_return_keyboard(next_action),
             parse_mode="Markdown",
         )
     else:

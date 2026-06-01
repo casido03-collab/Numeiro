@@ -78,7 +78,7 @@ async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSessio
         await callback.message.edit_text(
             "✨ Для расклада нам нужна ваша дата рождения.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="free:start")],
+                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="birth_date:collect:menu:weekly")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
             ]),
             parse_mode="Markdown",

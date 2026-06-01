@@ -77,7 +77,7 @@ async def horoscope_menu(callback: CallbackQuery, user: User, session: AsyncSess
         await callback.message.edit_text(
             "✨ Для гороскопа нам нужна ваша дата рождения.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="free:start")],
+                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="birth_date:collect:menu:horoscope")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
             ]),
             parse_mode="Markdown",

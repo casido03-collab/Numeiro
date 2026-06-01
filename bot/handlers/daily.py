@@ -105,9 +105,9 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
     if not user.birth_date:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         await callback.message.edit_text(
-            "✨ Для прогноза мне нужна дата рождения.\n\nВведите дату через *«Мой разбор»* в главном меню.",
+            "✨ Для прогноза нужна дата рождения.\n\nВведите её — и я сразу верну вас сюда.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✨ Мой разбор", callback_data="free:start")],
+                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="birth_date:collect:menu:daily")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
             ]),
             parse_mode="Markdown",

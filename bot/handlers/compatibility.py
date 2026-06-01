@@ -74,8 +74,13 @@ async def compat_start(callback: CallbackQuery, user: User, session: AsyncSessio
         return
 
     if not user.birth_date:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         await callback.message.edit_text(
-            "✨ Сначала укажи свою дату рождения.\n\nВведи в формате *ДД.ММ.ГГГГ*",
+            "✨ Сначала укажи свою дату рождения — после этого вернёмся сюда.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="birth_date:collect:menu:compatibility")],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
+            ]),
             parse_mode="Markdown",
         )
         await callback.answer()

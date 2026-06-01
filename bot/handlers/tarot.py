@@ -115,7 +115,7 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
         await callback.message.edit_text(
             "✨ Для карты дня нам нужна ваша дата рождения.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="free:start")],
+                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="birth_date:collect:menu:tarot")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
             ]),
             parse_mode="Markdown",

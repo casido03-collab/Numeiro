@@ -71,7 +71,7 @@ async def menu_reading(callback: CallbackQuery, user: User, session: AsyncSessio
         await callback.answer()
         return
 
-    await show_sphere_selection(callback.message, user)
+    await show_sphere_selection(callback.message, user)  # reading оставляем как есть
     await callback.answer()
 
 
@@ -139,9 +139,9 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
 async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSession):
     if not user.birth_date:
         await callback.message.edit_text(
-            "✨ Введи свою дату рождения через *«Мой разбор»*:",
+            "✨ Для матрицы судьбы нужна дата рождения.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="free:start")],
+                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="birth_date:collect:matrix:start")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
             ]),
             parse_mode="Markdown",
