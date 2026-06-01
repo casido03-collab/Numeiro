@@ -72,9 +72,9 @@ PLANS = {
         "days": 30,
         "limits": {
             "ai_messages": 800,
-            "personal_questions": 15,
+            "personal_questions": 30,
             "weekly_reports": 2,
-            "compatibility": 4,
+            "compatibility": 7,
             "daily_forecasts": 1,   # 1 Энергия дня в день, без общего лимита
             "mini_readings": 15,
             "date_selections": 10,
@@ -89,7 +89,7 @@ PLANS = {
             "ai_messages": 3000,
             "personal_questions": 60,
             "weekly_reports": 4,
-            "compatibility": 15,
+            "compatibility": 30,
             "daily_forecasts": 1,   # 1 Энергия дня в день (всего 30 за месяц — Redis)
             "mini_readings": 50,
             "date_selections": 40,
