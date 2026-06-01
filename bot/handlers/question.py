@@ -18,7 +18,8 @@ router = Router()
 
 
 class QuestionFSM(StatesGroup):
-    waiting_question = State()
+    waiting_birth_date = State()  # ввод даты рождения перед вопросом
+    waiting_question   = State()
 
 
 @router.callback_query(F.data == "question:cancel")
@@ -54,12 +55,12 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
     if not user.birth_date:
         await replace_message(
             callback.message,
-            "✨ Сначала укажи дату рождения.\n\nВведи в формате *ДД.ММ.ГГГГ*",
+            "✨ Для персонального разбора нужна ваша дата рождения.\n\nВведите в формате *ДД.ММ.ГГГГ*\nНапример: 15.03.1990",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✨ Ввести дату", callback_data="free:start")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
             ]),
         )
+        await state.set_state(QuestionFSM.waiting_birth_date)
         await callback.answer()
         return
 
@@ -83,6 +84,49 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
     )
     await state.set_state(QuestionFSM.waiting_question)
     await callback.answer()
+
+
+@router.message(QuestionFSM.waiting_birth_date, ~F.text.in_({"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}))
+async def receive_birth_date_for_question(message: Message, state: FSMContext, user: User, session: AsyncSession):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from bot.services.limits import check_limit
+    from datetime import datetime
+
+    text = (message.text or "").strip()
+    try:
+        dt = datetime.strptime(text, "%d.%m.%Y").date()
+    except ValueError:
+        await message.answer("❌ Неверный формат. Введите дату так: *15.03.1990*", parse_mode="Markdown")
+        return
+
+    # Сохраняем дату рождения
+    user.birth_date = dt
+    await session.commit()
+
+    # Теперь показываем экран вопроса
+    has_limit, used, max_val = await check_limit(session, user.id, "personal_questions")
+    if not has_limit:
+        await state.clear()
+        await message.answer(
+            "🔒 *Вопрос Бабушке Aisha*\n\nЛимит вопросов исчерпан.\n\n"
+            "• Free: 1 вопрос\n• Lite: 7 вопросов\n• Premium: 30 вопросов\n• Pro: 60 вопросов",
+            reply_markup=limit_reached_keyboard(),
+            parse_mode="Markdown",
+        )
+        return
+
+    remaining = max_val - used
+    await message.answer(
+        f"🔮 *Личный расклад*\n\n"
+        f"Добро пожаловать, мои хорошие.\n\n"
+        f"✨ Доступно вопросов: *{remaining}*\n\n"
+        f"📝 Напишите свой вопрос сообщением ниже",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="question:cancel")]
+        ]),
+        parse_mode="Markdown",
+    )
+    await state.set_state(QuestionFSM.waiting_question)
 
 
 @router.message(QuestionFSM.waiting_question, ~F.text.in_({"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}))
