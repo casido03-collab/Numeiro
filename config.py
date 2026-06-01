@@ -40,14 +40,14 @@ PLANS = {
         "price_stars": 0,
         "days": None,
         "limits": {
-            "ai_messages": 5,
+            "ai_messages": 10,         # покрывает все разовые фичи + запас
             "personal_questions": 1,   # 1 вопрос всего
             "weekly_reports": 1,
             "compatibility": 1,        # 1 совместимость всего
             "daily_forecasts": 1,      # 1 Энергия дня в день
             "mini_readings": 1,
             "date_selections": 0,
-            "tarot_cards": 2,
+            "tarot_cards": 1,          # 1 карта Таро всего
         },
     },
     "lite": {
