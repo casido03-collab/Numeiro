@@ -77,8 +77,22 @@ def _emo() -> str:
     return random.choice(_ESOTERIC_EMOJIS)
 
 
-def _detect_gender(name: str) -> str:
+# Имена которые используются для обоих полов — определяем по VK профилю
+_AMBIGUOUS_NAMES = {
+    "саша", "женя", "валя", "слава", "шура", "никита",
+    "дениса", "илья", "лёша", "лёша", "сеня", "андрей",
+}
+
+
+def _detect_gender(name: str, vk_sex: int = 0) -> str:
+    """Определить пол по имени или VK sex (1=female, 2=male)."""
+    if vk_sex == 1:
+        return "female"
+    if vk_sex == 2:
+        return "male"
     n = name.strip().lower()
+    if n in _AMBIGUOUS_NAMES:
+        return "unknown"  # нейтральное обращение
     return "female" if n.endswith(("а", "я")) else "male"
 
 
@@ -442,7 +456,7 @@ async def _stage_support_vk(api, uid: int) -> None:
     await _send(api, uid, "Я уточняю — пожалуйста, немного подождите 🌙")
 
 
-async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> None:
+async def handle_vk_message(api, uid: int, text: str, first_name: str = "", vk_sex: int = 0) -> None:
     """Точка входа — вызывается из router.py на каждое входящее сообщение."""
     text = text.strip()
     if not text:
@@ -499,7 +513,7 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> N
 
     # Роутинг по стадиям
     if stage in ("new", ""):
-        await _stage_new(api, uid, first_name, text)
+        await _stage_new(api, uid, first_name, text, vk_sex)
     elif stage == "collecting_name":
         await _stage_name(api, uid, text)
     elif stage == "collecting_birth_date":
@@ -532,10 +546,12 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "") -> N
 
 # ─── Стадии диалога ───────────────────────────────────────────────────────────
 
-async def _stage_new(api, uid: int, first_name: str, text: str = "") -> None:
+async def _stage_new(api, uid: int, first_name: str, text: str = "", vk_sex: int = 0) -> None:
     await set_stage(uid, "collecting_name")
     if first_name:
         await store_field(uid, "vk_name_hint", first_name)
+    if vk_sex:
+        await store_field(uid, "vk_sex", vk_sex)  # сохраняем пол из VK профиля
     # Сохраняем первое сообщение как подсказку к проблеме
     if text and len(text) > 5:
         await store_field(uid, "first_message_hint", text[:300])
@@ -550,8 +566,10 @@ async def _stage_name(api, uid: int, text: str) -> None:
         await _typing_short(api, uid)
         await _send(api, uid, NAME_ERRORS.get(result, f"Напишите своё имя {_emo()}"))
         return
-    name   = result
-    gender = _detect_gender(name)
+    name    = result
+    profile = await get_profile(uid)
+    vk_sex  = int(profile.get("vk_sex", 0) or 0)
+    gender  = _detect_gender(name, vk_sex)
     await store_field(uid, "name", name)
     await store_field(uid, "gender", gender)
     await set_stage(uid, "collecting_birth_date")
@@ -589,9 +607,14 @@ async def _stage_city(api, uid: int, text: str) -> None:
     profile = await get_profile(uid)
     name    = profile.get("name", "вы")
     gender  = profile.get("gender", "unknown")
-    adj     = "хорошая" if gender == "female" else "хороший"
+    if gender == "female":
+        adj = "хорошая"
+    elif gender == "male":
+        adj = "хороший"
+    else:
+        adj = None  # нейтральное обращение для амбигуозных имён
     intro = random.choice([
-        f"Мой {adj} {name} {_emo()}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами.",
+        f"{'Мой ' + adj + ' ' if adj else 'Душа моя, '}{name} {_emo()}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами.",
         f"{name}, я здесь рядом {_emo()}\n\nЧто сейчас лежит на сердце? Расскажите.",
         f"Слышу вас, {name} {_emo()}\n\nЧто сейчас тревожит? Напишите своими словами.",
         f"{name}, расскажите — что сейчас беспокоит больше всего? {_emo()} Я здесь и слушаю.",

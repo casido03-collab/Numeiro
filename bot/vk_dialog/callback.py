@@ -73,10 +73,12 @@ async def handle_vk_callback(request: web.Request) -> web.Response:
 
             async def _process():
                 first_name = ""
+                vk_sex     = 0  # 0=unknown, 1=female, 2=male
                 try:
-                    users = await _vk_api.users.get(user_ids=[uid])
+                    users = await _vk_api.users.get(user_ids=[uid], fields=["sex"])
                     if users:
                         first_name = users[0].first_name or ""
+                        vk_sex     = getattr(users[0], "sex", 0) or 0
                 except Exception:
                     pass
                 try:
@@ -85,6 +87,7 @@ async def handle_vk_callback(request: web.Request) -> web.Response:
                         uid=uid,
                         text=text,
                         first_name=first_name,
+                        vk_sex=vk_sex,
                     )
                 except Exception:
                     logger.exception("VK callback handler error (uid=%s)", uid)
