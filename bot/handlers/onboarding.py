@@ -163,25 +163,22 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
     except Exception as e:
         logger.warning("Onboarding animation error: %s", e)
 
-    # Показать пробный вопрос
     await mark_onboarding_done(session, user.id, interest)
 
-    # Отправить reply-клавиатуру сразу — до того как пользователь нажмёт любую кнопку
+    # Сразу открываем главное меню — без промежуточного экрана
+    from bot.keyboards.main import main_menu
+    from bot.handlers.start import _welcome_text
+    from bot.services.menu_tracker import set_menu_msg_id
     from bot.utils import ensure_keyboard
-    await ensure_keyboard(callback.message, user.telegram_id)
 
-    name = user.first_name or "друг"
+    name = user.first_name or None
     await callback.message.edit_text(
-        f"✨ *{name}, всё готово.*\n\n"
-        f"Узнайте, какая энергия ведёт вас *именно сегодня* —\n"
-        f"или получите персональный разбор по дате рождения.\n\n"
-        f"⚡ *Энергия дня* покажет, на что обратить внимание,\n"
-        f"чего избегать и к чему вас тянет прямо сейчас.\n\n"
-        f"✨ *Мой разбор* откроет ваши числа судьбы,\n"
-        f"сильные стороны и скрытые таланты.",
-        reply_markup=_screen_trial_kb(),
+        _welcome_text(name),
+        reply_markup=main_menu(),
         parse_mode="Markdown",
     )
+    await set_menu_msg_id(user.telegram_id, callback.message.message_id)
+    await ensure_keyboard(callback.message, user.telegram_id)
     await callback.answer()
 
 
