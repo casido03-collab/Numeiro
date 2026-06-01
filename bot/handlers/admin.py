@@ -338,7 +338,8 @@ async def cmd_limits(message: Message, session: AsyncSession):
 
         lines = []
         for i, (uid, msgs, name, tg_id) in enumerate(rows, 1):
-            label = name or f"id{tg_id}"
+            raw   = name or f"id{tg_id}"
+            label = raw.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
             lines.append(f"{i}. {label} (`{tg_id}`): *{msgs}* AI-сообщений")
 
         await message.answer(
