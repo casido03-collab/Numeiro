@@ -41,9 +41,10 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
     if not has_limit:
         await replace_message(
             callback.message,
-            "🔒 *Вопрос Тарологу*\n\nЭта функция требует подписки или разовой покупки.\n\n"
-            "• Lite: 2 вопроса\n"
-            "• Premium: 15 вопросов\n"
+            "🔒 *Вопрос Бабушке Aisha*\n\nЭта функция требует подписки или разовой покупки.\n\n"
+            "• Free: 1 вопрос\n"
+            "• Lite: 7 вопросов\n"
+            "• Premium: 30 вопросов\n"
             "• Pro: 60 вопросов",
             reply_markup=limit_reached_keyboard(),
         )
@@ -62,16 +63,20 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
         await callback.answer()
         return
 
-    name = user.first_name or "друг"
+    remaining = max_val - used
     await replace_message(
         callback.message,
-        f"🔮 *{name}*, задай свой вопрос Тарологу.\n\n"
-        f"Осталось вопросов: *{max_val - used}*\n\n"
-        f"Примеры:\n"
-        f"• Стоит ли менять работу?\n"
-        f"• Что меня ждёт в отношениях?\n"
-        f"• В каком направлении двигаться?\n\n"
-        f"Напиши свой вопрос ниже ⬇️",
+        f"🔮 *Личный расклад*\n\n"
+        f"Добро пожаловать, мои хорошие.\n\n"
+        f"Сейчас Вы можете задать мне свой вопрос и получить индивидуальный разбор ситуации.\n\n"
+        f"✨ Доступно вопросов: *{remaining}*\n\n"
+        f"Чем подробнее Вы опишете ситуацию, тем глубже я смогу её рассмотреть.\n\n"
+        f"Например:\n\n"
+        f"❤️ Что чувствует ко мне этот человек?\n"
+        f"💼 Стоит ли принимать новое предложение?\n"
+        f"🌙 Что ожидает меня в ближайшее время?\n"
+        f"⭐ На что мне стоит обратить внимание сейчас?\n\n"
+        f"📝 Напишите свой вопрос сообщением ниже",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◀️ Назад", callback_data="question:cancel")]
         ]),
