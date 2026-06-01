@@ -146,7 +146,7 @@ def validate_birth_date(text: str) -> tuple[bool, str]:
 
     if dt > today:
         return False, "future"
-    if age < 10:
+    if age < 18:
         return False, "too_young"
     if age > 100:
         return False, "too_old"
