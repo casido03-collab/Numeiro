@@ -534,8 +534,13 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     if telegram_id in settings.admin_ids_list:
         return
 
-    # ── Rate limiting для business-сообщений (RateLimitMiddleware не покрывает) ─
+    # ── Блокировка на время отправки payment offer — не перебиваем поток ────────
     from bot.services.cache import rate_limit_check, get_redis
+    _r_check = await get_redis()
+    if await _r_check.exists(f"tg:sending:{telegram_id}"):
+        return
+
+    # ── Rate limiting для business-сообщений (RateLimitMiddleware не покрывает) ─
     from datetime import date
     # 1. Не более 3 сообщений за 10 секунд
     if not await rate_limit_check(telegram_id, "biz_10s", 3, 10):
@@ -711,34 +716,38 @@ async def _send_payment_offer(
         "product":    prod_name,
     }, ensure_ascii=False)
 
-    # Блокируем стадию сразу — если клиент напишет во время пауз,
-    # попадёт в _stage_waiting_payment (мягкий deflect), а не сюда снова
     await set_biz_stage(telegram_id, "waiting_payment")
     await set_payment_offered(telegram_id)
 
-    # Сообщение 1 — короткий AI-тизер (2 предложения + многоточие)
-    teaser = await generate_business(
-        AISHA_PITCH_PROMPT,
-        f"Данные клиента: {context}",
-        complexity="simple",
-        max_tokens=90,
-    )
-    await typing_for_text(bot, chat_id, biz_conn_id, teaser)
-    await _send(bot, chat_id, teaser, biz_conn_id)
+    # Блокировка — пока идёт отправка оффера, дублирующие апдейты игнорируются
+    from bot.services.cache import get_redis as _get_redis
+    _r = await _get_redis()
+    await _r.set(f"tg:sending:{telegram_id}", "1", ex=60)
 
-    # Сообщение 2 — мягкий переход (рандом, пауза 5–8 сек)
-    bridge = random.choice(_BRIDGE_TEXTS)
-    await typing_long(bot, chat_id, biz_conn_id)
-    await _send(bot, chat_id, bridge, biz_conn_id)
+    try:
+        # Сообщение 1 — короткий AI-тизер
+        teaser = await generate_business(
+            AISHA_PITCH_PROMPT,
+            f"Данные клиента: {context}",
+            complexity="simple",
+            max_tokens=90,
+        )
+        await typing_for_text(bot, chat_id, biz_conn_id, teaser)
+        await _send(bot, chat_id, teaser, biz_conn_id)
 
-    # Сообщение 3 — счёт с кнопкой
-    payment_text = random.choice(_PAYMENT_TEXTS).format(
-        e=_emo(), p=prod_name, price=price
-    )
-    await typing_medium(bot, chat_id, biz_conn_id)
-    await _send(bot, chat_id, payment_text, biz_conn_id, reply_markup=payment_keyboard(tier_key))
+        # Сообщение 2 — мягкий переход
+        bridge = random.choice(_BRIDGE_TEXTS)
+        await typing_long(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, bridge, biz_conn_id)
 
-    # (стадия и payment_offered уже выставлены в начале функции)
+        # Сообщение 3 — счёт с кнопкой
+        payment_text = random.choice(_PAYMENT_TEXTS).format(
+            e=_emo(), p=prod_name, price=price
+        )
+        await typing_medium(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, payment_text, biz_conn_id, reply_markup=payment_keyboard(tier_key))
+    finally:
+        await _r.delete(f"tg:sending:{telegram_id}")
 
 
 # ─── Апсейл на следующий тир ─────────────────────────────────────────────────
