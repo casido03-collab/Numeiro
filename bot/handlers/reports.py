@@ -209,7 +209,7 @@ async def view_report(callback: CallbackQuery, user: User, session: AsyncSession
             InlineKeyboardButton(text="🔙 К списку", callback_data=f"reports:cat:{report.report_type}:0"),
             InlineKeyboardButton(text="📤 Поделиться", callback_data=f"reports:share:{report.id}"),
         ],
-        [InlineKeyboardButton(text="🔮 Спросить глубже", url="https://t.me/m/-Ekcn86bNmU0")],
+        [InlineKeyboardButton(text="🔮 Задать вопрос Бабушке Aisha", callback_data="menu:question")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
     ])
     await safe_edit(callback.message, text, reply_markup=kb)

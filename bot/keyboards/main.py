@@ -166,7 +166,7 @@ def upsell_keyboard() -> InlineKeyboardMarkup:
 def after_reading_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="▶️ Продолжить разбор", callback_data="matrix:start")],
-        [InlineKeyboardButton(text="🌊 Спросить ещё глубже", url="https://t.me/m/-Ekcn86bNmU0")],
+        [InlineKeyboardButton(text="🔮 Задать вопрос Бабушке Aisha", callback_data="menu:question")],
         [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
     ])
@@ -189,7 +189,7 @@ def after_reading_keyboard_matrix() -> InlineKeyboardMarkup:
     """after_reading_keyboard + кнопка контентного CTA для матрицы."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="▶️ Другой разбор", callback_data="menu:reading")],
-        [InlineKeyboardButton(text="🌊 Спросить ещё глубже", url="https://t.me/m/-Ekcn86bNmU0")],
+        [InlineKeyboardButton(text="🔮 Задать вопрос Бабушке Aisha", callback_data="menu:question")],
         [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
         [InlineKeyboardButton(text="👁 Тайна 11:11", callback_data="content:numerology")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
@@ -200,7 +200,7 @@ def after_reading_keyboard_weekly() -> InlineKeyboardMarkup:
     """after_reading_keyboard + кнопка контентного CTA для недельного прогноза."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="▶️ Продолжить разбор", callback_data="matrix:start")],
-        [InlineKeyboardButton(text="🌊 Спросить ещё глубже", url="https://t.me/m/-Ekcn86bNmU0")],
+        [InlineKeyboardButton(text="🔮 Задать вопрос Бабушке Aisha", callback_data="menu:question")],
         [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
         [InlineKeyboardButton(text="🌙 Как Луна влияет на настроение?", callback_data="content:astrology")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
@@ -211,7 +211,7 @@ def after_tarot_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура после показа карты дня."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✨ Расшифровать глубже", callback_data="menu:question")],
-        [InlineKeyboardButton(text="💬 Задать вопрос Aisha", url="https://t.me/m/-Ekcn86bNmU0")],
+        [InlineKeyboardButton(text="🔮 Задать вопрос Бабушке Aisha", callback_data="menu:question")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
     ])
 
