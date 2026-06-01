@@ -314,13 +314,15 @@ async def _send_payment_offer(api, peer_id: int, uid: int, tier_key: str = "t190
         "product":    name,
     }, ensure_ascii=False)
 
-    await set_stage(uid, "waiting_payment")
-    await set_payment_offered(uid)
-
-    # Блокировка — пока идёт отправка оффера, новые сообщения игнорируются
+    # Атомарная блокировка через NX — только один поток запускает оффер
     from bot.services.cache import get_redis as _get_redis
     _r = await _get_redis()
-    await _r.set(f"vk:sending:{uid}", "1", ex=60)
+    acquired = await _r.set(f"vk:sending:{uid}", "1", nx=True, ex=60)
+    if not acquired:
+        return  # другой поток уже отправляет оффер этому пользователю
+
+    await set_stage(uid, "waiting_payment")
+    await set_payment_offered(uid)
 
     try:
         # Тизер

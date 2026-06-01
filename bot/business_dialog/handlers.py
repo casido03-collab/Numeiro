@@ -716,13 +716,15 @@ async def _send_payment_offer(
         "product":    prod_name,
     }, ensure_ascii=False)
 
-    await set_biz_stage(telegram_id, "waiting_payment")
-    await set_payment_offered(telegram_id)
-
-    # Блокировка — пока идёт отправка оффера, дублирующие апдейты игнорируются
+    # Атомарная блокировка — только один поток запускает оффер
     from bot.services.cache import get_redis as _get_redis
     _r = await _get_redis()
-    await _r.set(f"tg:sending:{telegram_id}", "1", ex=60)
+    acquired = await _r.set(f"tg:sending:{telegram_id}", "1", nx=True, ex=60)
+    if not acquired:
+        return  # другой поток уже отправляет оффер
+
+    await set_biz_stage(telegram_id, "waiting_payment")
+    await set_payment_offered(telegram_id)
 
     try:
         # Сообщение 1 — короткий AI-тизер
