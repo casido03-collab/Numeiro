@@ -144,11 +144,23 @@ async def _process_vk_payment(vk_user_id: int, tier_key: str, payment_id: str, a
             logger.warning("VK send failed for %s: %s", vk_user_id, e)
 
     async def _typing(seconds: float = 2.0) -> None:
-        try:
-            await _vk_api.messages.set_activity(peer_id=vk_user_id, type="typing")
-            await asyncio.sleep(seconds)
-        except Exception:
-            await asyncio.sleep(seconds)
+        """Держать индикатор «печатает» ровно seconds секунд (обновляем каждые 5 сек)."""
+        elapsed = 0.0
+        while elapsed < seconds:
+            try:
+                await _vk_api.messages.set_activity(peer_id=vk_user_id, type="typing")
+            except Exception:
+                pass
+            sleep_for = min(5.0, seconds - elapsed)
+            await asyncio.sleep(sleep_for)
+            elapsed += sleep_for
+
+    def _calc_typing(text: str) -> float:
+        """Рассчитать реалистичную задержку по длине текста (макс 22 сек)."""
+        import random as _rnd
+        chars = len(text)
+        total = _rnd.uniform(1.5, 3.0) + chars / 4.0
+        return min(total * _rnd.uniform(0.85, 1.15), 22.0)
 
     # Подтверждение
     confirm_msgs = {
@@ -181,15 +193,17 @@ async def _process_vk_payment(vk_user_id: int, tier_key: str, payment_id: str, a
     profile = await get_profile(vk_user_id)
     context = json.dumps(profile, ensure_ascii=False)
 
-    await _typing(5)
+    await _typing(6)  # пауза перед генерацией — имитируем обдумывание
     consultation = await generate_business(
         prompt,
         f"Данные клиента: {context}",
         complexity=complexity,
         max_tokens=max_tokens,
     )
+    # Typing по длине текста перед отправкой разбора
+    await _typing(_calc_typing(consultation))
     await _send(consultation)
 
-    await _typing(2)
+    await _typing(3)
     await _send(followup_invite(followup_limit))
     await set_stage(vk_user_id, "followup")
