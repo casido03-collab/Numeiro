@@ -1,7 +1,8 @@
 """Управление лимитами пользователей.
 
 Логика периодов:
-- FREE:  лимиты сбрасываются ежедневно (period_start = сегодня)
+- FREE:  лимиты НЕ сбрасываются — даются ОДИН РАЗ навсегда (period_start = "free_total")
+         Исключение: daily_forecasts — 1 в день как у всех.
 - PAID:  лимиты на весь период подписки (period_start = дата активации)
   Исключение: daily_forecasts — "1 в день" для всех тарифов, сбрасывается ежедневно.
 """
@@ -74,9 +75,8 @@ async def get_or_create_usage(session: AsyncSession, user_id: int) -> UsageLimit
     Используется в _activate_subscription и других местах.
     """
     plan = await get_user_plan(session, user_id)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if plan == "free":
-        return await _get_or_create_record(session, user_id, today)
+        return await _get_or_create_record(session, user_id, "free_total")
     period_key = await _period_key_for_paid(session, user_id, plan)
     return await _get_or_create_record(session, user_id, period_key)
 
@@ -89,8 +89,10 @@ async def _get_usage_for_limit(
     - остальные: ежедневная для free, периодическая для paid
     """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    if plan == "free" or limit_type in _DAILY_RESET_LIMITS:
+    if limit_type in _DAILY_RESET_LIMITS:
         return await _get_or_create_record(session, user_id, today)
+    if plan == "free":
+        return await _get_or_create_record(session, user_id, "free_total")
     period_key = await _period_key_for_paid(session, user_id, plan)
     return await _get_or_create_record(session, user_id, period_key)
 
@@ -158,7 +160,7 @@ async def get_limits_summary(session: AsyncSession, user_id: int) -> dict:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     if plan == "free":
-        period_key = today
+        period_key = "free_total"
     else:
         period_key = await _period_key_for_paid(session, user_id, plan)
 

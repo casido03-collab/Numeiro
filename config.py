@@ -41,10 +41,10 @@ PLANS = {
         "days": None,
         "limits": {
             "ai_messages": 5,
-            "personal_questions": 0,
+            "personal_questions": 1,   # 1 вопрос всего
             "weekly_reports": 1,
-            "compatibility": 0,
-            "daily_forecasts": 1,   # 1 Энергия дня в день
+            "compatibility": 1,        # 1 совместимость всего
+            "daily_forecasts": 1,      # 1 Энергия дня в день
             "mini_readings": 1,
             "date_selections": 0,
             "tarot_cards": 2,
@@ -56,15 +56,15 @@ PLANS = {
         "days": 7,
         "limits": {
             "ai_messages": 120,
-            "personal_questions": 2,
+            "personal_questions": 7,   # 7 вопросов за подписку
             "weekly_reports": 0,
             "compatibility": 1,
-            "daily_forecasts": 1,   # 1 Энергия дня в день (всего 3 за 7 дней — Redis)
+            "daily_forecasts": 1,      # 1 Энергия дня в день (всего 3 за 7 дней — Redis)
             "mini_readings": 3,
-            "date_selections": 0,
+            "date_selections": 2,      # 2 подбора дат
             "tarot_cards": 5,
         },
-        "energy_day_total": 3,      # всего за подписку (7 дней)
+        "energy_day_total": 3,         # всего за подписку (7 дней)
     },
     "premium": {
         "name": "Premium",
