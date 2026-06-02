@@ -184,6 +184,12 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     # Запускается каждый час — внутри проверяем у кого сейчас local_hour == 8
     scheduler.add_job(_accompaniment_morning, CronTrigger(minute=0))
 
+    # Оффер подписки через 5 мин после ответа — проверяем каждую минуту
+    async def _biz_offer_check():
+        from bot.business_dialog.handlers import send_tg_offer_if_due
+        await send_tg_offer_if_due(bot)
+    scheduler.add_job(_biz_offer_check, CronTrigger(minute="*"))
+
     # Утренний привет платным (7:00 МСК = 04:00 UTC)
     scheduler.add_job(_biz_morning_paid, CronTrigger(hour=4, minute=0))
     # Пуши неплатным TG — каждые 15 минут проверяем 1ч/3ч/24ч молчания

@@ -542,11 +542,11 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
 
     # ── Rate limiting для business-сообщений (RateLimitMiddleware не покрывает) ─
     from datetime import date
-    # 1. Не более 3 сообщений за 10 секунд
-    if not await rate_limit_check(telegram_id, "biz_10s", 3, 10):
+    # 1. Не более 8 сообщений за 10 секунд (повышен чтобы не блокировать быстрые вопросы)
+    if not await rate_limit_check(telegram_id, "biz_10s", 8, 10):
         return  # тихо игнорируем спам
-    # 2. Не более 15 сообщений за 60 секунд
-    if not await rate_limit_check(telegram_id, "biz_min", 15, 60):
+    # 2. Не более 30 сообщений за 60 секунд
+    if not await rate_limit_check(telegram_id, "biz_min", 30, 60):
         return
     # 3. Дневной лимит AI-вызовов (по умолчанию 120, admin может расширить)
     today       = date.today().isoformat()
@@ -1346,53 +1346,91 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
 
-    # Через 5 минут — оффер подписки
-    asyncio.create_task(_delayed_offer_tg(bot, chat_id, telegram_id, biz_conn_id))
-
-
-async def _delayed_offer_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None) -> None:
-    """Через 5 минут после первого ответа — предлагаем подписку."""
-    import asyncio
-    await asyncio.sleep(300)  # 5 минут
-
-    # Если пользователь уже оплатил — не показываем
-    current_stage = await get_biz_stage(telegram_id)
-    if current_stage == "paid_monthly":
-        return
-
-    profile  = await get_profile(telegram_id)
-    name     = profile.get("name", "душа моя")
-    gender   = profile.get("gender", "unknown")
-    adj      = "хорошая" if gender == "female" else "хороший"
-
-    offer_text = (
-        f"Мой {adj} {name} {_emo()}\n\n"
-        f"Я готова работать с вами на протяжении всего месяца и отвечать на все ваши вопросы.\n\n"
-        f"Задавайте мне вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
-        f"✨ *Работа со мной* — 990 ₽ / месяц"
-    )
-
-    from bot.business_dialog.tribute_flow import create_tg_business_payment_link
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    try:
-        link = create_tg_business_payment_link(telegram_id, "monthly_990")
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💎 Оформить подписку — 990 ₽", url=link)]
-        ])
-    except Exception:
-        kb = None
-
-    await set_biz_stage(telegram_id, "waiting_payment")
-    send_kw: dict = {"chat_id": chat_id, "text": offer_text, "parse_mode": "Markdown"}
+    # Запоминаем в Redis когда отправить оффер (через 5 мин)
+    # Scheduler проверяет это каждую минуту — надёжнее asyncio.create_task
+    import time as _time
+    from bot.services.cache import get_redis as _gcr
+    _r2 = await _gcr()
+    await _r2.set(f"biz:offer_at:{telegram_id}", str(int(_time.time()) + 300), ex=3600)
+    await _r2.set(f"biz:offer_chat:{telegram_id}", str(chat_id), ex=3600)
     if biz_conn_id:
-        send_kw["business_connection_id"] = biz_conn_id
-    if kb:
-        send_kw["reply_markup"] = kb
-    try:
-        await bot.send_message(**send_kw)
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("_delayed_offer_tg failed: %s", e)
+        await _r2.set(f"biz:offer_conn:{telegram_id}", biz_conn_id, ex=3600)
+
+
+async def send_tg_offer_if_due(bot: Bot) -> None:
+    """Проверить Redis и отправить оффер тем у кого время пришло (вызывается из scheduler каждую минуту)."""
+    import time
+    from bot.services.cache import get_redis
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    r   = await get_redis()
+    now = int(time.time())
+
+    # Ищем все ключи biz:offer_at:*
+    keys = await r.keys("biz:offer_at:*")
+    for key in keys:
+        try:
+            val = await r.get(key)
+            if not val:
+                continue
+            fire_at = int(val)
+            if now < fire_at:
+                continue  # ещё рано
+
+            # Извлекаем telegram_id из ключа
+            tid = int(key.decode().split(":")[-1])
+
+            # Проверяем что пользователь всё ещё не оплатил
+            stage = await get_biz_stage(tid)
+            if stage in ("paid_monthly", "waiting_payment"):
+                await r.delete(key)
+                continue
+
+            chat_id_raw = await r.get(f"biz:offer_chat:{tid}")
+            conn_raw    = await r.get(f"biz:offer_conn:{tid}")
+            if not chat_id_raw:
+                await r.delete(key)
+                continue
+
+            chat_id     = int(chat_id_raw)
+            biz_conn_id = conn_raw.decode() if conn_raw else None
+
+            profile = await get_profile(tid)
+            name    = profile.get("name", "душа моя")
+            gender  = profile.get("gender", "unknown")
+            adj     = "хорошая" if gender == "female" else "хороший"
+
+            offer_text = (
+                f"Мой {adj} {name} {_emo()}\n\n"
+                f"Я готова работать с вами на протяжении всего месяца и отвечать на все ваши вопросы.\n\n"
+                f"Задавайте мне вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
+                f"✨ *Работа со мной* — 990 ₽ / месяц"
+            )
+
+            from bot.business_dialog.tribute_flow import create_tg_business_payment_link
+            try:
+                link = create_tg_business_payment_link(tid, "monthly_990")
+                kb   = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="💎 Оформить подписку — 990 ₽", url=link)]
+                ])
+            except Exception:
+                kb = None
+
+            await set_biz_stage(tid, "waiting_payment")
+            send_kw: dict = {"chat_id": chat_id, "text": offer_text, "parse_mode": "Markdown"}
+            if biz_conn_id:
+                send_kw["business_connection_id"] = biz_conn_id
+            if kb:
+                send_kw["reply_markup"] = kb
+            await bot.send_message(**send_kw)
+
+            # Удаляем ключ — оффер отправлен
+            await r.delete(key)
+            await r.delete(f"biz:offer_chat:{tid}")
+            await r.delete(f"biz:offer_conn:{tid}")
+
+        except Exception as e:
+            logger.warning("send_tg_offer_if_due error for key %s: %s", key, e)
 
 
 async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
