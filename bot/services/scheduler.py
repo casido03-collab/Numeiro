@@ -172,36 +172,18 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     scheduler.add_job(_retention, CronTrigger(minute="*/10"))
     # Trial upsell — каждые 5 минут (проверяет 1ч неактивности для free)
     scheduler.add_job(_trial_upsell, CronTrigger(minute="*/5"))
-    # Business dialog: 1й reminder неоплатившим через 1ч (с кнопкой)
-    scheduler.add_job(_business_reminders, CronTrigger(minute="*/15"))
-    # Business dialog: 2й reminder через 24ч после первого (без кнопки)
-    scheduler.add_job(_business_second_reminders, CronTrigger(minute="*/30"))
-    # Business dialog: пуш для брошенных диалогов через 3ч тишины
-    scheduler.add_job(_business_abandoned, CronTrigger(minute="*/30"))
-    # Followup: напомнить что остались вопросы (24ч тишины, макс 2 пуша)
-    scheduler.add_job(_followup_reminders, CronTrigger(minute=0))
-    # Сопровождение: утреннее послание в 8:00 по местному времени пользователя
-    # Запускается каждый час — внутри проверяем у кого сейчас local_hour == 8
-    scheduler.add_job(_accompaniment_morning, CronTrigger(minute=0))
+    # ── СТАРЫЕ пуши бизнес-чата ОТКЛЮЧЕНЫ (заменены новой системой monthly_990) ──
+    # _business_reminders, _business_second_reminders, _business_abandoned
+    # _followup_reminders, _accompaniment_morning
+    # _vk_reminders, _vk_second_reminders, _vk_abandoned, _vk_followup
 
-    # Оффер подписки через 5 мин после ответа — проверяем каждую минуту
-    async def _biz_offer_check():
-        from bot.business_dialog.handlers import send_tg_offer_if_due
-        await send_tg_offer_if_due(bot)
-    scheduler.add_job(_biz_offer_check, CronTrigger(minute="*"))
-
+    # ── Новые пуши бизнес-чата (monthly_990) ─────────────────────────────────
     # Утренний привет платным (7:00 МСК = 04:00 UTC)
     scheduler.add_job(_biz_morning_paid, CronTrigger(hour=4, minute=0))
-    # Пуши неплатным TG — каждые 15 минут проверяем 1ч/3ч/24ч молчания
+    # Пуши неплатным TG — 1ч/3ч/24ч с паузами между пушами
     scheduler.add_job(_biz_push_unpaid, CronTrigger(minute="*/15"))
     # Пуши неплатным VK
     scheduler.add_job(_vk_push_unpaid, CronTrigger(minute="*/15"))
-
-    # ── VK пуши (аналог TG business пушей) ───────────────────────────────────
-    scheduler.add_job(_vk_reminders,        CronTrigger(minute="*/15"))
-    scheduler.add_job(_vk_second_reminders, CronTrigger(minute="*/30"))
-    scheduler.add_job(_vk_abandoned,        CronTrigger(minute="*/30"))
-    scheduler.add_job(_vk_followup,         CronTrigger(minute=0))
     scheduler.add_job(_vk_morning,          CronTrigger(minute=0))
 
     return scheduler
