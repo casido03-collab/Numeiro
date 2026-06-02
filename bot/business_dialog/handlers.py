@@ -1344,12 +1344,24 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
 
-    # Ставим лок — пока отправляем оффер, все входящие игнорируются
+    # Ставим лок — все входящие игнорируются пока готовим оффер
     from bot.services.cache import get_redis as _gcr
+    import asyncio
     _r2 = await _gcr()
-    await _r2.set(f"tg:sending:{telegram_id}", "1", ex=60)
+    await _r2.set(f"tg:sending:{telegram_id}", "1", ex=120)
 
     try:
+        # 1 минута с индикатором «печатает» — обновляем каждые 5 сек
+        for _ in range(12):
+            try:
+                kw: dict = {"chat_id": chat_id, "action": "typing"}
+                if biz_conn_id:
+                    kw["business_connection_id"] = biz_conn_id
+                await bot.send_chat_action(**kw)
+            except Exception:
+                pass
+            await asyncio.sleep(5)
+
         name   = profile.get("name", "душа моя")
         gender = profile.get("gender", "unknown")
         adj    = "хорошая" if gender == "female" else "хороший"
@@ -1372,7 +1384,6 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
             kb = None
 
         await set_biz_stage(telegram_id, "waiting_payment")
-        await typing_medium(bot, chat_id, biz_conn_id)
         send_kw: dict = {"chat_id": chat_id, "text": offer_text, "parse_mode": "Markdown"}
         if biz_conn_id:
             send_kw["business_connection_id"] = biz_conn_id

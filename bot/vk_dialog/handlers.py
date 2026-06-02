@@ -656,12 +656,20 @@ async def _stage_problem(api, uid: int, text: str) -> None:
     await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
 
-    # Сразу после ответа — лок + оффер с паузой печатания
+    # 1 минута с индикатором «печатает», потом оффер
     from bot.services.cache import get_redis as _gcr
     _r2 = await _gcr()
-    await _r2.set(f"vk:sending:{uid}", "1", ex=60)
+    await _r2.set(f"vk:sending:{uid}", "1", ex=120)
 
     try:
+        # Держим «печатает» 1 минуту — обновляем каждые 5 сек
+        for _ in range(12):
+            try:
+                await api.messages.set_activity(peer_id=uid, type="typing")
+            except Exception:
+                pass
+            await asyncio.sleep(5)
+
         name   = profile.get("name", "душа моя")
         gender = profile.get("gender", "unknown")
         adj    = "хорошая" if gender == "female" else "хороший"
