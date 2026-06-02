@@ -1067,9 +1067,14 @@ async def _send_biz_push_unpaid(bot) -> None:
                 if push_count >= 3:
                     continue
                 push_texts = [_BIZ_PUSH_1, _BIZ_PUSH_2, _BIZ_PUSH_3]
-                thresholds = [3600, 10800, 86400]
-                if elapsed < thresholds[push_count]:
+                gaps_between = [0, 7200, 75600]
+                if push_count == 0 and elapsed < 3600:
                     continue
+                if push_count > 0:
+                    prev_sent_key = f"biz:push_sent_at:{tid}:{push_count - 1}"
+                    prev_sent = await r.get(prev_sent_key)
+                    if not prev_sent or (now - int(prev_sent)) < gaps_between[push_count]:
+                        continue
                 dedup = f"biz:new_push_dedup:{tid}:{push_count}"
                 if not await r.set(dedup, "1", nx=True, ex=86400 * 2):
                     continue
@@ -1092,6 +1097,7 @@ async def _send_biz_push_unpaid(bot) -> None:
                 await bot.send_message(**send_kw)
                 await r.incr(push_key)
                 await r.expire(push_key, 86400 * 7)
+                await r.set(f"biz:push_sent_at:{tid}:{push_count}", str(now), ex=86400 * 3)
                 logger.info("Biz push #%d sent to %s", push_count + 1, tid)
             except Exception as e:
                 logger.warning("Biz push error for %s: %s", tid, e)
@@ -1230,10 +1236,18 @@ async def _send_vk_push_unpaid() -> None:
                 push_count = int(await r.get(push_key) or 0)
                 if push_count >= 3:
                     continue
-                texts      = [P1, P2, P3]
-                thresholds = [3600, 10800, 86400]
-                if elapsed < thresholds[push_count]:
+                texts = [P1, P2, P3]
+                # Пуш #1: через 1ч после последней активности
+                # Пуш #2: через 2ч после пуша #1 (не от last_activity)
+                # Пуш #3: через 21ч после пуша #2
+                gaps_between = [0, 7200, 75600]  # пауза между пушами
+                if push_count == 0 and elapsed < 3600:
                     continue
+                if push_count > 0:
+                    prev_sent_key = f"vk:push_sent_at:{uid}:{push_count - 1}"
+                    prev_sent = await r.get(prev_sent_key)
+                    if not prev_sent or (now - int(prev_sent)) < gaps_between[push_count]:
+                        continue
                 dedup = f"vk:new_push_dedup:{uid}:{push_count}"
                 if not await r.set(dedup, "1", nx=True, ex=86400 * 2):
                     continue
@@ -1248,6 +1262,8 @@ async def _send_vk_push_unpaid() -> None:
                 await vk_api.messages.send(peer_id=uid, message=text, random_id=_rand.randint(1, 2**31))
                 await r.incr(push_key)
                 await r.expire(push_key, 86400 * 7)
+                # Сохраняем время отправки для следующего пуша
+                await r.set(f"vk:push_sent_at:{uid}:{push_count}", str(now), ex=86400 * 3)
                 logger.info("VK push #%d sent to %s", push_count + 1, uid)
             except Exception as e:
                 logger.warning("VK push error for %s: %s", uid, e)
