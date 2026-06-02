@@ -321,19 +321,27 @@ async def cmd_limits(message: Message, session: AsyncSession):
         return
     try:
         from bot.models.user import UsageLimits
+        from sqlalchemy import func
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+        # Берём максимум AI-сообщений по каждому пользователю (все периоды)
+        # Это покрывает и free_total, и дневные, и подписочные записи
         top_users = await session.execute(
-            select(UsageLimits.user_id, UsageLimits.ai_messages, User.first_name, User.telegram_id)
+            select(
+                UsageLimits.user_id,
+                func.sum(UsageLimits.ai_messages).label("total_ai"),
+                User.first_name,
+                User.telegram_id,
+            )
             .join(User, User.id == UsageLimits.user_id)
-            .where(UsageLimits.period_start == today)
-            .order_by(UsageLimits.ai_messages.desc())
+            .group_by(UsageLimits.user_id, User.first_name, User.telegram_id)
+            .order_by(func.sum(UsageLimits.ai_messages).desc())
             .limit(10)
         )
         rows = top_users.all()
 
         if not rows:
-            await message.answer(f"📊 *Топ за сегодня ({today}):*\n\nНет данных", parse_mode="Markdown")
+            await message.answer("📊 *AI-использование:*\n\nНет данных", parse_mode="Markdown")
             return
 
         lines = []
@@ -343,7 +351,7 @@ async def cmd_limits(message: Message, session: AsyncSession):
             lines.append(f"{i}. {label} (`{tg_id}`): *{msgs}* AI-сообщений")
 
         await message.answer(
-            f"📊 *Топ пользователей за {today}:*\n\n" + "\n".join(lines),
+            f"📊 *Топ по AI-сообщениям (всего):*\n\n" + "\n".join(lines),
             parse_mode="Markdown",
         )
     except Exception as e:
