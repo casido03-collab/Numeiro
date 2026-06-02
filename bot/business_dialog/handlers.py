@@ -1653,7 +1653,7 @@ async def _stage_answered_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
     dtype = _detect_deflect_type(text)
     dedup_key = f"tg:deflect_last:{telegram_id}"
     last_dtype = await r.get(dedup_key)
-    if last_dtype and last_dtype.decode() == dtype:
+    if last_dtype and (last_dtype.decode() if isinstance(last_dtype, bytes) else last_dtype) == dtype:
         dtype = "generic" if dtype != "generic" else "one_more"
     await r.set(dedup_key, dtype, ex=300)
 

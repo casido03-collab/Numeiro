@@ -828,7 +828,7 @@ async def _stage_answered_vk(api, uid: int, text: str) -> None:
 
     dedup_key = f"vk:deflect_last:{uid}"
     last_dtype = await r.get(dedup_key)
-    if last_dtype and last_dtype.decode() == dtype:
+    if last_dtype and (last_dtype.decode() if isinstance(last_dtype, bytes) else last_dtype) == dtype:
         dtype = "generic" if dtype != "generic" else "one_more"
     await r.set(dedup_key, dtype, ex=300)
 
