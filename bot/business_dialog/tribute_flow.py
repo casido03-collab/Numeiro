@@ -28,6 +28,11 @@ def _tribute_link() -> str:
     return getattr(settings, "tribute_link", "")
 
 
+_BUSINESS_TIERS = {
+    "monthly_990": {"price": 990, "name": "Работа со мной — месяц", "days": 30},
+}
+
+
 def create_tg_business_payment_link(telegram_id: int, tier_key: str) -> str:
     """Создать платёж ЮКассы для TG бизнес-диалога."""
     import uuid
@@ -38,7 +43,7 @@ def create_tg_business_payment_link(telegram_id: int, tier_key: str) -> str:
     Configuration.account_id = settings.yookassa_shop_id
     Configuration.secret_key = settings.yookassa_secret_key
 
-    tier  = get_tier(tier_key)
+    tier  = _BUSINESS_TIERS.get(tier_key) or get_tier(tier_key)
     price = tier.get("price", TRIBUTE_PRICE)
     name  = tier.get("name", "Консультация")
 

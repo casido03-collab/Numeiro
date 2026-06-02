@@ -153,6 +153,13 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     async def _vk_morning():
         await _send_vk_accompaniment_morning()
 
+    # ── Новые пуши бизнес-чата ────────────────────────────────────────────────
+    async def _biz_push_unpaid():
+        await _send_biz_push_unpaid(bot)
+
+    async def _biz_morning_paid():
+        await _send_biz_morning_paid(bot)
+
     # Ежедневные пуши в 9:00 МСК
     scheduler.add_job(_daily_push, CronTrigger(hour=6, minute=0))
     # Напоминания об окончании подписки в 12:00 МСК
@@ -172,6 +179,11 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     # Сопровождение: утреннее послание в 8:00 по местному времени пользователя
     # Запускается каждый час — внутри проверяем у кого сейчас local_hour == 8
     scheduler.add_job(_accompaniment_morning, CronTrigger(minute=0))
+
+    # Утренний привет платным (7:00 МСК = 04:00 UTC)
+    scheduler.add_job(_biz_morning_paid, CronTrigger(hour=4, minute=0))
+    # Пуши неплатным — каждые 15 минут проверяем 1ч/3ч/24ч молчания
+    scheduler.add_job(_biz_push_unpaid, CronTrigger(minute="*/15"))
 
     # ── VK пуши (аналог TG business пушей) ───────────────────────────────────
     scheduler.add_job(_vk_reminders,        CronTrigger(minute="*/15"))
@@ -975,3 +987,149 @@ async def _send_vk_accompaniment_morning() -> None:
                 logger.info("VK morning plan sent to %s (tz=UTC+%d)", uid, tz_offset)
         except Exception as e:
             logger.warning("VK morning plan error for %s: %s", uid, e)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# НОВЫЕ ПУШИ БИЗНЕС-ЧАТА (TG) — monthly_990
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_BIZ_PUSH_1 = [
+    "{name}, вы написали мне вопрос, и я ответила вам 🌙\n\nЕсли хотите продолжить работу со мной — я здесь.",
+    "Думаю о вашем вопросе, {name} ✨\n\nЕсли хотите работать со мной каждый день — подписка открыта.",
+]
+_BIZ_PUSH_2 = [
+    "{name}, иногда нужно время чтобы осмыслить ✨\n\nКогда будете готовы продолжить — просто напишите.",
+    "Душа моя, {name} — я всё ещё здесь 🌙\n\nГотова работать с вами каждый день весь месяц.",
+]
+_BIZ_PUSH_3 = [
+    "Думаю о вас, {name} 💫\n\nЕсли остались вопросы — я готова работать с вами весь месяц.",
+    "{name}, один вопрос только открывает дверь 🌙\n\nЗа ней — целый месяц работы со мной. Жду вас.",
+]
+
+_MORNING_FEMALE_BIZ = [
+    "Доброе утро, моя хорошая 🌙\n\nНовый день — новые возможности. Что сегодня лежит на сердце?",
+    "С добрым утром, душа моя ✨\n\nЯ здесь и готова слушать. Чем могу помочь сегодня?",
+    "Доброе утро, голубушка 🌟\n\nКак вы? Я готова к вашим вопросам.",
+]
+_MORNING_MALE_BIZ = [
+    "Доброе утро, мой хороший 🌙\n\nНовый день — новые возможности. Что сегодня лежит на сердце?",
+    "С добрым утром, душа моя ✨\n\nЯ здесь и готова слушать. Чем могу помочь сегодня?",
+    "Доброе утро, голубчик 🌟\n\nКак вы? Я готова к вашим вопросам.",
+]
+
+
+async def _send_biz_push_unpaid(bot) -> None:
+    """Пуши для неоплативших: 1ч → push#1, 3ч → push#2, 24ч → push#3."""
+    import logging, time
+    logger = logging.getLogger(__name__)
+    try:
+        from bot.business_dialog.session_manager import (
+            get_biz_stage, get_biz_conn, get_last_activity, get_profile,
+        )
+        from bot.business_dialog.tribute_flow import _session_maker, create_tg_business_payment_link
+        from bot.business_dialog.models import BusinessSession
+        from bot.services.cache import get_redis
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        from sqlalchemy import select
+
+        if not _session_maker:
+            return
+        r   = await get_redis()
+        now = int(time.time())
+        async with _session_maker() as session:
+            rows = (await session.execute(
+                select(BusinessSession).where(BusinessSession.status == "free")
+            )).scalars().all()
+        for biz_sess in rows:
+            tid = biz_sess.telegram_id
+            try:
+                stage = await get_biz_stage(tid)
+                if stage not in ("answered", "waiting_payment"):
+                    continue
+                last = await get_last_activity(tid)
+                if not last:
+                    continue
+                elapsed    = now - last
+                push_key   = f"biz:new_push:{tid}"
+                push_count = int(await r.get(push_key) or 0)
+                if push_count >= 3:
+                    continue
+                push_texts = [_BIZ_PUSH_1, _BIZ_PUSH_2, _BIZ_PUSH_3]
+                thresholds = [3600, 10800, 86400]
+                if elapsed < thresholds[push_count]:
+                    continue
+                dedup = f"biz:new_push_dedup:{tid}:{push_count}"
+                if not await r.set(dedup, "1", nx=True, ex=86400 * 2):
+                    continue
+                profile = await get_profile(tid)
+                name    = profile.get("name", "душа моя")
+                text    = random.choice(push_texts[push_count]).format(name=name)
+                biz_conn_id = await get_biz_conn(tid)
+                try:
+                    link = create_tg_business_payment_link(tid, "monthly_990")
+                    kb   = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="💎 Оформить подписку — 990 ₽", url=link)]
+                    ])
+                except Exception:
+                    kb = None
+                send_kw: dict = {"chat_id": tid, "text": text}
+                if biz_conn_id:
+                    send_kw["business_connection_id"] = biz_conn_id
+                if kb:
+                    send_kw["reply_markup"] = kb
+                await bot.send_message(**send_kw)
+                await r.incr(push_key)
+                await r.expire(push_key, 86400 * 7)
+                logger.info("Biz push #%d sent to %s", push_count + 1, tid)
+            except Exception as e:
+                logger.warning("Biz push error for %s: %s", tid, e)
+    except Exception as e:
+        logger.warning("_send_biz_push_unpaid error: %s", e)
+
+
+async def _send_biz_morning_paid(bot) -> None:
+    """Утренний привет платным бизнес-пользователям в 7:00–7:09 МСК."""
+    import logging, asyncio as _asyncio
+    from datetime import date as _date
+    logger = logging.getLogger(__name__)
+    try:
+        from bot.business_dialog.session_manager import (
+            get_biz_stage, get_biz_conn, get_profile,
+        )
+        from bot.business_dialog.tribute_flow import _session_maker
+        from bot.business_dialog.models import BusinessSession
+        from bot.services.cache import get_redis
+        from sqlalchemy import select
+
+        if not _session_maker:
+            return
+        today = _date.today().isoformat()
+        r     = await get_redis()
+        async with _session_maker() as session:
+            rows = (await session.execute(
+                select(BusinessSession).where(BusinessSession.status == "paid")
+            )).scalars().all()
+        for biz_sess in rows:
+            tid = biz_sess.telegram_id
+            try:
+                stage = await get_biz_stage(tid)
+                if stage not in ("paid_monthly", "followup", "accompaniment"):
+                    continue
+                dedup_key = f"biz:morning:{tid}:{today}"
+                if not await r.set(dedup_key, "1", nx=True, ex=86400):
+                    continue
+                profile     = await get_profile(tid)
+                gender      = profile.get("gender", "unknown")
+                biz_conn_id = await get_biz_conn(tid)
+                text  = random.choice(_MORNING_FEMALE_BIZ if gender == "female" else _MORNING_MALE_BIZ)
+                delay = random.randint(0, 540)
+                await _asyncio.sleep(delay)
+                send_kw: dict = {"chat_id": tid, "text": text}
+                if biz_conn_id:
+                    send_kw["business_connection_id"] = biz_conn_id
+                await bot.send_message(**send_kw)
+                logger.info("Biz morning greeting sent to %s (delay=%ds)", tid, delay)
+            except Exception as e:
+                logger.warning("Biz morning error for %s: %s", tid, e)
+    except Exception as e:
+        logger.warning("_send_biz_morning_paid error: %s", e)

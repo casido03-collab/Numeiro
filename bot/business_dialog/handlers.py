@@ -633,6 +633,10 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         await _stage_city(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "collecting_problem":
         await _stage_problem(bot, chat_id, telegram_id, biz_conn_id, text)
+    elif stage == "answered":
+        await _stage_answered_tg(bot, chat_id, telegram_id, biz_conn_id, text)
+    elif stage == "paid_monthly":
+        await _stage_paid_monthly_tg(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "free_dialog":
         await _stage_free_dialog(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "waiting_payment":
@@ -1280,10 +1284,10 @@ def _problem_intros(name: str, gender: str = "unknown") -> list[str]:
     e   = _emo()
     adj = "хорошая" if gender == "female" else "хороший"
     return [
-        f"Мой {adj} {name} {e}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами, я слушаю.",
-        f"{name}, я здесь рядом {e}\n\nЧто сейчас лежит на сердце? Расскажите — не торопитесь.",
-        f"Слышу вас, {name} {e}\n\nЧто сейчас тревожит? Напишите своими словами.",
-        f"{name}, расскажите — что сейчас беспокоит больше всего? {e} Я здесь и слушаю.",
+        f"Мой {adj} {name} {e}\n\nЗадайте мне свой вопрос — я отвечу вам прямо и честно.",
+        f"{name}, я здесь {e}\n\nЧто вы хотите узнать? Задайте ваш вопрос.",
+        f"Слышу вас, {name} {e}\n\nЗадайте ваш вопрос — я отвечу.",
+        f"{name}, задайте мне свой вопрос {e} Я готова.",
     ]
 
 
@@ -1314,43 +1318,81 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
 
 
 async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
+    """Пользователь задал вопрос — отвечаем прямо, затем через 5 минут показываем оффер."""
+    import asyncio
     if not text or len(text) < 5:
-        await _send(bot, chat_id, f"Расскажите подробнее, душа моя {_emo()}", biz_conn_id)
+        await _send(bot, chat_id, f"Напишите ваш вопрос, душа моя {_emo()}", biz_conn_id)
         return
 
     await store_profile_field(telegram_id, "problem", text)
-
-    intent       = detect_intent(text)
-    product_name = get_product_name(intent)
-    await store_profile_field(telegram_id, "intent", intent)
-    await store_profile_field(telegram_id, "product_name", product_name)
-    await set_biz_stage(telegram_id, "free_dialog")
+    await set_biz_stage(telegram_id, "answered")
 
     profile = await get_profile(telegram_id)
-
-    # Первый AI-ответ — тепло, коротко, показываем что начали смотреть
     context = json.dumps({
         "name":       profile.get("name", ""),
         "gender":     profile.get("gender", "unknown"),
         "birth_date": profile.get("birth_date", ""),
         "city":       profile.get("city", ""),
-        "problem":    text,
-        "product":    product_name,
-        "stage":      "initial_response",
+        "question":   text,
     }, ensure_ascii=False)
 
-    await append_history(telegram_id, "user", text)
+    from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
     response = await generate_business(
-        AISHA_FREE_PROMPT,
-        f"Человек описал свою ситуацию. Ответь тепло и очень коротко — покажи что начала смотреть. "
-        f"Задай один уточняющий вопрос, которого ещё не задавала. Обращайся на вы. Данные: {context}",
-        complexity="simple",
-        max_tokens=150,
+        PERSONAL_QUESTION_PROMPT,
+        f"Вопрос пользователя: {text}\n\nДанные: {context}",
+        complexity="medium",
+        max_tokens=350,
     )
-    await append_history(telegram_id, "aisha", response)
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
-    await increment_free_count(telegram_id)
+
+    # Через 5 минут — оффер подписки
+    asyncio.create_task(_delayed_offer_tg(bot, chat_id, telegram_id, biz_conn_id))
+
+
+async def _delayed_offer_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None) -> None:
+    """Через 5 минут после первого ответа — предлагаем подписку."""
+    import asyncio
+    await asyncio.sleep(300)  # 5 минут
+
+    # Если пользователь уже оплатил — не показываем
+    current_stage = await get_biz_stage(telegram_id)
+    if current_stage == "paid_monthly":
+        return
+
+    profile  = await get_profile(telegram_id)
+    name     = profile.get("name", "душа моя")
+    gender   = profile.get("gender", "unknown")
+    adj      = "хорошая" if gender == "female" else "хороший"
+
+    offer_text = (
+        f"Мой {adj} {name} {_emo()}\n\n"
+        f"Я готова работать с вами на протяжении всего месяца и отвечать на все ваши вопросы.\n\n"
+        f"Задавайте мне вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
+        f"✨ *Работа со мной* — 990 ₽ / месяц"
+    )
+
+    from bot.business_dialog.tribute_flow import create_tg_business_payment_link
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    try:
+        link = create_tg_business_payment_link(telegram_id, "monthly_990")
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💎 Оформить подписку — 990 ₽", url=link)]
+        ])
+    except Exception:
+        kb = None
+
+    await set_biz_stage(telegram_id, "waiting_payment")
+    send_kw: dict = {"chat_id": chat_id, "text": offer_text, "parse_mode": "Markdown"}
+    if biz_conn_id:
+        send_kw["business_connection_id"] = biz_conn_id
+    if kb:
+        send_kw["reply_markup"] = kb
+    try:
+        await bot.send_message(**send_kw)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("_delayed_offer_tg failed: %s", e)
 
 
 async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
@@ -1407,6 +1449,125 @@ async def _stage_free_dialog(bot: Bot, chat_id: int, telegram_id: int, biz_conn_
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
     await increment_free_count(telegram_id)
+
+
+# ─── Статичные парирования для стадий answered / waiting_payment ─────────────
+
+_DEFLECT_GENERIC = [
+    "Душа моя, я уже смотрю вашу ситуацию дальше — но для глубокой работы со мной нужно открыть особое пространство.",
+    "Ваш вопрос попал в точку. Именно для такой работы я предлагаю вам стать рядом на целый месяц.",
+    "Чтобы я могла работать с вами полноценно — не торопясь, не пропуская ни одной линии — нужна подписка.",
+]
+_DEFLECT_NO_MONEY = [
+    "Понимаю вас, голубчик. Когда будете готовы — я здесь. Ссылка никуда не денется.",
+    "Деньги приходят и уходят, душа моя. Но момент, когда мы обращаемся к своим вопросам — он не случаен. Я жду вас.",
+    "Всё приходит в своё время. Когда почувствуете готовность — я буду здесь.",
+]
+_DEFLECT_ONE_MORE = [
+    "Маленьких вопросов не бывает — за каждым стоит целая жизнь. Именно поэтому я работаю в глубину. Оформите доступ — и я с вами.",
+    "Один вопрос только открывает дверь. За ней — целый коридор. Я готова пройти его с вами весь месяц.",
+    "Каждый вопрос — это шаг к пониманию. Я готова идти этим путём с вами каждый день.",
+]
+_DEFLECT_LATER = [
+    "Хорошо, душа моя. Я буду здесь когда решитесь.",
+    "Конечно. Иногда нужно время — это мудро. Жду вас.",
+    "Никуда не ухожу. Когда будете готовы — напишите.",
+]
+_DEFLECT_DISCOUNT = [
+    "Моя работа — это время и внимание, которые я отдаю каждому. Ценность не меняется. Но я рада что вы цените её.",
+    "990 ₽ в месяц — это меньше чашки кофе в неделю. Зато каждый день я рядом с вами.",
+]
+
+_NO_MONEY_KEYWORDS = ["нет денег", "нету денег", "денег нет", "не могу", "дорого", "финансы", "зарплата", "копейки"]
+_ONE_MORE_KEYWORDS = ["ещё один", "еще один", "один вопрос", "маленький вопрос", "последний вопрос", "ещё раз", "ещё вопрос", "можно спросить", "можно задать"]
+_LATER_KEYWORDS = ["потом", "позже", "подумаю", "подожди", "не сейчас", "завтра"]
+_DISCOUNT_KEYWORDS = ["скидк", "дешевле", "снизьте", "меньше", "за полцены"]
+
+
+def _detect_deflect_type(text: str) -> str:
+    t = text.lower()
+    if any(k in t for k in _NO_MONEY_KEYWORDS):
+        return "no_money"
+    if any(k in t for k in _ONE_MORE_KEYWORDS):
+        return "one_more"
+    if any(k in t for k in _LATER_KEYWORDS):
+        return "later"
+    if any(k in t for k in _DISCOUNT_KEYWORDS):
+        return "discount"
+    return "generic"
+
+
+async def _deflect_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
+    """Отправить статичный парирующий ответ и напомнить об оффере."""
+    dtype = _detect_deflect_type(text)
+    if dtype == "no_money":
+        reply = random.choice(_DEFLECT_NO_MONEY)
+    elif dtype == "one_more":
+        reply = random.choice(_DEFLECT_ONE_MORE)
+    elif dtype == "later":
+        reply = random.choice(_DEFLECT_LATER)
+    elif dtype == "discount":
+        reply = random.choice(_DEFLECT_DISCOUNT)
+    else:
+        reply = random.choice(_DEFLECT_GENERIC)
+
+    await typing_short(bot, chat_id, biz_conn_id)
+    await _send(bot, chat_id, reply, biz_conn_id)
+
+
+async def _stage_answered_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
+    """Стадия после первого бесплатного ответа — парируем, оффер уже запланирован."""
+    await _deflect_tg(bot, chat_id, telegram_id, biz_conn_id, text)
+
+
+# ─── Стадия платной ежемесячной подписки ─────────────────────────────────────
+
+_DAILY_LIMIT_RESPONSES = [
+    "Простите, душа моя — сейчас я занята другими. Завтра утром я снова буду полностью рядом с вами 🌙",
+    "Мне нужно немного времени, голубчик. Завтра в семь утра я вернусь к вам с новыми силами ✨",
+    "На сегодня наш разговор завершён, душа моя. Увидимся утром 🌙",
+]
+
+_BIZ_DAILY_LIMIT = 3  # вопросов в день для платных
+
+
+async def _stage_paid_monthly_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
+    """Стадия для платных: 3 AI-вопроса в день, потом молчим до утра."""
+    from bot.services.cache import get_redis
+    from datetime import datetime, timezone
+    import json
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    r     = await get_redis()
+    key   = f"biz:daily:{telegram_id}:{today}"
+    count = int(await r.get(key) or 0)
+
+    if count >= _BIZ_DAILY_LIMIT:
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, random.choice(_DAILY_LIMIT_RESPONSES), biz_conn_id)
+        return
+
+    await r.incr(key)
+    await r.expire(key, 86400)
+
+    profile = await get_profile(telegram_id)
+    context = json.dumps({
+        "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
+        "birth_date": profile.get("birth_date", ""),
+        "city":       profile.get("city", ""),
+        "question":   text,
+    }, ensure_ascii=False)
+
+    from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
+    response = await generate_business(
+        PERSONAL_QUESTION_PROMPT,
+        f"Вопрос пользователя: {text}\n\nДанные: {context}",
+        complexity="medium",
+        max_tokens=350,
+    )
+    await typing_for_text(bot, chat_id, biz_conn_id, response)
+    await _send(bot, chat_id, response, biz_conn_id)
 
 
 async def _stage_waiting_payment(

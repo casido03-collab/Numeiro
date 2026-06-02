@@ -57,11 +57,31 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
                 _r = await get_redis()
                 already = not await _r.set(f"tg_biz_paid:{payment_id}", "1", nx=True, ex=86400)
                 if not already:
-                    from bot.business_dialog.tribute_flow import _process_payment, _session_maker as _trib_sm
-                    if _trib_sm:
-                        async with _trib_sm() as session:
-                            await _process_payment(session, telegram_id, payment_id, amount, tier_key)
-                        logger.info("TG business payment processed: tid=%s tier=%s", telegram_id, tier_key)
+                    if tier_key == "monthly_990":
+                        # Новый тир — ежемесячная подписка
+                        from bot.business_dialog.session_manager import set_biz_stage, get_biz_conn
+                        await set_biz_stage(telegram_id, "paid_monthly")
+                        # Сохраняем дату окончания подписки
+                        import time
+                        await _r.set(f"biz:paid_until:{telegram_id}", str(int(time.time()) + 86400 * 30), ex=86400 * 31)
+                        # Отправляем подтверждение
+                        biz_conn_id = await get_biz_conn(telegram_id)
+                        if _bot:
+                            confirm = "Оплата прошла, душа моя 🌙\n\nТеперь я с вами весь месяц. Задавайте вопросы — я здесь."
+                            send_kw: dict = {"chat_id": telegram_id, "text": confirm}
+                            if biz_conn_id:
+                                send_kw["business_connection_id"] = biz_conn_id
+                            try:
+                                await _bot.send_message(**send_kw)
+                            except Exception as e:
+                                logger.warning("monthly_990 confirm failed: %s", e)
+                        logger.info("TG monthly_990 activated: tid=%s", telegram_id)
+                    else:
+                        from bot.business_dialog.tribute_flow import _process_payment, _session_maker as _trib_sm
+                        if _trib_sm:
+                            async with _trib_sm() as session:
+                                await _process_payment(session, telegram_id, payment_id, amount, tier_key)
+                            logger.info("TG business payment processed: tid=%s tier=%s", telegram_id, tier_key)
             return web.Response(status=200)
 
         # ── Telegram-платёж ───────────────────────────────────────────────────
