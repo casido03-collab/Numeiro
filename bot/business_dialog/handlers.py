@@ -1731,36 +1731,20 @@ async def _stage_paid_monthly_tg(bot: Bot, chat_id: int, telegram_id: int, biz_c
 async def _stage_waiting_payment(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str = "",
 ) -> None:
-    """Пользователь задаёт вопрос пока не оплатил — отвечаем по смыслу, без кнопки.
-    Кнопка вернётся только через 1 час неактивности (планировщик напоминаний)."""
-    profile = await get_profile(telegram_id)
-    context = json.dumps({
-        "name":       profile.get("name", ""),
-        "gender":     profile.get("gender", "unknown"),
-        "birth_date": profile.get("birth_date", ""),
-        "problem":    profile.get("problem", ""),
-    }, ensure_ascii=False)
+    """После показа оффера — только статичные парирования из базы. Никакого AI."""
+    if not text:
+        return
 
-    if text:
-        timing = _tier_timing_hint("t190")
-        reply = await generate_business(
-            AISHA_FREE_PROMPT,
-            f"Клиент уже получил предложение разбора и задаёт дополнительный вопрос: «{text}»\n\n"
-            f"Ответь ОДНИМ коротким предложением (максимум 15 слов) точно по смыслу вопроса. "
-            f"Не называй цену и не упоминай слово 'оплата'. Обращайся на вы. "
-            f"НЕ задавай вопросов в конце, НЕ добавляй концовку-триггер — просто ответь и всё.\n\n"
-            f"ВАЖНО: если клиент спрашивает о времени или сроках выполнения — ответь точно: {timing}. "
-            f"Никогда не говори 'несколько дней' — это неправда.\n\n"
-            f"ВАЖНО: если клиент спрашивает о ссылке на оплату (как долго работает, истекает ли, "
-            f"когда действует) — отвечай что ссылка работает в любой момент, без ограничений по времени, "
-            f"буду ждать вашего шага. Не говори что ссылка истекает или ограничена по времени.\n\n"
-            f"Данные: {context}",
-            complexity="simple",
-            max_tokens=50,
-        )
-        await typing_for_text(bot, chat_id, biz_conn_id, reply)
-        await _send(bot, chat_id, reply, biz_conn_id)
-    # Кнопку НЕ повторяем — она придёт через планировщик после 1 часа тишины
+    t = text.lower().strip()
+
+    # Благодарности — тёплый ответ
+    if len(t) < 25 and any(w in t for w in _CLOSING_WORDS):
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, random.choice(_WARM_CLOSING_RESPONSES), biz_conn_id)
+        return
+
+    # Всё остальное — статичное парирование из базы
+    await _deflect_tg(bot, chat_id, telegram_id, biz_conn_id, text)
 
 
 async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
