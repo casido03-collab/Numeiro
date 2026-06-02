@@ -524,6 +524,10 @@ async def handle_vk_message(api, uid: int, text: str, first_name: str = "", vk_s
         await _stage_city(api, uid, text)
     elif stage == "collecting_problem":
         await _stage_problem(api, uid, text)
+    elif stage == "answered":
+        await _stage_answered_vk(api, uid, text)
+    elif stage == "paid_monthly":
+        await _stage_paid_monthly_vk(api, uid, text)
     elif stage == "free_dialog":
         await _stage_free_dialog(api, uid, text)
     elif stage == "waiting_payment":
@@ -616,44 +620,173 @@ async def _stage_city(api, uid: int, text: str) -> None:
     else:
         adj = None  # нейтральное обращение для амбигуозных имён
     intro = random.choice([
-        f"{'Мой ' + adj + ' ' if adj else 'Душа моя, '}{name} {_emo()}\n\nРасскажите спокойно — что сейчас тревожит больше всего? Напишите своими словами.",
-        f"{name}, я здесь рядом {_emo()}\n\nЧто сейчас лежит на сердце? Расскажите.",
-        f"Слышу вас, {name} {_emo()}\n\nЧто сейчас тревожит? Напишите своими словами.",
-        f"{name}, расскажите — что сейчас беспокоит больше всего? {_emo()} Я здесь и слушаю.",
+        f"{'Мой ' + adj + ' ' if adj else 'Душа моя, '}{name} {_emo()}\n\nЗадайте мне свой вопрос — я отвечу вам прямо и честно.",
+        f"{name}, я здесь {_emo()}\n\nЧто вы хотите узнать? Задайте ваш вопрос.",
+        f"Слышу вас, {name} {_emo()}\n\nЗадайте ваш вопрос — я отвечу.",
+        f"{name}, задайте мне свой вопрос {_emo()} Я готова.",
     ])
     await _typing_for_text(api, uid, intro)
     await _send(api, uid, intro)
 
 
 async def _stage_problem(api, uid: int, text: str) -> None:
+    """Пользователь задал вопрос — отвечаем прямо, через 5 минут показываем оффер."""
     if not text or len(text) < 5:
-        await _send(api, uid, f"Расскажите подробнее, душа моя {_emo()}")
+        await _send(api, uid, f"Напишите ваш вопрос, душа моя {_emo()}")
         return
+
     await store_field(uid, "problem", text)
-    intent       = detect_intent(text)
-    product_name = get_product_name(intent)
-    await store_field(uid, "intent", intent)
-    await store_field(uid, "product_name", product_name)
-    await set_stage(uid, "free_dialog")
+    await set_stage(uid, "answered")
+
     profile = await get_profile(uid)
     context = json.dumps({
         "name":       profile.get("name", ""),
         "gender":     profile.get("gender", "unknown"),
         "birth_date": profile.get("birth_date", ""),
         "city":       profile.get("city", ""),
-        "problem":    text,
+        "question":   text,
     }, ensure_ascii=False)
-    await append_history(uid, "user", text)
+
+    from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
     resp = await generate_business(
-        AISHA_FREE_PROMPT,
-        f"Человек описал свою ситуацию. Ответь тепло и очень коротко — покажи что начала смотреть. "
-        f"Задай один уточняющий вопрос. Обращайся на вы. Данные: {context}",
-        complexity="simple", max_tokens=150,
+        PERSONAL_QUESTION_PROMPT,
+        f"Вопрос пользователя: {text}\n\nДанные: {context}",
+        complexity="medium", max_tokens=350,
     )
-    await append_history(uid, "aisha", resp)
     await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
-    await increment_free_count(uid)
+
+    # Через 5 минут — оффер подписки
+    asyncio.create_task(_delayed_offer_vk(api, uid))
+
+
+async def _delayed_offer_vk(api, uid: int) -> None:
+    """Через 5 минут после первого ответа — оффер 990 ₽/месяц."""
+    await asyncio.sleep(300)
+
+    current_stage = await get_stage(uid)
+    if current_stage == "paid_monthly":
+        return
+
+    profile = await get_profile(uid)
+    name    = profile.get("name", "душа моя")
+    gender  = profile.get("gender", "unknown")
+    adj     = "хорошая" if gender == "female" else "хороший"
+
+    offer_text = (
+        f"Мой {adj} {name} {_emo()}\n\n"
+        f"Я готова работать с вами на протяжении всего месяца и отвечать на все ваши вопросы.\n\n"
+        f"Задавайте мне вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
+        f"✨ Работа со мной — 990 ₽ / месяц"
+    )
+
+    from bot.vk_dialog.payments import create_payment_link as _vk_link
+    try:
+        link = _vk_link(uid, "monthly_990")
+        offer_text += f"\n\n{link}"
+    except Exception:
+        pass
+
+    await set_stage(uid, "waiting_payment")
+    from bot.vk_dialog.payments import set_payment_offered_at
+    try:
+        await set_payment_offered_at(uid)
+    except Exception:
+        pass
+    await _typing_medium(api, uid)
+    await _send(api, uid, offer_text)
+
+
+# ─── Статичные парирования VK ─────────────────────────────────────────────────
+
+_VK_DEFLECT_GENERIC = [
+    "Душа моя, я уже смотрю вашу ситуацию дальше — но для глубокой работы нужно открыть особое пространство.",
+    "Ваш вопрос попал в точку. Именно для такой работы я предлагаю вам стать рядом на целый месяц.",
+    "Чтобы я могла работать с вами полноценно — нужна подписка. Я жду вас.",
+]
+_VK_DEFLECT_NO_MONEY = [
+    "Понимаю вас, голубчик. Когда будете готовы — я здесь. Ссылка никуда не денется.",
+    "Всё приходит в своё время, душа моя. Когда почувствуете готовность — я буду здесь.",
+]
+_VK_DEFLECT_ONE_MORE = [
+    "Маленьких вопросов не бывает — за каждым стоит целая жизнь. Оформите доступ — и я с вами.",
+    "Один вопрос только открывает дверь. За ней — целый коридор. Я готова пройти его с вами весь месяц.",
+]
+_VK_DEFLECT_LATER = [
+    "Хорошо, душа моя. Я буду здесь когда решитесь.",
+    "Конечно. Иногда нужно время. Жду вас.",
+]
+_VK_DEFLECT_DISCOUNT = [
+    "990 ₽ в месяц — это меньше чашки кофе в неделю. Зато каждый день я рядом с вами.",
+    "Моя работа — это время и внимание для вас. Ценность не меняется.",
+]
+
+_VK_NO_MONEY_KW = ["нет денег", "нету денег", "денег нет", "не могу", "дорого", "финансы"]
+_VK_ONE_MORE_KW = ["ещё один", "еще один", "один вопрос", "ещё раз", "ещё вопрос", "можно спросить"]
+_VK_LATER_KW = ["потом", "позже", "подумаю", "не сейчас", "завтра"]
+_VK_DISCOUNT_KW = ["скидк", "дешевле", "снизьте", "меньше"]
+
+_VK_DAILY_LIMIT_RESPONSES = [
+    "Простите, душа моя — сейчас я занята другими. Завтра утром я снова буду полностью рядом с вами 🌙",
+    "Мне нужно немного времени, голубчик. Завтра в семь утра я вернусь к вам с новыми силами ✨",
+    "На сегодня наш разговор завершён, душа моя. Увидимся утром 🌙",
+]
+
+_VK_DAILY_LIMIT = 3
+
+
+async def _stage_answered_vk(api, uid: int, text: str) -> None:
+    """После первого бесплатного ответа — парируем, оффер уже запланирован."""
+    t = text.lower()
+    if any(k in t for k in _VK_NO_MONEY_KW):
+        reply = random.choice(_VK_DEFLECT_NO_MONEY)
+    elif any(k in t for k in _VK_ONE_MORE_KW):
+        reply = random.choice(_VK_DEFLECT_ONE_MORE)
+    elif any(k in t for k in _VK_LATER_KW):
+        reply = random.choice(_VK_DEFLECT_LATER)
+    elif any(k in t for k in _VK_DISCOUNT_KW):
+        reply = random.choice(_VK_DEFLECT_DISCOUNT)
+    else:
+        reply = random.choice(_VK_DEFLECT_GENERIC)
+    await _typing_short(api, uid)
+    await _send(api, uid, reply)
+
+
+async def _stage_paid_monthly_vk(api, uid: int, text: str) -> None:
+    """Платная ежемесячная подписка VK: 3 AI-вопроса в день."""
+    from bot.services.cache import get_redis
+    from datetime import datetime, timezone
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    r     = await get_redis()
+    key   = f"vk:daily_paid:{uid}:{today}"
+    count = int(await r.get(key) or 0)
+
+    if count >= _VK_DAILY_LIMIT:
+        await _typing_short(api, uid)
+        await _send(api, uid, random.choice(_VK_DAILY_LIMIT_RESPONSES))
+        return
+
+    await r.incr(key)
+    await r.expire(key, 86400)
+
+    profile = await get_profile(uid)
+    context = json.dumps({
+        "name":       profile.get("name", ""),
+        "gender":     profile.get("gender", "unknown"),
+        "birth_date": profile.get("birth_date", ""),
+        "city":       profile.get("city", ""),
+        "question":   text,
+    }, ensure_ascii=False)
+
+    from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
+    resp = await generate_business(
+        PERSONAL_QUESTION_PROMPT,
+        f"Вопрос пользователя: {text}\n\nДанные: {context}",
+        complexity="medium", max_tokens=350,
+    )
+    await _typing_for_text(api, uid, resp)
+    await _send(api, uid, resp)
 
 
 async def _stage_free_dialog(api, uid: int, text: str) -> None:

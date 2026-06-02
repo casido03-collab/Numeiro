@@ -22,13 +22,26 @@ def _configure_yookassa():
     Configuration.secret_key = settings.yookassa_secret_key
 
 
+_VK_TIERS = {
+    "monthly_990": {"price": 990, "name": "Работа со мной — месяц", "days": 30},
+}
+
+
+async def set_payment_offered_at(uid: int) -> None:
+    """Сохранить время когда показали оффер (для пушей)."""
+    import time
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    await r.set(f"vk:pay_offered:{uid}", str(int(time.time())), ex=86400 * 7)
+
+
 def create_payment_link(vk_user_id: int, tier_key: str) -> str:
     """Создать платёж в ЮКассе и вернуть ссылку на оплату."""
     from yookassa import Payment
     from bot.business_dialog.upsell import get_tier
 
     _configure_yookassa()
-    tier  = get_tier(tier_key)
+    tier  = _VK_TIERS.get(tier_key) or get_tier(tier_key)
     price = tier.get("price", 190)
     name  = tier.get("name", "Консультация")
 
@@ -98,7 +111,10 @@ async def handle_vk_payment_webhook(
             logger.info("VK payment %s already processed", payment_id)
             return web.Response(status=200)
 
-        await _process_vk_payment(int(vk_user_id), tier_key, payment_id, int(amount))
+        if tier_key == "monthly_990":
+            await _process_vk_monthly(int(vk_user_id), payment_id)
+        else:
+            await _process_vk_payment(int(vk_user_id), tier_key, payment_id, int(amount))
 
     except Exception:
         logger.exception("VK YooKassa webhook error")
@@ -207,3 +223,30 @@ async def _process_vk_payment(vk_user_id: int, tier_key: str, payment_id: str, a
     await _typing(3)
     await _send(followup_invite(followup_limit))
     await set_stage(vk_user_id, "followup")
+
+
+async def _process_vk_monthly(vk_user_id: int, payment_id: str) -> None:
+    """Активировать ежемесячную подписку VK (monthly_990)."""
+    import time
+    from bot.vk_dialog.session_manager import set_stage
+    from bot.services.cache import get_redis
+
+    r = await get_redis()
+    await set_stage(vk_user_id, "paid_monthly")
+    await r.set(f"vk:paid_until:{vk_user_id}", str(int(time.time()) + 86400 * 30), ex=86400 * 31)
+
+    if not _vk_api:
+        logger.error("VK API not initialized in payments.py")
+        return
+
+    import random as _rand
+    confirm = "Оплата прошла, душа моя 🌙\n\nТеперь я с вами весь месяц. Задавайте вопросы — я здесь."
+    try:
+        await _vk_api.messages.send(
+            peer_id=vk_user_id,
+            message=confirm,
+            random_id=_rand.randint(1, 2**31),
+        )
+        logger.info("VK monthly_990 activated: uid=%s", vk_user_id)
+    except Exception as e:
+        logger.warning("VK monthly confirm failed for %s: %s", vk_user_id, e)

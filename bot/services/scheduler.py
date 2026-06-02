@@ -152,6 +152,10 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
 
     async def _vk_morning():
         await _send_vk_accompaniment_morning()
+        await _send_vk_morning_paid()  # утренний привет paid_monthly
+
+    async def _vk_push_unpaid():
+        await _send_vk_push_unpaid()
 
     # ── Новые пуши бизнес-чата ────────────────────────────────────────────────
     async def _biz_push_unpaid():
@@ -182,8 +186,10 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
 
     # Утренний привет платным (7:00 МСК = 04:00 UTC)
     scheduler.add_job(_biz_morning_paid, CronTrigger(hour=4, minute=0))
-    # Пуши неплатным — каждые 15 минут проверяем 1ч/3ч/24ч молчания
+    # Пуши неплатным TG — каждые 15 минут проверяем 1ч/3ч/24ч молчания
     scheduler.add_job(_biz_push_unpaid, CronTrigger(minute="*/15"))
+    # Пуши неплатным VK
+    scheduler.add_job(_vk_push_unpaid, CronTrigger(minute="*/15"))
 
     # ── VK пуши (аналог TG business пушей) ───────────────────────────────────
     scheduler.add_job(_vk_reminders,        CronTrigger(minute="*/15"))
@@ -1133,3 +1139,111 @@ async def _send_biz_morning_paid(bot) -> None:
                 logger.warning("Biz morning error for %s: %s", tid, e)
     except Exception as e:
         logger.warning("_send_biz_morning_paid error: %s", e)
+
+
+async def _send_vk_morning_paid() -> None:
+    """Утренний привет платным VK-пользователям в 7:00–7:09 МСК (04:00 UTC)."""
+    import logging, asyncio as _asyncio
+    from datetime import date as _date
+    logger = logging.getLogger(__name__)
+    try:
+        from bot.vk_dialog.session_manager import get_stage, get_profile, get_all_user_ids
+        from bot.vk_dialog.router import get_vk_api
+        from bot.services.cache import get_redis
+        import random as _rand
+
+        vk_api = get_vk_api()
+        if not vk_api:
+            return
+        today = _date.today().isoformat()
+        r     = await get_redis()
+        uids  = await get_all_user_ids()
+
+        _MF = ["Доброе утро, моя хорошая 🌙\n\nНовый день — новые возможности. Что сегодня лежит на сердце?",
+               "С добрым утром, душа моя ✨\n\nЯ здесь и готова слушать. Чем могу помочь сегодня?",
+               "Доброе утро, голубушка 🌟\n\nКак вы? Я готова к вашим вопросам."]
+        _MM = ["Доброе утро, мой хороший 🌙\n\nНовый день — новые возможности. Что сегодня лежит на сердце?",
+               "С добрым утром, душа моя ✨\n\nЯ здесь и готова слушать. Чем могу помочь сегодня?",
+               "Доброе утро, голубчик 🌟\n\nКак вы? Я готова к вашим вопросам."]
+
+        for uid in uids:
+            try:
+                stage = await get_stage(uid)
+                if stage != "paid_monthly":
+                    continue
+                dedup = f"vk:morning_paid:{uid}:{today}"
+                if not await r.set(dedup, "1", nx=True, ex=86400):
+                    continue
+                profile = await get_profile(uid)
+                gender  = profile.get("gender", "unknown")
+                text    = _rand.choice(_MF if gender == "female" else _MM)
+                delay   = _rand.randint(0, 540)
+                await _asyncio.sleep(delay)
+                await vk_api.messages.send(peer_id=uid, message=text, random_id=_rand.randint(1, 2**31))
+                logger.info("VK morning (paid_monthly) sent to %s", uid)
+            except Exception as e:
+                logger.warning("VK morning paid error for %s: %s", uid, e)
+    except Exception as e:
+        logger.warning("_send_vk_morning_paid error: %s", e)
+
+
+async def _send_vk_push_unpaid() -> None:
+    """Пуши неплатным VK: 1ч → push#1, 3ч → push#2, 24ч → push#3."""
+    import logging, time, random as _rand
+    logger = logging.getLogger(__name__)
+    try:
+        from bot.vk_dialog.session_manager import get_stage, get_profile, get_last_activity, get_all_user_ids
+        from bot.vk_dialog.router import get_vk_api
+        from bot.vk_dialog.payments import create_payment_link
+        from bot.services.cache import get_redis
+
+        vk_api = get_vk_api()
+        if not vk_api:
+            return
+        r   = await get_redis()
+        now = int(time.time())
+
+        P1 = ["{name}, вы написали мне вопрос, и я ответила вам 🌙\n\nЕсли хотите продолжить — я здесь.",
+              "Думаю о вашем вопросе, {name} ✨\n\nЕсли хотите работать со мной каждый день — подписка открыта."]
+        P2 = ["{name}, иногда нужно время чтобы осмыслить ✨\n\nКогда будете готовы — я жду.",
+              "Душа моя, {name} — я всё ещё здесь 🌙\n\nГотова работать с вами весь месяц."]
+        P3 = ["Думаю о вас, {name} 💫\n\nЕсли остались вопросы — я готова работать с вами весь месяц.",
+              "{name}, один вопрос только открывает дверь 🌙\n\nЗа ней — целый месяц работы со мной."]
+
+        uids = await get_all_user_ids()
+        for uid in uids:
+            try:
+                stage = await get_stage(uid)
+                if stage not in ("answered", "waiting_payment"):
+                    continue
+                last = await get_last_activity(uid)
+                if not last:
+                    continue
+                elapsed    = now - last
+                push_key   = f"vk:new_push:{uid}"
+                push_count = int(await r.get(push_key) or 0)
+                if push_count >= 3:
+                    continue
+                texts      = [P1, P2, P3]
+                thresholds = [3600, 10800, 86400]
+                if elapsed < thresholds[push_count]:
+                    continue
+                dedup = f"vk:new_push_dedup:{uid}:{push_count}"
+                if not await r.set(dedup, "1", nx=True, ex=86400 * 2):
+                    continue
+                profile = await get_profile(uid)
+                name    = profile.get("name", "душа моя")
+                text    = _rand.choice(texts[push_count]).format(name=name)
+                try:
+                    link = create_payment_link(uid, "monthly_990")
+                    text += f"\n\n{link}"
+                except Exception:
+                    pass
+                await vk_api.messages.send(peer_id=uid, message=text, random_id=_rand.randint(1, 2**31))
+                await r.incr(push_key)
+                await r.expire(push_key, 86400 * 7)
+                logger.info("VK push #%d sent to %s", push_count + 1, uid)
+            except Exception as e:
+                logger.warning("VK push error for %s: %s", uid, e)
+    except Exception as e:
+        logger.warning("_send_vk_push_unpaid error: %s", e)
