@@ -656,45 +656,35 @@ async def _stage_problem(api, uid: int, text: str) -> None:
     await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
 
-    # Через 5 минут — оффер подписки
-    asyncio.create_task(_delayed_offer_vk(api, uid))
+    # Сразу после ответа — лок + оффер с паузой печатания
+    from bot.services.cache import get_redis as _gcr
+    _r2 = await _gcr()
+    await _r2.set(f"vk:sending:{uid}", "1", ex=60)
 
-
-async def _delayed_offer_vk(api, uid: int) -> None:
-    """Через 5 минут после первого ответа — оффер 990 ₽/месяц."""
-    await asyncio.sleep(300)
-
-    current_stage = await get_stage(uid)
-    if current_stage == "paid_monthly":
-        return
-
-    profile = await get_profile(uid)
-    name    = profile.get("name", "душа моя")
-    gender  = profile.get("gender", "unknown")
-    adj     = "хорошая" if gender == "female" else "хороший"
-
-    offer_text = (
-        f"Мой {adj} {name} {_emo()}\n\n"
-        f"Я готова работать с вами на протяжении всего месяца и отвечать на все ваши вопросы.\n\n"
-        f"Задавайте мне вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
-        f"✨ Работа со мной — 990 ₽ / месяц"
-    )
-
-    from bot.vk_dialog.payments import create_payment_link as _vk_link
     try:
-        link = _vk_link(uid, "monthly_990")
-        offer_text += f"\n\n{link}"
-    except Exception:
-        pass
+        name   = profile.get("name", "душа моя")
+        gender = profile.get("gender", "unknown")
+        adj    = "хорошая" if gender == "female" else "хороший"
 
-    await set_stage(uid, "waiting_payment")
-    from bot.vk_dialog.payments import set_payment_offered_at
-    try:
-        await set_payment_offered_at(uid)
-    except Exception:
-        pass
-    await _typing_medium(api, uid)
-    await _send(api, uid, offer_text)
+        offer_text = (
+            f"Мой {adj} {name} {_emo()}\n\n"
+            f"Я готова работать с вами на протяжении всего месяца и отвечать на все ваши вопросы.\n\n"
+            f"Задавайте мне вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
+            f"✨ Работа со мной — 990 ₽ / месяц"
+        )
+
+        from bot.vk_dialog.payments import create_payment_link as _vk_link
+        try:
+            link = _vk_link(uid, "monthly_990")
+            offer_text += f"\n\n{link}"
+        except Exception:
+            pass
+
+        await set_stage(uid, "waiting_payment")
+        await _typing_medium(api, uid)
+        await _send(api, uid, offer_text)
+    finally:
+        await _r2.delete(f"vk:sending:{uid}")
 
 
 # ─── Статичные парирования VK ─────────────────────────────────────────────────

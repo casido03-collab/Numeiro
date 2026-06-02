@@ -1318,14 +1318,12 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
 
 
 async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
-    """Пользователь задал вопрос — отвечаем прямо, затем через 5 минут показываем оффер."""
-    import asyncio
+    """Пользователь задал вопрос — отвечаем прямо, затем сразу оффер с паузой печатания."""
     if not text or len(text) < 5:
         await _send(bot, chat_id, f"Напишите ваш вопрос, душа моя {_emo()}", biz_conn_id)
         return
 
     await store_profile_field(telegram_id, "problem", text)
-    await set_biz_stage(telegram_id, "answered")
 
     profile = await get_profile(telegram_id)
     context = json.dumps({
@@ -1346,15 +1344,43 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
 
-    # Запоминаем в Redis когда отправить оффер (через 5 мин)
-    # Scheduler проверяет это каждую минуту — надёжнее asyncio.create_task
-    import time as _time
+    # Ставим лок — пока отправляем оффер, все входящие игнорируются
     from bot.services.cache import get_redis as _gcr
     _r2 = await _gcr()
-    await _r2.set(f"biz:offer_at:{telegram_id}", str(int(_time.time()) + 300), ex=3600)
-    await _r2.set(f"biz:offer_chat:{telegram_id}", str(chat_id), ex=3600)
-    if biz_conn_id:
-        await _r2.set(f"biz:offer_conn:{telegram_id}", biz_conn_id, ex=3600)
+    await _r2.set(f"tg:sending:{telegram_id}", "1", ex=60)
+
+    try:
+        name   = profile.get("name", "душа моя")
+        gender = profile.get("gender", "unknown")
+        adj    = "хорошая" if gender == "female" else "хороший"
+
+        offer_text = (
+            f"Мой {adj} {name} {_emo()}\n\n"
+            f"Я готова работать с вами на протяжении всего месяца и отвечать на все ваши вопросы.\n\n"
+            f"Задавайте мне вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
+            f"✨ *Работа со мной* — 990 ₽ / месяц"
+        )
+
+        from bot.business_dialog.tribute_flow import create_tg_business_payment_link
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        try:
+            link = create_tg_business_payment_link(telegram_id, "monthly_990")
+            kb   = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💎 Оформить подписку — 990 ₽", url=link)]
+            ])
+        except Exception:
+            kb = None
+
+        await set_biz_stage(telegram_id, "waiting_payment")
+        await typing_medium(bot, chat_id, biz_conn_id)
+        send_kw: dict = {"chat_id": chat_id, "text": offer_text, "parse_mode": "Markdown"}
+        if biz_conn_id:
+            send_kw["business_connection_id"] = biz_conn_id
+        if kb:
+            send_kw["reply_markup"] = kb
+        await bot.send_message(**send_kw)
+    finally:
+        await _r2.delete(f"tg:sending:{telegram_id}")
 
 
 async def send_tg_offer_if_due(bot: Bot) -> None:
