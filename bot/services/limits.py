@@ -150,6 +150,20 @@ async def consume_limit(
 
     setattr(usage, field, used + 1)
     await session.commit()
+
+    # Ежедневный Redis-трекинг для статистики
+    if limit_type == "ai_messages":
+        try:
+            from bot.services.cache import get_redis
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            r = await get_redis()
+            await r.incr(f"stats:ai:count:{today}")
+            await r.expire(f"stats:ai:count:{today}", 86400 * 7)
+            await r.sadd(f"stats:ai:users:{today}", user_id)
+            await r.expire(f"stats:ai:users:{today}", 86400 * 7)
+        except Exception:
+            pass  # статистика не критична
+
     return True
 
 

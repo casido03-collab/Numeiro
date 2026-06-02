@@ -350,8 +350,23 @@ async def cmd_limits(message: Message, session: AsyncSession):
             label = raw.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
             lines.append(f"{i}. {label} (`{tg_id}`): *{msgs}* AI-сообщений")
 
+        # Ежедневная статистика из Redis
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        ai_count_today = int(await r.get(f"stats:ai:count:{today}") or 0)
+        ai_users_today = await r.scard(f"stats:ai:users:{today}")
+
+        header = (
+            f"📊 *AI-статистика*\n\n"
+            f"📅 *Сегодня ({today}):*\n"
+            f"• Активных пользователей: *{ai_users_today}*\n"
+            f"• AI-запросов: *{ai_count_today}*\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🏆 *Топ по AI (всего):*\n\n"
+        )
+
         await message.answer(
-            f"📊 *Топ по AI-сообщениям (всего):*\n\n" + "\n".join(lines),
+            header + "\n".join(lines),
             parse_mode="Markdown",
         )
     except Exception as e:
