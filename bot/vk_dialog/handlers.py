@@ -926,41 +926,17 @@ async def _stage_free_dialog(api, uid: int, text: str) -> None:
 
 
 async def _stage_waiting_payment(api, uid: int, text: str) -> None:
+    """После показа оффера — только статичные парирования. Никакого AI."""
     t = text.lower().strip()
 
-    # Нажата кнопка «✅ Оплатить» — напомнить ссылку
-    if "оплатить" in t:
-        profile  = await get_profile(uid)
-        paid_tier = profile.get("next_tier") or "t190"
-        tier      = get_tier(paid_tier)
-        price     = tier.get("price", 190)
-        name      = tier.get("name", "Разбор")
-        try:
-            link  = create_payment_link(uid, paid_tier)
-            msg   = f"Ссылка на оплату {_emo()}\n\n✨ «{name}» — {price} ₽\n\n{link}"
-        except Exception:
-            msg   = f"Напишите нам — поможем оформить оплату {_emo()}"
+    # Благодарности — тёплый ответ
+    if len(t) < 25 and any(w in t for w in _VK_CLOSING_WORDS):
         await _typing_short(api, uid)
-        await _send(api, uid, msg)
+        await _send(api, uid, random.choice(_VK_WARM_CLOSING))
         return
 
-    profile = await get_profile(uid)
-    timing  = _tier_timing_hint(profile.get("next_tier") or "t190")
-    context = json.dumps({"name": profile.get("name", ""), "problem": profile.get("problem", "")}, ensure_ascii=False)
-    reply = await generate_business(
-        AISHA_FREE_PROMPT,
-        f"Клиент уже получил предложение разбора и задаёт дополнительный вопрос: «{text}»\n\n"
-        f"Ответь ОДНИМ коротким предложением (максимум 15 слов) точно по смыслу вопроса. "
-        f"Не называй цену и не упоминай слово 'оплата'. Обращайся на вы. "
-        f"НЕ задавай вопросов в конце, НЕ добавляй концовку-триггер — просто ответь и всё.\n\n"
-        f"ВАЖНО: если клиент спрашивает о времени или сроках выполнения — ответь точно: {timing}.\n\n"
-        f"ВАЖНО: если клиент спрашивает о ссылке на оплату (как долго работает, истекает ли) — "
-        f"отвечай что ссылка работает в любой момент, без ограничений по времени.\n\n"
-        f"Данные: {context}",
-        complexity="simple", max_tokens=50,
-    )
-    await _typing_for_text(api, uid, reply)
-    await _send(api, uid, reply)
+    # Всё остальное — статичное парирование из базы
+    await _stage_answered_vk(api, uid, text)
 
 
 async def _stage_followup(api, uid: int, text: str) -> None:
