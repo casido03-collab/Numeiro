@@ -1497,9 +1497,10 @@ def _detect_deflect_type(text: str) -> str:
     return "generic"
 
 
-async def _deflect_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
+async def _deflect_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str, dtype: str | None = None) -> None:
     """Отправить статичный парирующий ответ и напомнить об оффере."""
-    dtype = _detect_deflect_type(text)
+    if dtype is None:
+        dtype = _detect_deflect_type(text)
     if dtype == "no_money":
         reply = random.choice(_DEFLECT_NO_MONEY)
     elif dtype == "one_more":
@@ -1515,9 +1516,35 @@ async def _deflect_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
     await _send(bot, chat_id, reply, biz_conn_id)
 
 
+_WARM_CLOSING_RESPONSES = [
+    "Рада была помочь, душа моя 🌙 Если появятся ещё вопросы — я здесь.",
+    "Пожалуйста, голубчик ✨ Я жду вас.",
+    "Всегда рада, душа моя 🌟",
+]
+
+_CLOSING_WORDS = {"спасибо", "благодарю", "благодарна", "благодарен", "пожалуйста", "ок", "окей", "хорошо", "понятно", "ясно"}
+
+
 async def _stage_answered_tg(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
     """Стадия после первого бесплатного ответа — парируем, оффер уже запланирован."""
-    await _deflect_tg(bot, chat_id, telegram_id, biz_conn_id, text)
+    t = text.lower().strip()
+    # На благодарности и закрывающие реплики — тёплый ответ без продажи
+    if len(t) < 25 and any(w in t for w in _CLOSING_WORDS):
+        await typing_short(bot, chat_id, biz_conn_id)
+        await _send(bot, chat_id, random.choice(_WARM_CLOSING_RESPONSES), biz_conn_id)
+        return
+
+    # Дедупликация — не шлём один тип ответа дважды подряд
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    dtype = _detect_deflect_type(text)
+    dedup_key = f"tg:deflect_last:{telegram_id}"
+    last_dtype = await r.get(dedup_key)
+    if last_dtype and last_dtype.decode() == dtype:
+        dtype = "generic" if dtype != "generic" else "one_more"
+    await r.set(dedup_key, dtype, ex=300)
+
+    await _deflect_tg(bot, chat_id, telegram_id, biz_conn_id, text, dtype)
 
 
 # ─── Стадия платной ежемесячной подписки ─────────────────────────────────────
