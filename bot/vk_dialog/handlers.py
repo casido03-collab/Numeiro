@@ -735,19 +735,52 @@ _VK_DAILY_LIMIT_RESPONSES = [
 _VK_DAILY_LIMIT = 3
 
 
+_VK_WARM_CLOSING = [
+    "Рада была помочь, душа моя 🌙 Если появятся ещё вопросы — я здесь.",
+    "Пожалуйста, голубчик ✨ Я жду вас.",
+    "Всегда рада, душа моя 🌟",
+]
+_VK_CLOSING_WORDS = {"спасибо", "благодарю", "благодарна", "благодарен", "пожалуйста", "ок", "окей", "хорошо", "понятно", "ясно"}
+
+
 async def _stage_answered_vk(api, uid: int, text: str) -> None:
     """После первого бесплатного ответа — парируем, оффер уже запланирован."""
-    t = text.lower()
+    t = text.lower().strip()
+
+    # Благодарности — тёплый ответ без продажи
+    if len(t) < 25 and any(w in t for w in _VK_CLOSING_WORDS):
+        await _typing_short(api, uid)
+        await _send(api, uid, random.choice(_VK_WARM_CLOSING))
+        return
+
+    # Определяем тип и дедуплицируем
+    from bot.services.cache import get_redis
+    r = await get_redis()
     if any(k in t for k in _VK_NO_MONEY_KW):
-        reply = random.choice(_VK_DEFLECT_NO_MONEY)
+        dtype = "no_money"
     elif any(k in t for k in _VK_ONE_MORE_KW):
-        reply = random.choice(_VK_DEFLECT_ONE_MORE)
+        dtype = "one_more"
     elif any(k in t for k in _VK_LATER_KW):
-        reply = random.choice(_VK_DEFLECT_LATER)
+        dtype = "later"
     elif any(k in t for k in _VK_DISCOUNT_KW):
-        reply = random.choice(_VK_DEFLECT_DISCOUNT)
+        dtype = "discount"
     else:
-        reply = random.choice(_VK_DEFLECT_GENERIC)
+        dtype = "generic"
+
+    dedup_key = f"vk:deflect_last:{uid}"
+    last_dtype = await r.get(dedup_key)
+    if last_dtype and last_dtype.decode() == dtype:
+        dtype = "generic" if dtype != "generic" else "one_more"
+    await r.set(dedup_key, dtype, ex=300)
+
+    deflect_map = {
+        "no_money": _VK_DEFLECT_NO_MONEY,
+        "one_more": _VK_DEFLECT_ONE_MORE,
+        "later":    _VK_DEFLECT_LATER,
+        "discount": _VK_DEFLECT_DISCOUNT,
+        "generic":  _VK_DEFLECT_GENERIC,
+    }
+    reply = random.choice(deflect_map.get(dtype, _VK_DEFLECT_GENERIC))
     await _typing_short(api, uid)
     await _send(api, uid, reply)
 
