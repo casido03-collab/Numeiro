@@ -42,7 +42,7 @@ PLANS = {
         "limits": {
             "ai_messages": 10,         # покрывает все разовые фичи + запас
             "personal_questions": 1,   # 1 вопрос всего
-            "weekly_reports": 1,
+            "weekly_reports": 0,
             "compatibility": 1,        # 1 совместимость всего
             "daily_forecasts": 1,      # 1 Энергия дня в день
             "mini_readings": 1,
