@@ -175,7 +175,7 @@ def after_reading_keyboard() -> InlineKeyboardMarkup:
 def after_question_keyboard_free() -> InlineKeyboardMarkup:
     """Клавиатура после ответа на вопрос для бесплатных пользователей."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✨ Получить глубокий расклад", callback_data="menu:plans")],
+        [InlineKeyboardButton(text="✨ Получить глубокий расклад", callback_data="cabinet:open")],
         [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
     ])
