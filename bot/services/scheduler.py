@@ -1064,13 +1064,16 @@ async def _send_biz_push_unpaid(bot) -> None:
                 name    = profile.get("name", "душа моя")
                 text    = random.choice(push_texts[push_count]).format(name=name)
                 biz_conn_id = await get_biz_conn(tid)
-                try:
-                    link = create_tg_business_payment_link(tid, "monthly_990")
-                    kb   = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="💎 Оформить подписку — 990 ₽", url=link)]
-                    ])
-                except Exception:
-                    kb = None
+                # Кнопка оплаты только в первом пуше
+                kb = None
+                if push_count == 0:
+                    try:
+                        link = create_tg_business_payment_link(tid, "monthly_990")
+                        kb   = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="💎 Оформить подписку — 990 ₽", url=link)]
+                        ])
+                    except Exception:
+                        kb = None
                 send_kw: dict = {"chat_id": tid, "text": text}
                 if biz_conn_id:
                     send_kw["business_connection_id"] = biz_conn_id
@@ -1236,11 +1239,13 @@ async def _send_vk_push_unpaid() -> None:
                 profile = await get_profile(uid)
                 name    = profile.get("name", "душа моя")
                 text    = _rand.choice(texts[push_count]).format(name=name)
-                try:
-                    link = create_payment_link(uid, "monthly_990")
-                    text += f"\n\n{link}"
-                except Exception:
-                    pass
+                # Ссылка на оплату только в первом пуше
+                if push_count == 0:
+                    try:
+                        link = create_payment_link(uid, "monthly_990")
+                        text += f"\n\n{link}"
+                    except Exception:
+                        pass
                 await vk_api.messages.send(peer_id=uid, message=text, random_id=_rand.randint(1, 2**31))
                 await r.incr(push_key)
                 await r.expire(push_key, 86400 * 7)
