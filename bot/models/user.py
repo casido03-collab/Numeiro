@@ -155,6 +155,7 @@ class UsageLimits(Base):
     mini_readings: Mapped[int] = mapped_column(Integer, default=0)
     date_selections: Mapped[int] = mapped_column(Integer, default=0)
     tarot_cards: Mapped[int] = mapped_column(Integer, default=0)
+    matrix_readings: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship("User", back_populates="usage_limits")

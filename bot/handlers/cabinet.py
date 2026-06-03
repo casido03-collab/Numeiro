@@ -78,6 +78,7 @@ LIMIT_LABELS = {
     "mini_readings":      "Мини‑разборов",
     "date_selections":    "Подборов дат",
     "tarot_cards":        "Карт дня",
+    "matrix_readings":    "Матрица судьбы",
 }
 
 PLAN_LABELS = {
@@ -123,6 +124,9 @@ async def _build_cabinet_text(session: AsyncSession, user: User) -> str:
     # Лейбл блока лимитов: для бесплатного — "всего", для платных — "за период"
     limits_label = "📊 *Остаток (всего):*" if plan == "free" else "📊 *Остаток за период:*"
 
+    matrix_remaining = limits.get("matrix_readings", {}).get("remaining", 0)
+    show_matrix = matrix_remaining > 0
+
     text = (
         f"✨ *Персональное пространство — {name}*\n\n"
         f"━━━━━━━━━━━━━━━\n"
@@ -134,15 +138,19 @@ async def _build_cabinet_text(session: AsyncSession, user: User) -> str:
         f"━━━━━━━━━━━━━━━\n"
         f"{personality}"
     )
-    return text
+    return text, show_matrix
 
 
-def _cabinet_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def _cabinet_kb(show_matrix: bool = False) -> InlineKeyboardMarkup:
+    rows = []
+    if show_matrix:
+        rows.append([InlineKeyboardButton(text="🌟 Матрица судьбы", callback_data="matrix:start")])
+    rows += [
         [InlineKeyboardButton(text="💎 Продлить / сменить тариф", callback_data="menu:plans")],
         [InlineKeyboardButton(text="📋 Все тарифы", callback_data="menu:plans")],
         [InlineKeyboardButton(text="🔮 Главное меню", callback_data="menu:main")],
-    ])
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ─── Обработчики ─────────────────────────────────────────────────────────────
@@ -156,16 +164,16 @@ async def reply_cabinet(message: Message, user: User, session: AsyncSession, sta
     except Exception:
         pass
     from bot.utils import show_menu_message
-    text = await _build_cabinet_text(session, user)
-    await show_menu_message(message, user.telegram_id, text, _cabinet_kb(), force_new=True, fast=True)
+    text, show_matrix = await _build_cabinet_text(session, user)
+    await show_menu_message(message, user.telegram_id, text, _cabinet_kb(show_matrix), force_new=True, fast=True)
     logger.info("MENU_RENDER_DONE handler=reply_cabinet duration_ms=%.0f", (time.monotonic() - t0) * 1000)
 
 
 @router.callback_query(F.data == "cabinet:open")
 async def cb_cabinet_open(callback: CallbackQuery, user: User, session: AsyncSession):
-    text = await _build_cabinet_text(session, user)
+    text, show_matrix = await _build_cabinet_text(session, user)
     try:
-        await callback.message.edit_text(text, reply_markup=_cabinet_kb(), parse_mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=_cabinet_kb(show_matrix), parse_mode="Markdown")
     except Exception:
-        await callback.message.answer(text, reply_markup=_cabinet_kb(), parse_mode="Markdown")
+        await callback.message.answer(text, reply_markup=_cabinet_kb(show_matrix), parse_mode="Markdown")
     await callback.answer()

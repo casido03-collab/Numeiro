@@ -137,6 +137,34 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
 
 @router.callback_query(F.data == "matrix:start")
 async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSession):
+    from bot.services.limits import get_user_plan
+    plan = await get_user_plan(session, user.id)
+
+    # Бесплатным — недоступно
+    if plan == "free":
+        await callback.message.edit_text(
+            "🔒 *Матрица судьбы*\n\nЭта функция доступна для:\n"
+            "• Тариф Pro — 1 разбор в месяц\n"
+            "• Разовая покупка — 299 ₽\n\n"
+            "Бесплатным пользователям недоступна.",
+            reply_markup=limit_reached_keyboard(),
+            parse_mode="Markdown",
+        )
+        await callback.answer()
+        return
+
+    # Pro — проверяем лимит из плана
+    if plan == "pro":
+        has_limit, used, max_val = await check_limit(session, user.id, "matrix_readings")
+        if not has_limit:
+            await callback.message.edit_text(
+                "🔒 *Матрица судьбы*\n\nВы использовали свой разбор на этот месяц.\n\nПодождите следующего периода.",
+                reply_markup=limit_reached_keyboard(),
+                parse_mode="Markdown",
+            )
+            await callback.answer()
+            return
+
     if not user.birth_date:
         await callback.message.edit_text(
             "✨ Для матрицы судьбы нужна дата рождения.",

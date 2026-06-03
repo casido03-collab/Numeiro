@@ -48,6 +48,7 @@ PLANS = {
             "mini_readings": 1,
             "date_selections": 0,
             "tarot_cards": 1,          # 1 карта Таро всего
+            "matrix_readings": 0,      # недоступно
         },
     },
     "lite": {
@@ -63,6 +64,7 @@ PLANS = {
             "mini_readings": 3,
             "date_selections": 2,      # 2 подбора дат
             "tarot_cards": 5,
+            "matrix_readings": 0,      # только разовая покупка
         },
         "energy_day_total": 3,         # всего за подписку (7 дней)
     },
@@ -79,6 +81,7 @@ PLANS = {
             "mini_readings": 15,
             "date_selections": 10,
             "tarot_cards": 10,
+            "matrix_readings": 0,      # только разовая покупка
         },
     },
     "pro": {
@@ -94,6 +97,7 @@ PLANS = {
             "mini_readings": 50,
             "date_selections": 40,
             "tarot_cards": 30,
+            "matrix_readings": 1,      # 1 матрица в месяц
         },
         "energy_day_total": 30,     # всего за месяц (30 дней)
     },

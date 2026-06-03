@@ -106,6 +106,7 @@ LIMIT_FIELD_MAP = {
     "mini_readings":      "mini_readings",
     "date_selections":    "date_selections",
     "tarot_cards":        "tarot_cards",
+    "matrix_readings":    "matrix_readings",
 }
 
 
