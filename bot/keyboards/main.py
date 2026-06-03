@@ -172,6 +172,24 @@ def after_reading_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def after_question_keyboard_free() -> InlineKeyboardMarkup:
+    """Клавиатура после ответа на вопрос для бесплатных пользователей."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✨ Получить глубокий расклад", callback_data="menu:plans")],
+        [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
+        [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+    ])
+
+
+def after_question_keyboard_paid() -> InlineKeyboardMarkup:
+    """Клавиатура после ответа на вопрос для платных пользователей."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔮 Задать ещё вопрос", callback_data="menu:question")],
+        [InlineKeyboardButton(text="📤 Поделиться", callback_data="share:reading")],
+        [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+    ])
+
+
 # Версии клавиатур с CTA-кнопкой — избегают лишнего API-вызова (отдельного сообщения)
 
 def upsell_keyboard_reading() -> InlineKeyboardMarkup:

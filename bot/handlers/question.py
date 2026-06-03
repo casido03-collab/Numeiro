@@ -10,7 +10,7 @@ from bot.services.numerology import calculate_all
 from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
-from bot.keyboards.main import limit_reached_keyboard, after_reading_keyboard, back_to_main, main_menu
+from bot.keyboards.main import limit_reached_keyboard, after_reading_keyboard, after_question_keyboard_free, after_question_keyboard_paid, back_to_main, main_menu
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai, replace_message
 from bot.services.thinking import random_thinking
 
@@ -179,4 +179,5 @@ async def receive_question(message: Message, state: FSMContext, user: User, sess
 
     name = user.first_name or "друг"
     text = f"🔮 *Ответ для {name}*\n_Вопрос: {question}_\n\n{response}"
-    await safe_edit_ai(thinking_msg, text, reply_markup=after_reading_keyboard())
+    kb = after_question_keyboard_paid() if is_paid else after_question_keyboard_free()
+    await safe_edit_ai(thinking_msg, text, reply_markup=kb)
