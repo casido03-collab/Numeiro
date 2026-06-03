@@ -1735,12 +1735,12 @@ async def _stage_paid_monthly_tg(bot: Bot, chat_id: int, telegram_id: int, biz_c
         "question":   text,
     }, ensure_ascii=False)
 
-    from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
+    from bot.prompts.prompts import PERSONAL_QUESTION_PAID_PROMPT
     response = await generate_business(
-        PERSONAL_QUESTION_PROMPT,
+        PERSONAL_QUESTION_PAID_PROMPT,
         f"Вопрос пользователя: {text}\n\nДанные: {context}",
         complexity="medium",
-        max_tokens=350,
+        max_tokens=600,
     )
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)

@@ -881,11 +881,11 @@ async def _stage_paid_monthly_vk(api, uid: int, text: str) -> None:
         "question":   text,
     }, ensure_ascii=False)
 
-    from bot.prompts.prompts import PERSONAL_QUESTION_PROMPT
+    from bot.prompts.prompts import PERSONAL_QUESTION_PAID_PROMPT
     resp = await generate_business(
-        PERSONAL_QUESTION_PROMPT,
+        PERSONAL_QUESTION_PAID_PROMPT,
         f"Вопрос пользователя: {text}\n\nДанные: {context}",
-        complexity="medium", max_tokens=350,
+        complexity="medium", max_tokens=600,
     )
     await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
