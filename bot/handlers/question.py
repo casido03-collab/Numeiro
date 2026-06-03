@@ -152,11 +152,19 @@ async def receive_question(message: Message, state: FSMContext, user: User, sess
         "numbers": {k: v for k, v in nums.items() if k in ["life_path", "destiny", "personality"]},
     }
 
+    from bot.services.limits import get_user_plan
+    from bot.prompts.prompts import PERSONAL_QUESTION_PAID_PROMPT
+    plan = await get_user_plan(session, user.id)
+    is_paid = plan != "free"
+
+    prompt     = PERSONAL_QUESTION_PAID_PROMPT if is_paid else PERSONAL_QUESTION_PROMPT
+    max_tokens = 600 if is_paid else 450
+
     user_msg = f"Ответь на личный вопрос пользователя.\nДанные: {json.dumps(context, ensure_ascii=False)}"
     response = await generate(
         session, user.id, "personal_question",
-        PERSONAL_QUESTION_PROMPT, user_msg,
-        complexity="medium", max_tokens=450,
+        prompt, user_msg,
+        complexity="medium", max_tokens=max_tokens,
     )
 
     from bot.services.reports_service import save_report
