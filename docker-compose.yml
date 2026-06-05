@@ -11,7 +11,9 @@ services:
     # Порт 8081 НЕ пробрасывается наружу — доступен только внутри Docker-сети
 
   bot:
-    build: .
+    build:
+      context: .
+      pull: false    # не тянуть python:3.12-slim из Docker Hub, использовать кеш
     image: numeiro-app:latest   # собирает образ и тегирует его — checker его подберёт
     env_file: .env
     depends_on:
