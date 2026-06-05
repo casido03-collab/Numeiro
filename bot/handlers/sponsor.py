@@ -130,7 +130,7 @@ async def cmd_sponsor_toggle(message: Message):
     await message.answer(
         f"🎯 Плашка спонсора: *{state}*\n\n"
         f"При включении все разделы бота требуют подписки на канал.\n"
-        f"Ссылка: {(await r.get(SPONSOR_LINK_KEY) or b'не задана').decode()}",
+        f"Ссылка: {(await r.get(SPONSOR_LINK_KEY) or b'').decode() or 'не задана'}",
         parse_mode="Markdown",
     )
 
