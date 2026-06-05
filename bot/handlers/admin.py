@@ -551,3 +551,53 @@ async def cmd_unlimit(message: Message):
     except Exception as e:
         logger.exception("cmd_unlimit error")
         await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
+
+
+# ─── Сброс12 — сбросить сессию (только для администратора) ────────────────────
+
+@router.message(F.text.lower() == "сброс12")
+async def reset_session_admin(message: Message, user: User, session: AsyncSession):
+    """Кодовое слово — сбрасывает профиль администратора до состояния нового пользователя."""
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        from aiogram.fsm.context import FSMContext
+        from sqlalchemy import delete
+        from bot.models.user import UserProfile, UsageLimits, Subscription
+
+        # Очищаем дату рождения и пол
+        user.birth_date = None
+        user.gender     = None
+        user.first_name = message.from_user.first_name or user.first_name
+
+        # Сбрасываем профиль (онбординг, личность)
+        result = await session.execute(select(UserProfile).where(UserProfile.user_id == user.id))
+        profile = result.scalar_one_or_none()
+        if profile:
+            prefs = dict(profile.preferences or {})
+            prefs.pop("onboarding_done", None)
+            prefs.pop("onboarding_interest", None)
+            prefs.pop("personality", None)
+            profile.preferences = prefs
+
+        # Удаляем лимиты (сбросятся до нуля при следующем использовании)
+        await session.execute(delete(UsageLimits).where(UsageLimits.user_id == user.id))
+
+        await session.commit()
+
+        # Сбрасываем Redis-кеш спонсора для этого пользователя
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        await r.delete(f"sponsor_checked:{user.telegram_id}")
+
+        await message.answer(
+            "✅ *Сессия сброшена.*\n\n"
+            "Профиль, дата рождения и лимиты очищены.\n"
+            "Нажми /start — начнёшь как новый пользователь.",
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.exception("reset_session_admin error")
+        await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
