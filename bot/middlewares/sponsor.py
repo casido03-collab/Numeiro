@@ -23,7 +23,8 @@ async def _get_sponsor_state() -> dict:
     try:
         from bot.handlers.sponsor import get_sponsor_state
         return await get_sponsor_state()
-    except Exception:
+    except Exception as e:
+        logger.warning("SponsorMiddleware: get_sponsor_state failed: %s", e)
         return {"enabled": False, "link": "", "channel": ""}
 
 
@@ -100,9 +101,21 @@ class SponsorMiddleware(BaseMiddleware):
         if user_id in settings.admin_ids_list:
             return await handler(event, data)
 
-        bot = data.get("bot") or (event.message.bot if isinstance(event, CallbackQuery) else event.bot)
+        # Получаем bot из события напрямую (надёжнее чем из data)
+        if isinstance(event, Message):
+            bot = event.bot
+        elif isinstance(event, CallbackQuery):
+            bot = event.bot or (event.message.bot if event.message else None)
+        else:
+            bot = data.get("bot")
+
+        if bot is None:
+            logger.warning("SponsorMiddleware: bot is None, skipping check")
+            return await handler(event, data)
 
         subscribed = await _is_subscribed(bot, user_id, sponsor["channel"])
+        logger.debug("SponsorMiddleware: uid=%s channel=%s subscribed=%s", user_id, sponsor["channel"], subscribed)
+
         if subscribed:
             return await handler(event, data)
 
