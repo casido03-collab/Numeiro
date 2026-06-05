@@ -131,7 +131,7 @@ async def ob_screen2(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(OnboardingFSM.waiting_birth_date)
+@router.message(OnboardingFSM.waiting_birth_date, ~F.text.startswith("/"))
 async def ob_receive_birth_date(message: Message, user: User, state: FSMContext, session: AsyncSession):
     """Получаем дату рождения, проверяем возраст, продолжаем онбординг."""
     text = (message.text or "").strip()

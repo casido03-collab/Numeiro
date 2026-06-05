@@ -131,15 +131,19 @@ async def cmd_sponsor_toggle(message: Message):
         return
     from bot.services.cache import get_redis
     r = await get_redis()
-    current = (await r.get(SPONSOR_ENABLED_KEY) or b"0").decode()
+    current = _decode(await r.get(SPONSOR_ENABLED_KEY))
     new_val  = "0" if current == "1" else "1"
     await r.set(SPONSOR_ENABLED_KEY, new_val)
 
-    state = "✅ ВКЛЮЧЕНА" if new_val == "1" else "❌ ВЫКЛЮЧЕНА"
+    link    = _decode(await r.get(SPONSOR_LINK_KEY)) or "не задана"
+    channel = _decode(await r.get(SPONSOR_CHANNEL_KEY)) or "не задан"
+    status  = "✅ ВКЛЮЧЕНА" if new_val == "1" else "❌ ВЫКЛЮЧЕНА"
+
     await message.answer(
-        f"🎯 Плашка спонсора: *{state}*\n\n"
-        f"При включении все разделы бота требуют подписки на канал.\n"
-        f"Ссылка: {_decode(await r.get(SPONSOR_LINK_KEY)) or 'не задана'}",
+        f"🎯 Плашка спонсора: *{status}*\n\n"
+        f"• Ссылка для кнопки: {link}\n"
+        f"• ID канала для проверки: `{channel}`\n\n"
+        f"{'🟢 Подписка требуется для всех разделов.' if new_val == '1' else '⚪ Бот работает без проверки подписки.'}",
         parse_mode="Markdown",
     )
 
