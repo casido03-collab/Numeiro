@@ -1,14 +1,21 @@
 """Onboarding flow — показывается один раз для новых пользователей."""
 import asyncio
 import logging
+from datetime import datetime, date
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from bot.models.user import User, UserProfile
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+
+class OnboardingFSM(StatesGroup):
+    waiting_birth_date = State()
 
 
 # ─── Проверка / отметка онбординга ────────────────────────────────────────────
@@ -112,8 +119,65 @@ async def start_onboarding(message, user: User):
 # ─── Обработчики экранов ──────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "ob:2")
-async def ob_screen2(callback: CallbackQuery):
+async def ob_screen2(callback: CallbackQuery, state: FSMContext):
+    """Шаг 2 — запрос даты рождения для проверки возраста."""
     await callback.message.edit_text(
+        "📅 *Для персонального разбора мне нужна ваша дата рождения.*\n\n"
+        "Напишите её в формате: *ДД.ММ.ГГГГ*\n\n"
+        "_Например: 15.03.1990_",
+        parse_mode="Markdown",
+    )
+    await state.set_state(OnboardingFSM.waiting_birth_date)
+    await callback.answer()
+
+
+@router.message(OnboardingFSM.waiting_birth_date)
+async def ob_receive_birth_date(message: Message, user: User, state: FSMContext, session: AsyncSession):
+    """Получаем дату рождения, проверяем возраст, продолжаем онбординг."""
+    text = (message.text or "").strip()
+
+    # Парсим дату
+    dt = None
+    for fmt in ["%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y"]:
+        try:
+            dt = datetime.strptime(text, fmt).date()
+            break
+        except ValueError:
+            continue
+
+    if dt is None:
+        await message.answer(
+            "❌ Не могу распознать дату. Введите в формате *ДД.ММ.ГГГГ*\n\nНапример: *15.03.1990*",
+            parse_mode="Markdown",
+        )
+        return
+
+    age = (date.today() - dt).days // 365
+
+    if age < 18:
+        await state.clear()
+        await message.answer(
+            "🔒 *Доступ ограничен*\n\n"
+            "Этот бот предназначен только для пользователей старше 18 лет.",
+            parse_mode="Markdown",
+        )
+        return
+
+    if age > 100 or dt > date.today():
+        await message.answer(
+            "❌ Некорректная дата. Проверьте и введите снова.",
+            parse_mode="Markdown",
+        )
+        return
+
+    # Сохраняем дату рождения
+    user.birth_date = dt.strftime("%d.%m.%Y")
+    await session.commit()
+
+    await state.clear()
+
+    # Продолжаем онбординг — показываем выбор темы
+    await message.answer(
         "🔮 *Этот бот объединяет:*\n\n"
         "• нумерологию\n"
         "• совместимость\n"
@@ -126,7 +190,6 @@ async def ob_screen2(callback: CallbackQuery):
         reply_markup=_screen2_kb(),
         parse_mode="Markdown",
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("ob:3:"))
