@@ -137,26 +137,81 @@ async def cmd_sponsor_toggle(message: Message):
 
 @router.message(Command("link"))
 async def cmd_set_link(message: Message):
+    """Установить ссылку для кнопки 'Подписаться'."""
     if not is_admin_id(message.from_user.id):
         return
     text = message.text or ""
     parts = text.split(maxsplit=1)
     if len(parts) < 2:
         await message.answer(
-            "Использование: `/link <ссылка>`\n\nПример: `/link https://t.me/mychannel`",
+            "Использование: `/link <ссылка>`\n\n"
+            "Пример: `/link https://t.me/+abc123`\n\n"
+            "Это ссылка для кнопки «Подписаться».\n"
+            "Для приватного канала также укажите ID канала: `/channel_id -1001234567890`",
             parse_mode="Markdown",
         )
         return
 
-    link    = parts[1].strip()
-    channel = _extract_channel(link)
-
+    link = parts[1].strip()
     from bot.services.cache import get_redis
     r = await get_redis()
     await r.set(SPONSOR_LINK_KEY, link)
-    await r.set(SPONSOR_CHANNEL_KEY, channel)
 
-    await message.answer(
-        f"✅ Ссылка сохранена:\n{link}\n\nКанал для проверки: `{channel}`",
-        parse_mode="Markdown",
-    )
+    # Если публичный канал — сразу извлекаем username
+    channel = _extract_channel(link)
+    if not channel.startswith("@+"):  # публичная ссылка
+        await r.set(SPONSOR_CHANNEL_KEY, channel)
+        await message.answer(
+            f"✅ Ссылка сохранена: {link}\nКанал для проверки: `{channel}`",
+            parse_mode="Markdown",
+        )
+    else:
+        await message.answer(
+            f"✅ Ссылка для кнопки сохранена: {link}\n\n"
+            "⚠️ Это приватный канал. Укажите числовой ID канала для проверки подписки:\n"
+            "`/channel_id -1001234567890`\n\n"
+            "ID канала можно узнать переслав любое сообщение из канала боту @userinfobot",
+            parse_mode="Markdown",
+        )
+
+
+@router.message(Command("channel_id"))
+async def cmd_set_channel_id(message: Message):
+    """Установить ID приватного канала для проверки подписки."""
+    if not is_admin_id(message.from_user.id):
+        return
+    text = message.text or ""
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "Использование: `/channel_id <ID>`\n\n"
+            "Пример: `/channel_id -1001234567890`\n\n"
+            "💡 Как узнать ID: перешли любое сообщение из канала боту @userinfobot",
+            parse_mode="Markdown",
+        )
+        return
+
+    channel_id = parts[1].strip()
+    if not channel_id.lstrip("-").isdigit():
+        await message.answer("❌ ID должен быть числом, например: `-1001234567890`", parse_mode="Markdown")
+        return
+
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    await r.set(SPONSOR_CHANNEL_KEY, channel_id)
+
+    # Тест проверки
+    try:
+        member = await message.bot.get_chat_member(chat_id=int(channel_id), user_id=message.from_user.id)
+        status = member.status
+        await message.answer(
+            f"✅ ID канала сохранён: `{channel_id}`\n\nТест: ваш статус в канале — `{status}`\n\n"
+            "Бот должен быть администратором канала для проверки подписчиков.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        await message.answer(
+            f"⚠️ ID сохранён: `{channel_id}`, но проверка не прошла: `{e}`\n\n"
+            "Убедитесь что бот добавлен в канал как администратор.",
+            parse_mode="Markdown",
+        )
