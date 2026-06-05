@@ -29,12 +29,42 @@ async def _get_sponsor_state() -> dict:
 
 
 async def _is_subscribed(bot, user_id: int, channel: str) -> bool:
+    """Проверить подписку через бота-чекера (HTTP).
+    Если чекер недоступен — пропускаем пользователя (fail-open).
+    """
+    from config import settings
+    import aiohttp
+
+    checker_url = settings.checker_url
+    checker_secret = settings.checker_secret
+
+    if checker_url and checker_secret:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{checker_url}/check_subscription",
+                    json={"user_id": user_id, "channel": channel},
+                    headers={"X-Secret": checker_secret},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return data.get("subscribed", True)
+                    logger.warning(
+                        "Checker returned HTTP %s for uid=%s", resp.status, user_id
+                    )
+        except Exception as e:
+            logger.warning("Checker service unavailable for uid=%s: %s", user_id, e)
+        # fail-open: чекер недоступен — не блокируем пользователя
+        return True
+
+    # Fallback: прямая проверка основным ботом (только если чекер не настроен)
     try:
         member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
         return member.status in ("member", "administrator", "creator")
     except Exception as e:
-        logger.warning("Sponsor check error for %s: %s", user_id, e)
-        return False
+        logger.warning("Direct sponsor check error for uid=%s: %s", user_id, e)
+        return True
 
 
 async def _show_sponsor(event, bot, link: str) -> None:

@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     vk_callback_confirm: str = Field(default="", env="VK_CALLBACK_CONFIRM")
     vk_callback_secret: str = Field(default="", env="VK_CALLBACK_SECRET")
     debug: bool = Field(default=False, env="DEBUG")
+    checker_bot_token: str = Field(default="", env="CHECKER_BOT_TOKEN")
+    checker_secret: str = Field(default="", env="CHECKER_SECRET")
+    checker_url: str = Field(default="http://checker:8081", env="CHECKER_URL")
 
     @property
     def admin_ids_list(self) -> list[int]:

@@ -1,12 +1,22 @@
 version: "3.9"
 
 services:
+  checker:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    command: python -m checker_bot.main
+    # Порт 8081 НЕ пробрасывается наружу — доступен только внутри Docker-сети
+
   bot:
     build: .
     env_file: .env
     depends_on:
       - postgres
       - redis
+      - checker
     restart: unless-stopped
     volumes:
       - .:/app
