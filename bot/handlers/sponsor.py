@@ -26,13 +26,22 @@ _SPONSOR_TEXT = (
 
 # ─── Вспомогательные ──────────────────────────────────────────────────────────
 
+def _decode(val) -> str:
+    """Безопасно декодировать значение из Redis (bytes или str)."""
+    if val is None:
+        return ""
+    if isinstance(val, bytes):
+        return val.decode()
+    return str(val)
+
+
 async def get_sponsor_state() -> dict:
     """Вернуть текущее состояние спонсора из Redis."""
     from bot.services.cache import get_redis
     r = await get_redis()
-    enabled = (await r.get(SPONSOR_ENABLED_KEY) or b"0").decode() == "1"
-    link    = (await r.get(SPONSOR_LINK_KEY) or b"").decode()
-    channel = (await r.get(SPONSOR_CHANNEL_KEY) or b"").decode()
+    enabled = _decode(await r.get(SPONSOR_ENABLED_KEY)) == "1"
+    link    = _decode(await r.get(SPONSOR_LINK_KEY))
+    channel = _decode(await r.get(SPONSOR_CHANNEL_KEY))
     return {"enabled": enabled, "link": link, "channel": channel}
 
 
@@ -130,7 +139,7 @@ async def cmd_sponsor_toggle(message: Message):
     await message.answer(
         f"🎯 Плашка спонсора: *{state}*\n\n"
         f"При включении все разделы бота требуют подписки на канал.\n"
-        f"Ссылка: {(await r.get(SPONSOR_LINK_KEY) or b'').decode() or 'не задана'}",
+        f"Ссылка: {_decode(await r.get(SPONSOR_LINK_KEY)) or 'не задана'}",
         parse_mode="Markdown",
     )
 
