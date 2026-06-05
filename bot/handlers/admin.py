@@ -553,13 +553,11 @@ async def cmd_unlimit(message: Message):
         await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
 
 
-# ─── Сброс12 — сбросить сессию (только для администратора) ────────────────────
+# ─── Сброс12 — сбросить сессию (доступно всем пользователям) ─────────────────
 
 @router.message(F.text.lower() == "сброс12")
 async def reset_session_admin(message: Message, user: User, session: AsyncSession):
-    """Кодовое слово — сбрасывает профиль администратора до состояния нового пользователя."""
-    if not is_admin(message.from_user.id):
-        return
+    """Кодовое слово — сбрасывает профиль до состояния нового пользователя."""
 
     try:
         from aiogram.fsm.context import FSMContext
