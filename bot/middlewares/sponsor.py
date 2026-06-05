@@ -71,6 +71,8 @@ class SponsorMiddleware(BaseMiddleware):
 
         # Получаем состояние спонсора
         sponsor = await _get_sponsor_state()
+        logger.info("SponsorMW: enabled=%s channel=%r link=%r uid=%s",
+                    sponsor["enabled"], sponsor["channel"], sponsor["link"][:20] if sponsor["link"] else "", user_id)
         if not sponsor["enabled"] or not sponsor["channel"]:
             return await handler(event, data)
 
