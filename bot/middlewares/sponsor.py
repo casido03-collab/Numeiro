@@ -95,6 +95,11 @@ class SponsorMiddleware(BaseMiddleware):
         if user_id is None:
             return await handler(event, data)
 
+        # Исключения — эти пользователи не проходят проверку
+        from config import settings
+        if user_id in settings.admin_ids_list:
+            return await handler(event, data)
+
         bot = data.get("bot") or (event.message.bot if isinstance(event, CallbackQuery) else event.bot)
 
         subscribed = await _is_subscribed(bot, user_id, sponsor["channel"])
