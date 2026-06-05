@@ -566,9 +566,8 @@ async def reset_session_admin(message: Message, user: User, session: AsyncSessio
         from sqlalchemy import delete
         from bot.models.user import UserProfile, UsageLimits, Subscription
 
-        # Очищаем дату рождения и пол
+        # Очищаем только дату рождения (gender — NOT NULL, не трогаем)
         user.birth_date = None
-        user.gender     = None
         user.first_name = message.from_user.first_name or user.first_name
 
         # Сбрасываем профиль (онбординг, личность)
