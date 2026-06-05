@@ -104,6 +104,12 @@ async def main():
     dp.message.outer_middleware(RateLimitMiddleware())
     dp.callback_query.outer_middleware(RateLimitMiddleware())
 
+    # Спонсорская проверка подписки
+    from bot.middlewares.sponsor import SponsorMiddleware
+    _sponsor_mw = SponsorMiddleware()
+    dp.message.outer_middleware(_sponsor_mw)
+    dp.callback_query.outer_middleware(_sponsor_mw)
+
     # Обновляем healthcheck-файл на каждый обработанный апдейт
     @dp.update.outer_middleware()
     async def health_touch_middleware(handler, event, data):
