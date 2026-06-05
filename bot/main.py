@@ -16,6 +16,7 @@ from bot.middlewares.user import UserMiddleware
 from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.handlers import start, profile, reading, weekly, compatibility, daily, question, dates, payments, admin, share
 from bot.handlers import onboarding, content, cabinet, referral, reports, tarot, horoscope
+from bot.handlers import sponsor as sponsor_handler
 from bot.services.scheduler import setup_scheduler
 from bot.handlers.yookassa_webhook import setup_webhook, handle_yookassa_webhook
 from bot.business_dialog.router import router as business_router, setup_business_dialog
@@ -112,8 +113,9 @@ async def main():
 
     # Роутеры
     dp.include_routers(
-        business_router,     # business_dialog — первым, отдельный update type
-        onboarding.router,   # онбординг — первым, до start
+        business_router,          # business_dialog — первым, отдельный update type
+        sponsor_handler.router,   # спонсор — вторым, перехватывает sponsor:check
+        onboarding.router,        # онбординг — первым, до start
         start.router,
         content.router,      # reply-кнопки «🔮 Меню» и «📚 Интересное»
         cabinet.router,      # reply-кнопка «💎 Подписка»

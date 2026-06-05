@@ -260,6 +260,18 @@ async def reply_menu(message: Message, user: User, state: FSMContext):
     from bot.services.menu_tracker import is_keyboard_shown, mark_keyboard_shown
     from bot.utils import show_menu_message, safe_answer_menu
 
+    # Проверка спонсорской подписки
+    from bot.handlers.sponsor import get_sponsor_state, is_subscribed, sponsor_keyboard
+    sponsor = await get_sponsor_state()
+    if sponsor["enabled"] and sponsor["channel"]:
+        subscribed = await is_subscribed(message.bot, message.from_user.id, sponsor["channel"])
+        if not subscribed:
+            await message.answer(
+                "Чтобы продолжить, подпишитесь на канал:",
+                reply_markup=sponsor_keyboard(sponsor["link"]),
+            )
+            return
+
     name = user.first_name or None
     # Клавиатуру отправляем только если она не была показана ранее
     if not await is_keyboard_shown(user.telegram_id):

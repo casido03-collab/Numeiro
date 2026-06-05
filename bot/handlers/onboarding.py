@@ -165,6 +165,16 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
 
     await mark_onboarding_done(session, user.id, interest)
 
+    # Проверяем спонсорскую плашку
+    from bot.handlers.sponsor import get_sponsor_state, show_sponsor_screen
+    sponsor = await get_sponsor_state()
+
+    if sponsor["enabled"] and sponsor["link"]:
+        await show_sponsor_screen(callback, callback.message.bot, sponsor["link"])
+        from bot.utils import ensure_keyboard
+        await ensure_keyboard(callback.message, user.telegram_id)
+        return
+
     # Сразу открываем главное меню — без промежуточного экрана
     from bot.keyboards.main import main_menu
     from bot.handlers.start import _welcome_text

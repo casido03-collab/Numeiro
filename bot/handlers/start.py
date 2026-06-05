@@ -276,6 +276,14 @@ async def _process_referral(
 
 @router.callback_query(F.data == "menu:main")
 async def menu_main(callback: CallbackQuery, user: User):
+    from bot.handlers.sponsor import get_sponsor_state, show_sponsor_screen, is_subscribed
+    sponsor = await get_sponsor_state()
+    if sponsor["enabled"] and sponsor["channel"]:
+        subscribed = await is_subscribed(callback.message.bot, callback.from_user.id, sponsor["channel"])
+        if not subscribed:
+            await show_sponsor_screen(callback, callback.message.bot, sponsor["link"])
+            return
+
     from bot.utils import replace_message, ensure_keyboard
     name = user.first_name or None
     await replace_message(callback.message, random_header(name), reply_markup=main_menu())
