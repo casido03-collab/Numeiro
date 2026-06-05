@@ -143,15 +143,35 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
     except Exception:
         logger.exception("CMD_START: state.clear() failed — continuing anyway")
 
-    # ── 2. Реферальный код (не должен ломать /start при любой ошибке) ────────
+    # ── 2. Deeplink / реферальный код ────────────────────────────────────────
     try:
         args = (message.text or "").split()
         if len(args) > 1:
-            logger.info("CMD_START: referral arg=%s", args[1])
-            await _process_referral(message, user, args[1], session)
+            arg = args[1]
+            logger.info("CMD_START: start arg=%s", arg)
+
+            # Оплата подписки бизнес-чата через Stars
+            if arg == "biz990":
+                from aiogram.types import LabeledPrice
+                await message.answer(
+                    "✨ *Подписка — работа с Бабушкой Aisha*\n\n"
+                    "Задавайте вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
+                    "💎 *990 Stars / месяц* — 3 вопроса в день",
+                    parse_mode="Markdown",
+                )
+                await message.answer_invoice(
+                    title="Работа с Бабушкой Aisha — месяц",
+                    description="3 AI-вопроса в день в личном чате с Бабушкой Aisha",
+                    payload="biz_monthly_990",
+                    currency="XTR",
+                    prices=[LabeledPrice(label="Подписка на месяц", amount=990)],
+                )
+                return
+
+            await _process_referral(message, user, arg, session)
             logger.info("CMD_START: referral processed")
     except Exception:
-        logger.exception("CMD_START: referral processing failed — continuing anyway")
+        logger.exception("CMD_START: start arg processing failed — continuing anyway")
 
     # ── 3. Онбординг или главное меню ────────────────────────────────────────
     try:

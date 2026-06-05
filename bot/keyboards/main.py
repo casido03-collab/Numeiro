@@ -125,29 +125,13 @@ def one_time_products_keyboard() -> InlineKeyboardMarkup:
 
 
 def payment_method_keyboard(product_type: str, product_key: str, stars: int, back: str = "menu:plans") -> InlineKeyboardMarkup:
-    """product_type: 'plan' or 'product'"""
-    yk = f"pay:yookassa:{product_type}:{product_key}"
+    """Только Stars — ЮКасса убрана."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Банковская карта", callback_data=yk)],
-        [InlineKeyboardButton(text="🏦 СБП", callback_data=yk)],
-        [InlineKeyboardButton(text="🟢 SberPay", callback_data=yk)],
-        [InlineKeyboardButton(text="🟡 ЮMoney", callback_data=yk)],
         [InlineKeyboardButton(
-            text=f"⭐ Telegram Stars ({stars})",
+            text=f"⭐ Оплатить {stars} Telegram Stars",
             callback_data=f"pay:stars:{product_type}:{product_key}",
         )],
         [InlineKeyboardButton(text="◀️ Назад", callback_data=back)],
-    ])
-
-
-def card_methods_keyboard(product_type: str, product_key: str) -> InlineKeyboardMarkup:
-    """Выбор конкретной платёжной системы картой."""
-    back_cb = f"buy:{product_type}:{product_key}" if product_type == "plan" else "buy:oneoff"
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏦 СБП (быстрый платёж)", callback_data=f"pay:sbp:{product_type}:{product_key}")],
-        [InlineKeyboardButton(text="💳 Visa / MasterCard", callback_data=f"pay:card_visa:{product_type}:{product_key}")],
-        [InlineKeyboardButton(text="🟡 ЮMoney", callback_data=f"pay:ymoney:{product_type}:{product_key}")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data=f"pay:method:{product_type}:{product_key}")],
     ])
 
 

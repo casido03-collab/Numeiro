@@ -1370,18 +1370,21 @@ async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: 
             f"{'Моя' if adj == 'хорошая' else 'Мой'} {adj} {name} {_emo()}\n\n"
             f"Я готова работать с вами на протяжении всего месяца и отвечать на все ваши вопросы.\n\n"
             f"Задавайте мне вопросы каждый день — я буду отвечать лично, глубоко и честно.\n\n"
-            f"✨ *Работа со мной* — 990 ₽ / месяц"
+            f"⭐ *Работа со мной* — 990 Telegram Stars / месяц"
         )
 
-        from bot.business_dialog.tribute_flow import create_tg_business_payment_link
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        from config import settings as _settings
+        bot_username = _settings.bot_token.split(":")[0]  # fallback
         try:
-            link = create_tg_business_payment_link(telegram_id, "monthly_990")
-            kb   = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💎 Оформить подписку — 990 ₽", url=link)]
-            ])
+            bot_info = await bot.get_me()
+            bot_username = bot_info.username
         except Exception:
-            kb = None
+            pass
+        deeplink = f"https://t.me/{bot_username}?start=biz990"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⭐ Оформить подписку — 990 Stars", url=deeplink)]
+        ])
 
         await set_biz_stage(telegram_id, "waiting_payment")
         send_kw: dict = {"chat_id": chat_id, "text": offer_text, "parse_mode": "Markdown"}
