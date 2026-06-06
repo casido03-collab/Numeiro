@@ -154,15 +154,6 @@ async def ob_receive_birth_date(message: Message, user: User, state: FSMContext,
 
     age = (date.today() - dt).days // 365
 
-    if age < 18:
-        await state.clear()
-        await message.answer(
-            "🔒 *Доступ ограничен*\n\n"
-            "Этот бот предназначен только для пользователей старше 18 лет.",
-            parse_mode="Markdown",
-        )
-        return
-
     if age > 100 or dt > date.today():
         await message.answer(
             "❌ Некорректная дата. Проверьте и введите снова.",

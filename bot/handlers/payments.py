@@ -63,8 +63,8 @@ async def buy_plan_choose_method(callback: CallbackQuery):
         return
 
     text = (
-        f"🛒 *Тариф {info['label']}* — {info['price']} ⭐ / {info['period']}\n\n"
-        f"Оплата через Telegram Stars:"
+        f"🛒 *Тариф {info['label']}* — {info['price']} ₽ / {info['period']}\n\n"
+        f"Выбери способ оплаты:"
     )
     await callback.message.edit_text(
         text,
@@ -88,8 +88,8 @@ async def buy_product_choose_method(callback: CallbackQuery):
         return
 
     text = (
-        f"🛒 *{info['label']}* — {info['price']} ⭐\n\n"
-        f"Оплата через Telegram Stars:"
+        f"🛒 *{info['label']}* — {info['price']} ₽\n\n"
+        f"Выбери способ оплаты:"
     )
     await callback.message.edit_text(
         text,
@@ -104,11 +104,97 @@ async def buy_product_choose_method(callback: CallbackQuery):
     await callback.answer()
 
 
-# ─── Шаг 2: ЮКасса удалена — только Stars ────────────────────────────────────
-# Старые обработчики pay:yookassa:*, pay:card:*, pay:sbp:*, pay:ymoney: удалены
+# ─── Шаг 2а: выбрана карта (ЮКасса) → запрашиваем email ─────────────────────
+
+@router.callback_query(F.data.startswith("pay:card:"))
+async def card_pay_ask_email(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")  # ['pay', 'card', type, key]
+    if len(parts) < 4:
+        await callback.answer()
+        return
+    product_type, product_key = parts[2], parts[3]
+
+    if not settings.yookassa_shop_id or not settings.yookassa_secret_key:
+        await callback.answer("❌ Оплата картой временно недоступна", show_alert=True)
+        return
+
+    await state.set_state(PaymentFSM.waiting_email)
+    await state.update_data(product_type=product_type, product_key=product_key)
+
+    await callback.message.edit_text(
+        "📧 *Введите email для получения чека:*\n\n"
+        "_Например: example@mail.ru_\n\n"
+        "После оплаты мы пришлём чек на этот адрес.",
+        parse_mode="Markdown",
+    )
+    await callback.answer()
 
 
-# ─── Шаг 2б альт: выбраны Stars → счёт ───────────────────────────────────────
+@router.message(PaymentFSM.waiting_email, ~F.text.startswith("/"))
+async def card_pay_create(message: Message, state: FSMContext, user: User):
+    email = (message.text or "").strip()
+    if not _valid_email(email):
+        await message.answer(
+            "❌ Некорректный email. Введите снова:\n\n_Например: example@mail.ru_",
+            parse_mode="Markdown",
+        )
+        return
+
+    data = await state.get_data()
+    product_type = data.get("product_type")
+    product_key  = data.get("product_key")
+    await state.clear()
+
+    info = PLAN_DISPLAY.get(product_key) or PRODUCT_DISPLAY.get(product_key)
+    if not info:
+        await message.answer("❌ Товар не найден.")
+        return
+
+    label  = info["label"]
+    amount = float(info["price"])
+    desc   = PRODUCT_DESCRIPTIONS.get(product_key, label)
+
+    try:
+        from bot.services.yookassa_service import create_payment as yk_create
+        payment = await yk_create(
+            shop_id=settings.yookassa_shop_id,
+            secret_key=settings.yookassa_secret_key,
+            amount=amount,
+            description=desc,
+            return_url=settings.yookassa_return_url,
+            metadata={
+                "user_id":       str(user.telegram_id),
+                "product_type":  product_type,
+                "product_key":   product_key,
+                "platform":      "tg",
+            },
+            email=email,
+        )
+        await message.answer(
+            f"💳 *{label}* — {int(amount)} ₽\n\n"
+            f"Нажмите кнопку чтобы перейти к оплате.\n"
+            f"После оплаты доступ откроется автоматически. ✅",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment["confirmation_url"])],
+                [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+            ]),
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error("YooKassa payment creation error: %s", e)
+        await message.answer(
+            "❌ Не удалось создать платёж. Попробуйте оплатить через Telegram Stars:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=f"⭐ Оплатить Stars",
+                    callback_data=f"pay:stars:{product_type}:{product_key}",
+                )],
+                [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+            ]),
+        )
+
+
+# ─── Шаг 2б: выбраны Stars → счёт ────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("pay:stars:"))
 async def stars_pay_invoice(callback: CallbackQuery, user: User):

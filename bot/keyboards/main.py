@@ -125,11 +125,15 @@ def one_time_products_keyboard() -> InlineKeyboardMarkup:
 
 
 def payment_method_keyboard(product_type: str, product_key: str, stars: int, back: str = "menu:plans") -> InlineKeyboardMarkup:
-    """Только Stars — ЮКасса убрана."""
+    """Выбор способа оплаты: Telegram Stars или карта через ЮКассу."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"⭐ Оплатить {stars} Telegram Stars",
+            text=f"⭐ Telegram Stars — {stars} Stars",
             callback_data=f"pay:stars:{product_type}:{product_key}",
+        )],
+        [InlineKeyboardButton(
+            text=f"💳 Картой / СБП — {stars} ₽",
+            callback_data=f"pay:card:{product_type}:{product_key}",
         )],
         [InlineKeyboardButton(text="◀️ Назад", callback_data=back)],
     ])
