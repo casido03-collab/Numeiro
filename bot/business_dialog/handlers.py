@@ -494,12 +494,16 @@ async def _send(
     biz_conn_id: str | None,
     reply_markup=None,
     parse_mode: str | None = None,
+    no_preview: bool = False,
 ) -> None:
     kwargs: dict = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
     if biz_conn_id:
         kwargs["business_connection_id"] = biz_conn_id
     if reply_markup is not None:
         kwargs["reply_markup"] = reply_markup
+    if no_preview:
+        from aiogram.types import LinkPreviewOptions
+        kwargs["link_preview_options"] = LinkPreviewOptions(is_disabled=True)
     try:
         await bot.send_message(**kwargs)
     except Exception as e:
@@ -1326,7 +1330,7 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
         "Жду вас! 🌟"
     )
     await typing_for_text(bot, chat_id, biz_conn_id, redirect_msg)
-    await _send(bot, chat_id, redirect_msg, biz_conn_id, parse_mode="HTML")
+    await _send(bot, chat_id, redirect_msg, biz_conn_id, parse_mode="HTML", no_preview=True)
 
 
 async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
