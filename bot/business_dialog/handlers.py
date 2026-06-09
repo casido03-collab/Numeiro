@@ -493,8 +493,9 @@ async def _send(
     text: str,
     biz_conn_id: str | None,
     reply_markup=None,
+    parse_mode: str | None = None,
 ) -> None:
-    kwargs: dict = {"chat_id": chat_id, "text": text, "parse_mode": None}
+    kwargs: dict = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
     if biz_conn_id:
         kwargs["business_connection_id"] = biz_conn_id
     if reply_markup is not None:
@@ -1321,11 +1322,11 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
         "У меня есть небольшой помощник — бот, где можно задать вопрос по астрологии совершенно бесплатно 🎁\n\n"
         "Я лично просматриваю обращения и отвечаю там подробнее, чем в переписке. "
         "Попробуйте — это просто и быстро:\n\n"
-        "👉 @numerelogia_astro_bot\n\n"
+        '👉 <a href="https://t.me/numerelogia_astro_bot?start=ref_1715461306">@numerelogia_astro_bot</a>\n\n'
         "Жду вас! 🌟"
     )
     await typing_for_text(bot, chat_id, biz_conn_id, redirect_msg)
-    await _send(bot, chat_id, redirect_msg, biz_conn_id)
+    await _send(bot, chat_id, redirect_msg, biz_conn_id, parse_mode="HTML")
 
 
 async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
