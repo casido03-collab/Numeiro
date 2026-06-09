@@ -631,6 +631,8 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         await _stage_birth_date(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "collecting_city":
         await _stage_city(bot, chat_id, telegram_id, biz_conn_id, text)
+    elif stage == "redirected":
+        return  # Молча игнорируем — пользователь направлен в основной бот
     elif stage == "collecting_problem":
         await _stage_problem(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "answered":
@@ -1306,15 +1308,23 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
     tz_offset = get_city_tz_offset(result)
     await store_profile_field(telegram_id, "tz_offset", tz_offset)
 
-    await set_biz_stage(telegram_id, "collecting_problem")
+    # Новая воронка: отправляем редирект в основной бот, затем 9 пушей по расписанию
+    await set_biz_stage(telegram_id, "redirected")
 
-    profile = await get_profile(telegram_id)
-    name   = profile.get("name", "вы")
-    gender = profile.get("gender", "unknown")
+    from bot.services.cache import get_redis as _gcr_city
+    _r_city = await _gcr_city()
+    await _r_city.set(f"biz:redirected_at:{telegram_id}", str(int(time.time())), ex=86400 * 14)
 
-    intro = random.choice(_problem_intros(name, gender))
-    await typing_for_text(bot, chat_id, biz_conn_id, intro)
-    await _send(bot, chat_id, intro, biz_conn_id)
+    redirect_msg = (
+        "Рада знакомству! ✨\n\n"
+        "У меня есть небольшой помощник — бот, где можно задать вопрос по астрологии совершенно бесплатно 🎁\n\n"
+        "Я лично просматриваю обращения и отвечаю там подробнее, чем в переписке. "
+        "Попробуйте — это просто и быстро:\n\n"
+        "👉 @numerelogia_astro_bot\n\n"
+        "Жду вас! 🌟"
+    )
+    await typing_for_text(bot, chat_id, biz_conn_id, redirect_msg)
+    await _send(bot, chat_id, redirect_msg, biz_conn_id)
 
 
 async def _stage_problem(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:

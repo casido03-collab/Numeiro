@@ -164,6 +164,9 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     async def _biz_morning_paid():
         await _send_biz_morning_paid(bot)
 
+    async def _biz_redirect_pushes():
+        await _send_biz_redirect_pushes(bot)
+
     # Ежедневные пуши в 9:00 МСК
     scheduler.add_job(_daily_push, CronTrigger(hour=6, minute=0))
     # Напоминания об окончании подписки в 12:00 МСК
@@ -180,8 +183,10 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     # ── Новые пуши бизнес-чата (monthly_990) ─────────────────────────────────
     # Утренний привет платным (7:00 МСК = 04:00 UTC)
     scheduler.add_job(_biz_morning_paid, CronTrigger(hour=4, minute=0))
-    # Пуши неплатным TG — 1ч/3ч/24ч с паузами между пушами
+    # Пуши неплатным TG — 1ч/3ч/24ч с паузами между пушами (legacy)
     scheduler.add_job(_biz_push_unpaid, CronTrigger(minute="*/15"))
+    # Воронка редиректа — 9 пушей для новых пользователей (стадия "redirected")
+    scheduler.add_job(_biz_redirect_pushes, CronTrigger(minute="*/15"))
     # Пуши неплатным VK
     scheduler.add_job(_vk_push_unpaid, CronTrigger(minute="*/15"))
     scheduler.add_job(_vk_morning,          CronTrigger(minute=0))
@@ -1010,6 +1015,168 @@ _MORNING_MALE_BIZ = [
     "С добрым утром, душа моя ✨\n\nЯ здесь и готова слушать. Чем могу помочь сегодня?",
     "Доброе утро, голубчик 🌟\n\nКак вы? Я готова к вашим вопросам.",
 ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ВОРОНКА РЕДИРЕКТА — 9 пушей после перенаправления в основной бот
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Задержки от момента редиректа (секунды)
+_BIZ_REDIRECT_PUSH_DELAYS = [
+    3600,    # Push 1: +1h
+    14400,   # Push 2: +4h
+    100800,  # Push 3: +28h
+    187200,  # Push 4: +52h  (Day 2)
+    273600,  # Push 5: +76h  (Day 3)
+    360000,  # Push 6: +100h (Day 4)
+    446400,  # Push 7: +124h (Day 5)
+    532800,  # Push 8: +148h (Day 6)
+    619200,  # Push 9: +172h (Day 7)
+]
+
+# Тексты пушей (Push 1 поддерживает {greeting})
+_BIZ_REDIRECT_PUSH_TEXTS = [
+    # Push 1 (+1h)
+    "🌙 {greeting}, я вспомнила одну вещь.\n\n"
+    "Многие не замечают кнопку «🎴 Карта дня», а ведь именно она часто показывает главный урок или подсказку сегодняшнего дня.\n\n"
+    "Загляните, возможно сегодня карты приготовили для Вас важное послание.\n\n"
+    "━━━━━━━━━━━━━━━",
+
+    # Push 2 (+4h)
+    "✨ Небольшой секрет.\n\n"
+    "Внутри бота можно бесплатно задать личный вопрос.\n\n"
+    "Многие спрашивают про отношения, деньги или будущее, но иногда самый сильный вопрос — "
+    "тот, который давно не даёт покоя именно Вам.\n\n"
+    "🌿 Если такой вопрос есть, не держите его в себе.\n\n"
+    "━━━━━━━━━━━━━━━",
+
+    # Push 3 (+28h)
+    "🔮 А Вы уже пробовали раздел «Энергия дня»?\n\n"
+    "Иногда одно короткое послание помогает понять, почему день складывается именно так, а не иначе.\n\n"
+    "Сегодня там уже ждёт новый ответ.\n\n"
+    "━━━━━━━━━━━━━━━",
+
+    # Push 4 (+52h, Day 2)
+    "💫 Большинство людей сразу идут в расклады и забывают про раздел «✨ Мой разбор».\n\n"
+    "А ведь именно там можно увидеть сильные стороны характера и скрытые таланты, которые заложены в дате рождения.\n\n"
+    "Иногда ответы находятся гораздо ближе, чем кажется.\n\n"
+    "━━━━━━━━━━━━━━━",
+
+    # Push 5 (+76h, Day 3)
+    "💖 Чаще всего люди приходят с вопросами об отношениях.\n\n"
+    "Если сердце сейчас занято мыслями о человеке — попробуйте раздел «💕 Совместимость».\n\n"
+    "Иногда цифры рассказывают больше слов.\n\n"
+    "━━━━━━━━━━━━━━━",
+
+    # Push 6 (+100h, Day 4)
+    "🌙 Старые знания говорят:\n\n"
+    "Когда человек долго не может принять решение, он начинает искать ответы снаружи.\n\n"
+    "Но иногда достаточно посмотреть на ситуацию под другим углом.\n\n"
+    "Для этого и существуют расклады.\n\n"
+    "━━━━━━━━━━━━━━━",
+
+    # Push 7 (+124h, Day 5)
+    "⭐ Сегодня хочу напомнить о недельном раскладе.\n\n"
+    "Он помогает увидеть не один день, а целое направление, по которому сейчас движется Ваша жизнь.\n\n"
+    "Порой именно там скрывается главный ответ.\n\n"
+    "━━━━━━━━━━━━━━━",
+
+    # Push 8 (+148h, Day 6)
+    "🔮 Многие удивляются, насколько точно дата рождения отражает характер человека.\n\n"
+    "Если Вы ещё не открывали раздел «🌟 Полная матрица судьбы», обязательно попробуйте.\n\n"
+    "Это один из самых подробных разборов в боте.\n\n"
+    "━━━━━━━━━━━━━━━",
+
+    # Push 9 (+172h, Day 7)
+    "🌿 Благодарю, что были рядом эту неделю.\n\n"
+    "Если у Вас остался вопрос, который никак не выходит из головы — задайте его в моём боте.\n\n"
+    "Иногда один ответ приходит именно тогда, когда человек готов его услышать.\n\n"
+    "━━━━━━━━━━━━━━━",
+]
+
+
+def _biz_redirect_greeting(gender: str) -> str:
+    """Гендерное обращение для пушей; нейтральное по умолчанию."""
+    if gender == "female":
+        return "Моя хорошая"
+    if gender == "male":
+        return "Мой хороший"
+    return "Душа моя"
+
+
+async def _send_biz_redirect_pushes(bot) -> None:
+    """Серия из 9 пушей для пользователей в стадии 'redirected' (новая воронка)."""
+    import logging, time
+    logger = logging.getLogger(__name__)
+    try:
+        from bot.business_dialog.session_manager import get_biz_stage, get_biz_conn, get_profile
+        from bot.business_dialog.tribute_flow import _session_maker
+        from bot.business_dialog.models import BusinessSession
+        from bot.services.cache import get_redis
+        from sqlalchemy import select
+
+        if not _session_maker:
+            return
+
+        r   = await get_redis()
+        now = int(time.time())
+
+        async with _session_maker() as session:
+            rows = (await session.execute(
+                select(BusinessSession).where(BusinessSession.status == "free")
+            )).scalars().all()
+
+        for biz_sess in rows:
+            tid = biz_sess.telegram_id
+            try:
+                stage = await get_biz_stage(tid)
+                if stage != "redirected":
+                    continue
+
+                # Время когда был отправлен редирект
+                redirected_at_raw = await r.get(f"biz:redirected_at:{tid}")
+                if not redirected_at_raw:
+                    continue
+                elapsed = now - int(redirected_at_raw)
+
+                # Сколько пушей уже отправлено
+                push_count_key = f"biz:redirect_push_count:{tid}"
+                push_count     = int(await r.get(push_count_key) or 0)
+
+                if push_count >= len(_BIZ_REDIRECT_PUSH_DELAYS):
+                    continue  # Все 9 пушей уже отправлены
+
+                # Пришло ли время следующего пуша?
+                if elapsed < _BIZ_REDIRECT_PUSH_DELAYS[push_count]:
+                    continue
+
+                # Дедупликация — каждый пуш только один раз
+                dedup = f"biz:redirect_push_dedup:{tid}:{push_count}"
+                if not await r.set(dedup, "1", nx=True, ex=86400 * 4):
+                    continue
+
+                profile     = await get_profile(tid)
+                gender      = profile.get("gender", "unknown")
+                greeting    = _biz_redirect_greeting(gender)
+                biz_conn_id = await get_biz_conn(tid)
+
+                text = _BIZ_REDIRECT_PUSH_TEXTS[push_count].replace("{greeting}", greeting)
+
+                send_kw: dict = {"chat_id": tid, "text": text}
+                if biz_conn_id:
+                    send_kw["business_connection_id"] = biz_conn_id
+                await bot.send_message(**send_kw)
+
+                new_count = await r.incr(push_count_key)
+                if new_count == 1:
+                    await r.expire(push_count_key, 86400 * 14)
+                logger.info("Biz redirect push #%d sent to %s (elapsed=%ds)", push_count + 1, tid, elapsed)
+
+            except Exception as e:
+                logger.warning("Biz redirect push error for %s: %s", tid, e)
+
+    except Exception as e:
+        logger.warning("_send_biz_redirect_pushes error: %s", e)
 
 
 async def _send_biz_push_unpaid(bot) -> None:
