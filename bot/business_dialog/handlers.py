@@ -530,8 +530,9 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
         return
 
     # ── Сообщение от владельца аккаунта (ручной ответ) — не трогаем диалог ───
+    # Исключение: BIZ_ALLOWED_IDS — эти ID обрабатываются как обычные клиенты
     from config import settings
-    if telegram_id in settings.admin_ids_list:
+    if telegram_id in settings.admin_ids_list and telegram_id not in settings.biz_allowed_ids_list:
         return
 
     # ── Блокировка на время отправки payment offer — не перебиваем поток ────────

@@ -22,12 +22,20 @@ class Settings(BaseSettings):
     checker_bot_token: str = Field(default="", env="CHECKER_BOT_TOKEN")
     checker_secret: str = Field(default="", env="CHECKER_SECRET")
     checker_url: str = Field(default="http://checker:8081", env="CHECKER_URL")
+    # ID-шники, которым разрешено писать в TG Business даже если они в admin_ids
+    biz_allowed_ids: str = Field(default="", env="BIZ_ALLOWED_IDS")
 
     @property
     def admin_ids_list(self) -> list[int]:
         if not self.admin_ids:
             return []
         return [int(x.strip()) for x in self.admin_ids.split(",") if x.strip()]
+
+    @property
+    def biz_allowed_ids_list(self) -> list[int]:
+        if not self.biz_allowed_ids:
+            return []
+        return [int(x.strip()) for x in self.biz_allowed_ids.split(",") if x.strip()]
 
     class Config:
         env_file = ".env"
