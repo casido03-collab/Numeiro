@@ -33,7 +33,18 @@ async def cmd_stats(message: Message, session: AsyncSession):
     if not is_admin(message.from_user.id):
         return
     try:
+        from bot.models.user import UserProfile
+
         total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
+
+        # Пользователи, реально прошедшие онбординг (onboarding_done = true в preferences)
+        onboarded = (await session.execute(
+            select(func.count(UserProfile.id)).where(
+                UserProfile.preferences.op("->>")(  # type: ignore[operator]
+                    "onboarding_done"
+                ) == "true"
+            )
+        )).scalar() or 0
 
         active_subs = (await session.execute(
             select(func.count(Subscription.id)).where(
@@ -43,7 +54,21 @@ async def cmd_stats(message: Message, session: AsyncSession):
         )).scalar() or 0
 
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start = today_start - timedelta(days=1)
+        week_start = today_start - timedelta(days=today_start.weekday())
         month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        new_today = (await session.execute(
+            select(func.count(User.id)).where(User.created_at >= today_start)
+        )).scalar() or 0
+        new_yesterday = (await session.execute(
+            select(func.count(User.id)).where(
+                User.created_at >= yesterday_start, User.created_at < today_start
+            )
+        )).scalar() or 0
+        new_week = (await session.execute(
+            select(func.count(User.id)).where(User.created_at >= week_start)
+        )).scalar() or 0
 
         today_revenue = (await session.execute(
             select(func.sum(Payment.amount)).where(
@@ -84,7 +109,12 @@ async def cmd_stats(message: Message, session: AsyncSession):
         text = (
             f"📊 *Статистика Aisha AI*\n"
             f"━━━━━━━━━━━━━━━\n"
-            f"👥 Всего пользователей: *{total_users}*\n"
+            f"👥 В базе: *{total_users}* (все кто написал)\n"
+            f"✅ Прошли знакомство: *{onboarded}*\n\n"
+            f"📈 *Новые пользователи:*\n"
+            f"• Сегодня: *{new_today}*\n"
+            f"• Вчера: *{new_yesterday}*\n"
+            f"• Эта неделя: *{new_week}*\n\n"
             f"💎 Активных подписок: *{active_subs}*\n\n"
             f"📋 *По тарифам:*\n"
             f"• Free: {plan_counts.get('free', 0)}\n"
@@ -550,6 +580,82 @@ async def cmd_unlimit(message: Message):
 
     except Exception as e:
         logger.exception("cmd_unlimit error")
+        await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
+
+
+# ─── /ages ────────────────────────────────────────────────────────────────────
+
+@router.message(Command("ages"))
+async def cmd_ages(message: Message, session: AsyncSession):
+    """Возраст пользователей, зарегистрировавшихся сегодня и вчера."""
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start = today_start - timedelta(days=1)
+
+        def _age_from_str(bd: str) -> int | None:
+            """Возвращает возраст из строки ДД.ММ.ГГГГ или None если не удалось распарсить."""
+            try:
+                dt = datetime.strptime(bd, "%d.%m.%Y").date()
+                today = date.today()
+                return (today - dt).days // 365
+            except Exception:
+                return None
+
+        def _age_groups(ages: list[int]) -> str:
+            if not ages:
+                return "нет данных"
+            groups = {"до 18": 0, "18–24": 0, "25–34": 0, "35–44": 0, "45–54": 0, "55+": 0}
+            for a in ages:
+                if a < 18:
+                    groups["до 18"] += 1
+                elif a <= 24:
+                    groups["18–24"] += 1
+                elif a <= 34:
+                    groups["25–34"] += 1
+                elif a <= 44:
+                    groups["35–44"] += 1
+                elif a <= 54:
+                    groups["45–54"] += 1
+                else:
+                    groups["55+"] += 1
+            lines = [f"• {k}: {v}" for k, v in groups.items() if v > 0]
+            avg = sum(ages) / len(ages)
+            lines.append(f"\nСредний возраст: *{avg:.0f}*")
+            return "\n".join(lines)
+
+        blocks = []
+        for label, start, end in [
+            ("Сегодня", today_start, None),
+            ("Вчера",   yesterday_start, today_start),
+        ]:
+            q = select(User.birth_date).where(
+                User.birth_date.isnot(None),
+                User.created_at >= start,
+            )
+            if end:
+                q = q.where(User.created_at < end)
+            rows = (await session.execute(q)).scalars().all()
+
+            ages = [a for bd in rows if (a := _age_from_str(bd)) is not None]
+            total = len(rows)
+            with_age = len(ages)
+
+            block = (
+                f"📅 *{label}*\n"
+                f"Новых с датой рождения: {with_age} / {total}\n"
+                f"{_age_groups(ages)}"
+            )
+            blocks.append(block)
+
+        await message.answer(
+            "🎂 *Возраст новых пользователей*\n━━━━━━━━━━━━━━━\n\n"
+            + "\n\n".join(blocks),
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.exception("cmd_ages error")
         await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
 
 
