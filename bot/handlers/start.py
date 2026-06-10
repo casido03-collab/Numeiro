@@ -18,23 +18,11 @@ logger = logging.getLogger(__name__)
 
 # ─── Welcome текст для /start ─────────────────────────────────────────────────
 
-def _welcome_text(name: str | None) -> str:
-    """Полный приветственный текст над главным меню (только для /start)."""
-    greeting = f"🌟 *Привет, {name}!*\n\n" if name else ""
-    return (
-        f"{greeting}"
-        f"✨ Добро пожаловать в *Aisha AI* — Компаньон собранный по многолетним наработкам Бабушки Аиши\n\n"
-        f"Здесь вас ждёт:\n\n"
-        f"🔯 *Гороскоп* — ежедневный знак зодиака и послание звёзд\n"
-        f"⚡️ *Энергия дня* — ежедневный бесплатный прогноз\n"
-        f"✨ *Мой разбор* — нумерологический анализ по дате рождения _(Лимитированный бесплатный доступ)_\n"
-        f"🌟 *Матрица судьбы* — глубокий разбор арканов и энергий\n"
-        f"📅 *Прогноз на неделю* — по любой сфере жизни\n"
-        f"💞 *Совместимость* — числа двух людей\n"
-        f"🔮 *Вопрос Тарологу* — личный вопрос Бабушке Aisha\n\n"
-        f"Всё основано на нумерологии, матрице судьбы, а AI интеллект помогает интерпретировать мысли Бабушки Аиши в понятный язык для каждого.\n\n"
-        f"_Выберите, с чего начать:_"
-    )
+def _welcome_text(name: str | None, lang: str = "ru") -> str:
+    """Полный приветственный текст над главным меню."""
+    from bot.i18n.translations import t
+    greeting = f"🌟 *{name}!*\n\n" if name else ""
+    return greeting + t("welcome", lang)
 
 # ─── Dynamic headers ──────────────────────────────────────────────────────────
 
@@ -129,7 +117,7 @@ PLANS_TEXT = """📜 <b>Тарифы Aisha AI</b>
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, user: User, session: AsyncSession, state: FSMContext):
+async def cmd_start(message: Message, user: User, session: AsyncSession, state: FSMContext, lang: str = "ru"):
     t0 = time.monotonic()
     tg_id = message.from_user.id
     # Имя берём из Telegram-объекта — оно никогда не None в отличие от user.first_name
@@ -184,8 +172,22 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
     if not onboarding_done:
         logger.info("CMD_START: ONBOARDING STEP START")
         try:
-            await start_onboarding(message, user)
-            logger.info("CMD_START: ONBOARDING MESSAGE SENT")
+            # Проверяем — выбран ли язык явно
+            from bot.models.user import UserProfile
+            from bot.handlers.lang_select import send_lang_selection
+            pr = await session.execute(
+                select(UserProfile).where(UserProfile.user_id == user.id)
+            )
+            ob_profile = pr.scalar_one_or_none()
+            explicit_lang = None
+            if ob_profile and ob_profile.preferences:
+                explicit_lang = ob_profile.preferences.get("lang")
+
+            if explicit_lang:
+                await start_onboarding(message, user, explicit_lang)
+            else:
+                await send_lang_selection(message)
+            logger.info("CMD_START: ONBOARDING MESSAGE SENT (lang=%s)", explicit_lang or "selecting")
         except Exception:
             logger.exception("CMD_START: start_onboarding failed — showing fallback menu")
             await _send_fallback_menu(message, name)
@@ -206,8 +208,8 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
 
         await show_menu_message(
             message, tg_id,
-            _welcome_text(name),
-            main_menu(),
+            _welcome_text(name, lang),
+            main_menu(lang),
             force_new=True,
             fast=True,
         )
@@ -275,7 +277,7 @@ async def _process_referral(
 
 
 @router.callback_query(F.data == "menu:main")
-async def menu_main(callback: CallbackQuery, user: User):
+async def menu_main(callback: CallbackQuery, user: User, lang: str = "ru"):
     from bot.handlers.sponsor import get_sponsor_state, show_sponsor_screen, is_subscribed
     sponsor = await get_sponsor_state()
     if sponsor["enabled"] and sponsor["channel"]:
@@ -286,21 +288,22 @@ async def menu_main(callback: CallbackQuery, user: User):
 
     from bot.utils import replace_message, ensure_keyboard
     name = user.first_name or None
-    await replace_message(callback.message, random_header(name), reply_markup=main_menu())
+    await replace_message(callback.message, random_header(name), reply_markup=main_menu(lang))
     await ensure_keyboard(callback.message, user.telegram_id)
     await callback.answer()
 
 
 @router.callback_query(F.data == "menu:plans")
-async def menu_plans(callback: CallbackQuery, user: User, session: AsyncSession):
+async def menu_plans(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
+    from bot.i18n.translations import t
     plan = await get_user_plan(session, user.id)
     plan_names = {
-        "free": "Бесплатный",
-        "lite": "Lite",
+        "free":    t("plan_free_name", lang),
+        "lite":    "Lite",
         "premium": "Premium",
-        "pro": "Pro",
+        "pro":     "Pro",
     }
-    current = plan_names.get(plan, "Бесплатный")
+    current = plan_names.get(plan, t("plan_free_name", lang))
     text = PLANS_TEXT.format(current_plan=current)
-    await callback.message.edit_text(text, reply_markup=plans_keyboard(), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=plans_keyboard(lang), parse_mode="HTML")
     await callback.answer()

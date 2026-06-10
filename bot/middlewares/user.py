@@ -72,5 +72,32 @@ class UserMiddleware(BaseMiddleware):
                 await session.commit()
 
         data["user"] = user
-        logger.info("USER_MW: USER LOADED OR CREATED id=%s", user.id)
+
+        # ── Загружаем язык пользователя ──────────────────────────────────────
+        try:
+            from bot.services.cache import get_redis
+            redis = await get_redis()
+            lang_key = f"user:lang:{tg_user.id}"
+            cached = await redis.get(lang_key)
+            if cached:
+                data["lang"] = cached.decode() if isinstance(cached, bytes) else cached
+            else:
+                # Загружаем из БД и кэшируем
+                pr = await session.execute(
+                    select(UserProfile).where(UserProfile.user_id == user.id)
+                )
+                profile = pr.scalar_one_or_none()
+                lang = "ru"
+                if profile and profile.preferences:
+                    stored = profile.preferences.get("lang")
+                    if stored:
+                        lang = stored
+                        # Кэшируем только если явно выбран язык
+                        await redis.set(lang_key, lang, ex=86400 * 30)
+                data["lang"] = lang
+        except Exception as e:
+            logger.warning("USER_MW: failed to load lang for %s: %s", tg_user.id, e)
+            data["lang"] = "ru"
+
+        logger.info("USER_MW: USER LOADED OR CREATED id=%s lang=%s", user.id, data.get("lang", "ru"))
         return await handler(event, data)

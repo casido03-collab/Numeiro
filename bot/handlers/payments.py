@@ -55,7 +55,7 @@ PRODUCT_DESCRIPTIONS = {
 # ─── Шаг 1: нажатие кнопки тарифа / продукта → выбор метода ──────────────────
 
 @router.callback_query(F.data.startswith("buy:plan:"))
-async def buy_plan_choose_method(callback: CallbackQuery):
+async def buy_plan_choose_method(callback: CallbackQuery, lang: str = "ru"):
     plan_key = callback.data.split(":")[-1]
     info = PLAN_DISPLAY.get(plan_key)
     if not info:
@@ -73,6 +73,7 @@ async def buy_plan_choose_method(callback: CallbackQuery):
             product_key=plan_key,
             stars=info["price"],
             back="menu:plans",
+            lang=lang,
         ),
         parse_mode="Markdown",
     )
@@ -80,7 +81,7 @@ async def buy_plan_choose_method(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("buy:product:"))
-async def buy_product_choose_method(callback: CallbackQuery):
+async def buy_product_choose_method(callback: CallbackQuery, lang: str = "ru"):
     product_key = callback.data.split(":")[-1]
     info = PRODUCT_DISPLAY.get(product_key)
     if not info:
@@ -98,6 +99,7 @@ async def buy_product_choose_method(callback: CallbackQuery):
             product_key=product_key,
             stars=info["price"],
             back="buy:oneoff",
+            lang=lang,
         ),
         parse_mode="Markdown",
     )
@@ -226,7 +228,7 @@ async def stars_pay_invoice(callback: CallbackQuery, user: User):
 # ─── Навигация: назад к методам оплаты (из выбора карточной системы) ─────────
 
 @router.callback_query(F.data.startswith("pay:method:"))
-async def back_to_pay_method(callback: CallbackQuery):
+async def back_to_pay_method(callback: CallbackQuery, lang: str = "ru"):
     parts = callback.data.split(":")  # ['pay', 'method', type, key]
     if len(parts) < 4:
         await callback.answer()
@@ -242,7 +244,7 @@ async def back_to_pay_method(callback: CallbackQuery):
 
     await callback.message.edit_text(
         f"🛒 *{label}* — {price} ₽{suffix}\n\nВыбери способ оплаты:",
-        reply_markup=payment_method_keyboard(product_type, product_key, price, back_cb),
+        reply_markup=payment_method_keyboard(product_type, product_key, price, back_cb, lang=lang),
         parse_mode="Markdown",
     )
     await callback.answer()

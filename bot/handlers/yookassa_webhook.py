@@ -88,10 +88,10 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
                                 logger.warning("monthly_990 confirm failed: %s", e)
                         logger.info("TG monthly_990 activated: tid=%s", telegram_id)
                     else:
-                        from bot.business_dialog.tribute_flow import _process_payment, _session_maker as _trib_sm
+                        from bot.business_dialog.tribute_flow import _process_payment as _biz_process_payment, _session_maker as _trib_sm
                         if _trib_sm:
                             async with _trib_sm() as session:
-                                await _process_payment(session, telegram_id, payment_id, amount, tier_key)
+                                await _biz_process_payment(session, telegram_id, payment_id, amount, tier_key)
                             logger.info("TG business payment processed: tid=%s tier=%s", telegram_id, tier_key)
             return web.Response(status=200)
 
@@ -109,9 +109,8 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
         # Защита от двойной обработки через Redis
         from bot.services.cache import get_redis
         redis = await get_redis()
-        already_processed = await redis.set(
-            f"yk_paid:{payment_id}", "1", nx=True, ex=3600 * 24
-        )
+        dedup_key = f"yk_paid:{payment_id}"
+        already_processed = await redis.set(dedup_key, "1", nx=True, ex=3600 * 24)
         if not already_processed:
             logger.warning("Webhook: payment %s already processed, skip", payment_id)
             return web.Response(status=200)
@@ -120,14 +119,19 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
             "Webhook: processing TG payment uid=%s type=%s key=%s amount=%s payment_id=%s",
             user_telegram_id, product_type, product_key, amount, payment_id,
         )
-        await _process_payment(
-            telegram_id=int(user_telegram_id),
-            product_type=product_type,
-            product_key=product_key,
-            amount=amount,
-            payment_id=payment_id,
-        )
-        logger.info("Webhook: TG payment processed OK uid=%s payment_id=%s", user_telegram_id, payment_id)
+        try:
+            await _process_payment(
+                telegram_id=int(user_telegram_id),
+                product_type=product_type,
+                product_key=product_key,
+                amount=amount,
+                payment_id=payment_id,
+            )
+            logger.info("Webhook: TG payment processed OK uid=%s payment_id=%s", user_telegram_id, payment_id)
+        except Exception:
+            # Если обработка упала — удаляем ключ, чтобы следующий ретрай от ЮКассы смог пройти
+            await redis.delete(dedup_key)
+            raise
 
     except Exception:
         logger.exception("YooKassa webhook error")

@@ -517,11 +517,12 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     if not message.from_user:
         return
 
-    telegram_id = message.from_user.id
-    chat_id     = message.chat.id
-    text        = (message.text or "").strip()
-    biz_conn_id = message.business_connection_id
-    username    = message.from_user.username
+    telegram_id   = message.from_user.id
+    chat_id       = message.chat.id
+    text          = (message.text or "").strip()
+    biz_conn_id   = message.business_connection_id
+    username      = message.from_user.username
+    language_code = (message.from_user.language_code or "ru").lower()[:2]
 
     # ── Нетекстовые сообщения (стикеры, фото, голос и т.д.) ─────────────────
     if not text:
@@ -636,7 +637,7 @@ async def handle_business_message(message: Message, bot: Bot) -> None:
     elif stage == "collecting_birth_date":
         await _stage_birth_date(bot, chat_id, telegram_id, biz_conn_id, text)
     elif stage == "collecting_city":
-        await _stage_city(bot, chat_id, telegram_id, biz_conn_id, text)
+        await _stage_city(bot, chat_id, telegram_id, biz_conn_id, text, language_code)
     elif stage == "redirected":
         return  # Молча игнорируем — пользователь направлен в основной бот
     elif stage == "collecting_problem":
@@ -1299,7 +1300,25 @@ def _problem_intros(name: str, gender: str = "unknown") -> list[str]:
     ]
 
 
-async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str) -> None:
+def _detect_biz_lang(language_code: str) -> str:
+    """Определить язык редиректа по language_code Telegram."""
+    _RU_ADJACENT = {"ru", "uk", "be"}
+    lc = (language_code or "").lower()[:2]
+    if lc in _RU_ADJACENT:
+        return "ru"
+    if lc in ("fa", "tr"):
+        return lc
+    return "en"
+
+
+async def _stage_city(
+    bot: Bot,
+    chat_id: int,
+    telegram_id: int,
+    biz_conn_id: str | None,
+    text: str,
+    language_code: str = "ru",
+) -> None:
     ok, result = validate_city(text)
     if not ok:
         error_msg = CITY_ERRORS.get(result, f"Напишите название города {_emo()}")
@@ -1321,14 +1340,11 @@ async def _stage_city(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str
     _r_city = await _gcr_city()
     await _r_city.set(f"biz:redirected_at:{telegram_id}", str(int(time.time())), ex=86400 * 14)
 
-    redirect_msg = (
-        "Рада знакомству! ✨\n\n"
-        "У меня есть небольшой помощник — бот, где можно задать вопрос по астрологии совершенно бесплатно 🎁\n\n"
-        "Я лично просматриваю обращения и отвечаю там подробнее, чем в переписке. "
-        "Попробуйте — это просто и быстро:\n\n"
-        '👉 <a href="https://t.me/numerelogia_astro_bot?start=ref_1715461306">@numerelogia_astro_bot</a>\n\n'
-        "Жду вас! 🌟"
-    )
+    # Определяем язык по коду Telegram-клиента пользователя
+    from bot.i18n.translations import t as _t
+    lang = _detect_biz_lang(language_code)
+    redirect_msg = _t("biz_redirect_msg", lang)
+
     await typing_for_text(bot, chat_id, biz_conn_id, redirect_msg)
     await _send(bot, chat_id, redirect_msg, biz_conn_id, parse_mode="HTML", no_preview=True)
 

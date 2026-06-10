@@ -9,6 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from bot.models.user import User, UserProfile
+from bot.i18n.translations import t
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -41,77 +42,52 @@ async def mark_onboarding_done(session: AsyncSession, user_id: int, interest: st
         await session.commit()
 
 
-# ─── Экраны онбординга ────────────────────────────────────────────────────────
+# ─── Клавиатуры онбординга ────────────────────────────────────────────────────
 
-def _screen1_kb() -> InlineKeyboardMarkup:
+def _screen1_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✨ Продолжить", callback_data="ob:2")]
+        [InlineKeyboardButton(text=t("ob_btn_continue", lang), callback_data="ob:2")]
     ])
 
 
-def _screen2_kb() -> InlineKeyboardMarkup:
+def _screen2_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❤️ Отношения", callback_data="ob:3:love")],
-        [InlineKeyboardButton(text="🌙 Прогнозы", callback_data="ob:3:forecast")],
-        [InlineKeyboardButton(text="🔮 Самопознание", callback_data="ob:3:self")],
+        [InlineKeyboardButton(text=t("ob_btn_love", lang),     callback_data="ob:3:love")],
+        [InlineKeyboardButton(text=t("ob_btn_forecast", lang), callback_data="ob:3:forecast")],
+        [InlineKeyboardButton(text=t("ob_btn_self", lang),     callback_data="ob:3:self")],
     ])
 
 
-def _screen3_kb() -> InlineKeyboardMarkup:
+def _screen3_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✨ Узнать больше", callback_data="ob:4")]
+        [InlineKeyboardButton(text=t("ob_btn_learn_more", lang), callback_data="ob:4")]
     ])
 
 
-def _screen4_kb() -> InlineKeyboardMarkup:
+def _screen4_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❤️ Отношения", callback_data="ob:5:love")],
-        [InlineKeyboardButton(text="💰 Деньги", callback_data="ob:5:money")],
-        [InlineKeyboardButton(text="🌙 Будущее", callback_data="ob:5:future")],
-        [InlineKeyboardButton(text="🧠 Самопознание", callback_data="ob:5:self")],
+        [InlineKeyboardButton(text=t("ob_btn_love", lang),     callback_data="ob:5:love")],
+        [InlineKeyboardButton(text=t("ob_btn_money", lang),    callback_data="ob:5:money")],
+        [InlineKeyboardButton(text=t("ob_btn_future", lang),   callback_data="ob:5:future")],
+        [InlineKeyboardButton(text=t("ob_btn_self", lang),     callback_data="ob:5:self")],
     ])
 
 
-def _screen_trial_kb() -> InlineKeyboardMarkup:
+def _screen_trial_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚡ Энергия дня", callback_data="menu:daily")],
-        [InlineKeyboardButton(text="✨ Мой разбор", callback_data="free:start")],
-        [InlineKeyboardButton(text="◀️ Открыть меню", callback_data="ob:open_menu")],
+        [InlineKeyboardButton(text=t("menu_daily", lang),      callback_data="menu:daily")],
+        [InlineKeyboardButton(text=t("menu_reading", lang),    callback_data="free:start")],
+        [InlineKeyboardButton(text=t("ob_btn_open_menu", lang), callback_data="ob:open_menu")],
     ])
 
 
-SCREEN3_TEXTS = {
-    "love": (
-        "❤️ *Многие люди приходят сюда именно из-за отношений.*\n\n"
-        "Иногда между людьми возникает необъяснимая связь.\n"
-        "А иногда судьба словно специально сталкивает нас с определёнными людьми.\n\n"
-        "✨ Возможно, некоторые ответы уже ждут вас."
-    ),
-    "forecast": (
-        "🌙 *Некоторые периоды ощущаются особенно странно.*\n\n"
-        "Иногда энергия словно меняется:\n"
-        "меняется настроение, мысли и даже люди вокруг.\n\n"
-        "Многие замечают это ещё до важных событий."
-    ),
-    "self": (
-        "🔮 *Иногда человеку достаточно одного ответа,*\n"
-        "чтобы посмотреть на свою жизнь под другим углом.\n\n"
-        "Нумерология и энергетические практики помогают лучше понять:\n"
-        "• свои сильные стороны\n"
-        "• внутренние циклы\n"
-        "• повторяющиеся события"
-    ),
-}
+# ─── Запуск онбординга ────────────────────────────────────────────────────────
 
-
-async def start_onboarding(message, user: User):
+async def start_onboarding(message, user: User, lang: str = "ru"):
     """Запустить онбординг — показать первый экран."""
     await message.answer(
-        "✨ *Иногда жизнь приводит нас сюда не случайно.*\n\n"
-        "Многие замечают повторяющиеся числа, странные совпадения и внутреннее чувство,\n"
-        "будто впереди что-то меняется.\n\n"
-        "Возможно, именно сейчас для вас начинается новый этап.",
-        reply_markup=_screen1_kb(),
+        t("ob_screen1", lang),
+        reply_markup=_screen1_kb(lang),
         parse_mode="Markdown",
     )
 
@@ -119,24 +95,26 @@ async def start_onboarding(message, user: User):
 # ─── Обработчики экранов ──────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "ob:2")
-async def ob_screen2(callback: CallbackQuery, state: FSMContext):
-    """Шаг 2 — запрос даты рождения для проверки возраста."""
+async def ob_screen2(callback: CallbackQuery, state: FSMContext, lang: str = "ru"):
+    """Шаг 2 — запрос даты рождения."""
     await callback.message.edit_text(
-        "📅 *Для персонального разбора мне нужна ваша дата рождения.*\n\n"
-        "Напишите её в формате: *ДД.ММ.ГГГГ*\n\n"
-        "_Например: 15.03.1990_",
+        t("ob_screen2", lang),
         parse_mode="Markdown",
     )
     await state.set_state(OnboardingFSM.waiting_birth_date)
+    # Сохраняем lang в FSM чтобы использовать при получении даты
+    await state.update_data(lang=lang)
     await callback.answer()
 
 
 @router.message(OnboardingFSM.waiting_birth_date, ~F.text.startswith("/"))
 async def ob_receive_birth_date(message: Message, user: User, state: FSMContext, session: AsyncSession):
-    """Получаем дату рождения, проверяем возраст, продолжаем онбординг."""
+    """Получаем дату рождения, проверяем, продолжаем онбординг."""
+    fsm_data = await state.get_data()
+    lang = fsm_data.get("lang", "ru")
+
     text = (message.text or "").strip()
 
-    # Парсим дату
     dt = None
     for fmt in ["%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y"]:
         try:
@@ -146,19 +124,13 @@ async def ob_receive_birth_date(message: Message, user: User, state: FSMContext,
             continue
 
     if dt is None:
-        await message.answer(
-            "❌ Не могу распознать дату. Введите в формате *ДД.ММ.ГГГГ*\n\nНапример: *15.03.1990*",
-            parse_mode="Markdown",
-        )
+        await message.answer(t("ob_date_invalid", lang), parse_mode="Markdown")
         return
 
     age = (date.today() - dt).days // 365
 
     if age > 100 or dt > date.today():
-        await message.answer(
-            "❌ Некорректная дата. Проверьте и введите снова.",
-            parse_mode="Markdown",
-        )
+        await message.answer(t("ob_date_invalid_range", lang), parse_mode="Markdown")
         return
 
     # Сохраняем дату рождения
@@ -166,53 +138,53 @@ async def ob_receive_birth_date(message: Message, user: User, state: FSMContext,
     await session.commit()
 
     await state.clear()
+    # Восстанавливаем lang после clear (он потерялся вместе с FSM)
+    # lang уже получен выше из fsm_data — используем его дальше
 
-    # Продолжаем онбординг — показываем выбор темы
+    # Продолжаем онбординг — выбор темы
     await message.answer(
-        "🔮 *Этот бот объединяет:*\n\n"
-        "• нумерологию\n"
-        "• совместимость\n"
-        "• энергетические прогнозы\n"
-        "• расклады\n"
-        "• личные вопросы\n\n"
-        "Чтобы помочь вам лучше понять:\n"
-        "себя, отношения и происходящие события.\n\n"
-        "_Что привело вас сюда?_",
-        reply_markup=_screen2_kb(),
+        t("ob_screen3_intro", lang),
+        reply_markup=_screen2_kb(lang),
         parse_mode="Markdown",
     )
 
 
 @router.callback_query(F.data.startswith("ob:3:"))
-async def ob_screen3(callback: CallbackQuery):
+async def ob_screen3(callback: CallbackQuery, lang: str = "ru"):
     interest = callback.data.split(":")[-1]
-    text = SCREEN3_TEXTS.get(interest, SCREEN3_TEXTS["self"])
-    await callback.message.edit_text(text, reply_markup=_screen3_kb(), parse_mode="Markdown")
+    # Выбираем ключ перевода по теме
+    key_map = {
+        "love":     "ob_screen3_love",
+        "forecast": "ob_screen3_forecast",
+        "self":     "ob_screen3_self",
+    }
+    key = key_map.get(interest, "ob_screen3_self")
+    text = t(key, lang)
+    await callback.message.edit_text(text, reply_markup=_screen3_kb(lang), parse_mode="Markdown")
     await callback.answer()
 
 
 @router.callback_query(F.data == "ob:4")
-async def ob_screen4(callback: CallbackQuery):
+async def ob_screen4(callback: CallbackQuery, lang: str = "ru"):
     await callback.message.edit_text(
-        "✨ *Перед тем как открыть доступ к функциям,*\n"
-        "выберите что вас интересует сейчас больше всего:",
-        reply_markup=_screen4_kb(),
+        t("ob_screen4", lang),
+        reply_markup=_screen4_kb(lang),
         parse_mode="Markdown",
     )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("ob:5:"))
-async def ob_screen5_animation(callback: CallbackQuery, user: User, session: AsyncSession):
+async def ob_screen5_animation(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     interest = callback.data.split(":")[-1]
 
     # Анимация ожидания
     try:
-        await callback.message.edit_text("✨ Анализирую вашу энергетику...")
+        await callback.message.edit_text(t("ob_anim_1", lang))
         await asyncio.sleep(1.5)
-        await callback.message.edit_text("🌙 Считываю энергетические линии...")
+        await callback.message.edit_text(t("ob_anim_2", lang))
         await asyncio.sleep(1.5)
-        await callback.message.edit_text("🔮 Формирую персональное пространство...")
+        await callback.message.edit_text(t("ob_anim_3", lang))
         await asyncio.sleep(1.5)
     except Exception as e:
         logger.warning("Onboarding animation error: %s", e)
@@ -229,7 +201,7 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
         await ensure_keyboard(callback.message, user.telegram_id)
         return
 
-    # Сразу открываем главное меню — без промежуточного экрана
+    # Открываем главное меню
     from bot.keyboards.main import main_menu
     from bot.handlers.start import _welcome_text
     from bot.services.menu_tracker import set_menu_msg_id
@@ -237,8 +209,8 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
 
     name = user.first_name or None
     await callback.message.edit_text(
-        _welcome_text(name),
-        reply_markup=main_menu(),
+        _welcome_text(name, lang),
+        reply_markup=main_menu(lang),
         parse_mode="Markdown",
     )
     await set_menu_msg_id(user.telegram_id, callback.message.message_id)
@@ -247,8 +219,8 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
 
 
 @router.callback_query(F.data == "ob:open_menu")
-async def ob_open_menu(callback: CallbackQuery, user: User):
-    """Завершить онбординг → главное меню с полным welcome-текстом как /start."""
+async def ob_open_menu(callback: CallbackQuery, user: User, lang: str = "ru"):
+    """Завершить онбординг → главное меню."""
     from bot.keyboards.main import main_menu
     from bot.handlers.start import _welcome_text
     from bot.services.menu_tracker import set_menu_msg_id
@@ -256,14 +228,11 @@ async def ob_open_menu(callback: CallbackQuery, user: User):
 
     name = user.first_name or None
 
-    # Редактируем последнее сообщение онбординга в полное приветствие (/start-стиль)
     await callback.message.edit_text(
-        _welcome_text(name),
-        reply_markup=main_menu(),
+        _welcome_text(name, lang),
+        reply_markup=main_menu(lang),
         parse_mode="Markdown",
     )
-    # Отслеживаем как меню-сообщение
     await set_menu_msg_id(user.telegram_id, callback.message.message_id)
-    # Reply keyboard — только 1 раз за всё время
     await ensure_keyboard(callback.message, user.telegram_id)
     await callback.answer()

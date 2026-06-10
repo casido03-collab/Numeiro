@@ -1,27 +1,28 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from bot.i18n.translations import t
 
 
 # ─── Главное меню ──────────────────────────────────────────────────────────────
 
-def main_menu() -> InlineKeyboardMarkup:
+def main_menu(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🔯 Гороскоп", callback_data="menu:horoscope"),
-            InlineKeyboardButton(text="🃏 Карта дня", callback_data="menu:tarot"),
+            InlineKeyboardButton(text=t("menu_horoscope", lang),     callback_data="menu:horoscope"),
+            InlineKeyboardButton(text=t("menu_tarot", lang),         callback_data="menu:tarot"),
         ],
         [
-            InlineKeyboardButton(text="⚡ Энергия дня", callback_data="menu:daily"),
-            InlineKeyboardButton(text="✨ Мой разбор", callback_data="menu:reading"),
+            InlineKeyboardButton(text=t("menu_daily", lang),         callback_data="menu:daily"),
+            InlineKeyboardButton(text=t("menu_reading", lang),       callback_data="menu:reading"),
         ],
-        [InlineKeyboardButton(text="🌟 Полная матрица судьбы", callback_data="matrix:start")],
-        [InlineKeyboardButton(text="📅 Расклад на неделю", callback_data="menu:weekly")],
-        [InlineKeyboardButton(text="💞 Совместимость", callback_data="menu:compatibility")],
-        [InlineKeyboardButton(text="🔮 Задать вопрос Бабушке Aisha", callback_data="menu:question")],
-        [InlineKeyboardButton(text="📆 Подбор дат", callback_data="menu:dates")],
-        [InlineKeyboardButton(text="⭐ Отзывы", url="https://t.me/ezoterika_aisha")],
+        [InlineKeyboardButton(text=t("menu_matrix", lang),           callback_data="matrix:start")],
+        [InlineKeyboardButton(text=t("menu_weekly", lang),           callback_data="menu:weekly")],
+        [InlineKeyboardButton(text=t("menu_compatibility", lang),    callback_data="menu:compatibility")],
+        [InlineKeyboardButton(text=t("menu_question", lang),         callback_data="menu:question")],
+        [InlineKeyboardButton(text=t("menu_dates", lang),            callback_data="menu:dates")],
+        [InlineKeyboardButton(text=t("menu_reviews", lang),          url="https://t.me/ezoterika_aisha")],
         [
-            InlineKeyboardButton(text="📜 Тарифы", callback_data="menu:plans"),
-            InlineKeyboardButton(text="🌀 История", callback_data="reports:menu"),
+            InlineKeyboardButton(text=t("menu_plans", lang),         callback_data="menu:plans"),
+            InlineKeyboardButton(text=t("menu_history", lang),       callback_data="reports:menu"),
         ],
     ])
 
@@ -103,40 +104,51 @@ def event_type_menu() -> InlineKeyboardMarkup:
 
 # ─── Тарифы ────────────────────────────────────────────────────────────────────
 
-def plans_keyboard() -> InlineKeyboardMarkup:
+def plans_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💫 Lite — 299 ₽ / 7 дней", callback_data="buy:plan:lite")],
-        [InlineKeyboardButton(text="🌟 Premium — 999 ₽ / месяц", callback_data="buy:plan:premium")],
-        [InlineKeyboardButton(text="🔥 Pro — 1 499 ₽ / месяц", callback_data="buy:plan:pro")],
-        [InlineKeyboardButton(text="💎 Разовые покупки", callback_data="buy:oneoff")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
+        [InlineKeyboardButton(text=t("plan_btn_lite", lang),    callback_data="buy:plan:lite")],
+        [InlineKeyboardButton(text=t("plan_btn_premium", lang), callback_data="buy:plan:premium")],
+        [InlineKeyboardButton(text=t("plan_btn_pro", lang),     callback_data="buy:plan:pro")],
+        [InlineKeyboardButton(text=t("plan_btn_oneoff", lang),  callback_data="buy:oneoff")],
+        [InlineKeyboardButton(text=t("btn_back", lang),         callback_data="menu:main")],
     ])
 
 
-def one_time_products_keyboard() -> InlineKeyboardMarkup:
+def one_time_products_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌟 Матрица судьбы — 299 ₽", callback_data="buy:product:full_matrix")],
-        [InlineKeyboardButton(text="💞 Совместимость — 199 ₽", callback_data="buy:product:compatibility")],
-        [InlineKeyboardButton(text="📅 Расклад на неделю — 199 ₽", callback_data="buy:product:weekly_report")],
-        [InlineKeyboardButton(text="❓ Личный вопрос — 99 ₽", callback_data="buy:product:personal_question")],
-        [InlineKeyboardButton(text="📆 Подбор дат — 199 ₽", callback_data="buy:product:date_selection")],
-        [InlineKeyboardButton(text="◀️ Назад к тарифам", callback_data="menu:plans")],
+        [InlineKeyboardButton(text=t("product_btn_matrix", lang),   callback_data="buy:product:full_matrix")],
+        [InlineKeyboardButton(text=t("product_btn_compat", lang),   callback_data="buy:product:compatibility")],
+        [InlineKeyboardButton(text=t("product_btn_weekly", lang),   callback_data="buy:product:weekly_report")],
+        [InlineKeyboardButton(text=t("product_btn_question", lang), callback_data="buy:product:personal_question")],
+        [InlineKeyboardButton(text=t("product_btn_dates", lang),    callback_data="buy:product:date_selection")],
+        [InlineKeyboardButton(text=t("btn_back_to_plans", lang),    callback_data="menu:plans")],
     ])
 
 
-def payment_method_keyboard(product_type: str, product_key: str, stars: int, back: str = "menu:plans") -> InlineKeyboardMarkup:
-    """Выбор способа оплаты: Telegram Stars или карта через ЮКассу."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+def payment_method_keyboard(
+    product_type: str,
+    product_key: str,
+    stars: int,
+    back: str = "menu:plans",
+    lang: str = "ru",
+) -> InlineKeyboardMarkup:
+    """Выбор способа оплаты.
+    Для не-RU пользователей: только Telegram Stars (без карты/СБП).
+    """
+    buttons = [
         [InlineKeyboardButton(
-            text=f"⭐ Telegram Stars — {stars} Stars",
+            text=t("pay_btn_stars", lang).format(stars=stars),
             callback_data=f"pay:stars:{product_type}:{product_key}",
         )],
-        [InlineKeyboardButton(
+    ]
+    # Карта/СБП доступна только для RU
+    if lang == "ru":
+        buttons.append([InlineKeyboardButton(
             text=f"💳 Картой / СБП — {stars} ₽",
             callback_data=f"pay:card:{product_type}:{product_key}",
-        )],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data=back)],
-    ])
+        )])
+    buttons.append([InlineKeyboardButton(text=t("btn_back", lang), callback_data=back)])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 # ─── После ответа ──────────────────────────────────────────────────────────────
