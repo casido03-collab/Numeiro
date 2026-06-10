@@ -52,17 +52,22 @@ def _return_keyboard(callback_data: str):
 
 @router.callback_query(F.data.startswith("birth_date:collect:"))
 async def collect_birth_date_for_section(
-    callback: CallbackQuery, user: User, state: FSMContext, session: AsyncSession
+    callback: CallbackQuery, user: User, state: FSMContext, session: AsyncSession, lang: str = "ru"
 ):
     """Запросить дату рождения и после сохранения вернуть в нужный раздел."""
     return_to = callback.data[len("birth_date:collect:"):]
 
     if user.birth_date:
-        # Дата уже есть — сразу в нужный раздел
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         label = _SECTION_LABELS.get(return_to, "▶️ Продолжить")
+        _already = {
+            "ru": "✅ Дата рождения уже указана. Нажмите чтобы продолжить:",
+            "en": "✅ Birth date is already set. Press to continue:",
+            "fa": "✅ تاریخ تولد قبلاً ثبت شده است. برای ادامه کلیک کنید:",
+            "tr": "✅ Doğum tarihi zaten girilmiş. Devam etmek için tıklayın:",
+        }.get(lang, "✅ Birth date is already set. Press to continue:")
         await callback.message.edit_text(
-            "✅ Дата рождения уже указана. Нажмите чтобы продолжить:",
+            _already,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=label, callback_data=return_to)],
             ]),
@@ -71,37 +76,38 @@ async def collect_birth_date_for_section(
         await callback.answer()
         return
 
-    await callback.message.edit_text(
-        "✨ *Введите вашу дату рождения* в формате ДД.ММ.ГГГГ\n\nНапример: *15.03.1995*",
-        reply_markup=cancel_fsm_keyboard(),
-        parse_mode="Markdown",
-    )
+    _prompt = {
+        "ru": "✨ *Введите вашу дату рождения* в формате ДД.ММ.ГГГГ\n\nНапример: *15.03.1995*",
+        "en": "✨ *Enter your date of birth* in DD.MM.YYYY format\n\nExample: *15.03.1995*",
+        "fa": "✨ *تاریخ تولد خود را وارد کنید* به فرمت روز.ماه.سال\n\nمثال: *15.03.1995*",
+        "tr": "✨ *Doğum tarihinizi girin* GG.AA.YYYY formatında\n\nÖrnek: *15.03.1995*",
+    }.get(lang, "✨ *Enter your date of birth* in DD.MM.YYYY format\n\nExample: *15.03.1995*")
+    await callback.message.edit_text(_prompt, reply_markup=cancel_fsm_keyboard(), parse_mode="Markdown")
     await state.set_state(ProfileFSM.waiting_birth_date)
-    await state.update_data(next_action=return_to, origin_chat_id=callback.message.chat.id)
+    await state.update_data(next_action=return_to, origin_chat_id=callback.message.chat.id, lang=lang)
     await callback.answer()
 
 
 # ─── Запуск бесплатного разбора ───────────────────────────────────────────────
 
 @router.callback_query(F.data == "free:start")
-async def free_start(callback: CallbackQuery, user: User, state: FSMContext, session: AsyncSession):
+async def free_start(callback: CallbackQuery, user: User, state: FSMContext, session: AsyncSession, lang: str = "ru"):
+    _sphere_label = {"ru": "🔮 *Выбери сферу для разбора:*", "en": "🔮 *Choose a sphere for the reading:*",
+                     "fa": "🔮 *حوزه‌ای برای تفسیر انتخاب کنید:*", "tr": "🔮 *Okuma için bir alan seçin:*"}.get(lang, "🔮 *Choose a sphere for the reading:*")
     if user.birth_date:
-        # Уже есть дата — сразу к выбору сферы
-        await callback.message.edit_text(
-            "🔮 *Выбери сферу для разбора:*",
-            reply_markup=sphere_menu("sphere", back="menu:main"),
-            parse_mode="Markdown",
-        )
+        await callback.message.edit_text(_sphere_label, reply_markup=sphere_menu("sphere", back="menu:main"), parse_mode="Markdown")
         await callback.answer()
         return
 
-    await callback.message.edit_text(
-        "✨ *Введите вашу дату рождения* в формате ДД.ММ.ГГГГ\n\nНапример: *15.03.1995*",
-        reply_markup=cancel_fsm_keyboard(),
-        parse_mode="Markdown",
-    )
+    _prompt = {
+        "ru": "✨ *Введите вашу дату рождения* в формате ДД.ММ.ГГГГ\n\nНапример: *15.03.1995*",
+        "en": "✨ *Enter your date of birth* in DD.MM.YYYY format\n\nExample: *15.03.1995*",
+        "fa": "✨ *تاریخ تولد خود را وارد کنید* به فرمت روز.ماه.سال\n\nمثال: *15.03.1995*",
+        "tr": "✨ *Doğum tarihinizi girin* GG.AA.YYYY formatında\n\nÖrnek: *15.03.1995*",
+    }.get(lang, "✨ *Enter your date of birth* in DD.MM.YYYY format\n\nExample: *15.03.1995*")
+    await callback.message.edit_text(_prompt, reply_markup=cancel_fsm_keyboard(), parse_mode="Markdown")
     await state.set_state(ProfileFSM.waiting_birth_date)
-    await state.update_data(next_action="free_reading", origin_chat_id=callback.message.chat.id)
+    await state.update_data(next_action="free_reading", origin_chat_id=callback.message.chat.id, lang=lang)
     await callback.answer()
 
 
@@ -163,20 +169,28 @@ _MENU_TEXTS = _ALL_REPLY
 
 @router.message(ProfileFSM.waiting_birth_date, ~F.text.in_(_ALL_REPLY))
 async def receive_birth_date(message: Message, state: FSMContext, user: User, session: AsyncSession):
+    _fsm = await state.get_data()
+    lang: str = _fsm.get("lang", "ru")
+
     birth_date = _parse_date(message.text or "")
     if not birth_date:
-        await message.answer(
-            "❌ Не могу распознать дату. Введите в формате *ДД.ММ.ГГГГ*\n\nНапример: *15.03.1995*",
-            reply_markup=cancel_fsm_keyboard(),
-            parse_mode="Markdown",
-        )
+        _bad = {
+            "ru": "❌ Не могу распознать дату. Введите в формате *ДД.ММ.ГГГГ*\n\nНапример: *15.03.1995*",
+            "en": "❌ Can't recognize the date. Enter in DD.MM.YYYY format\n\nExample: *15.03.1995*",
+            "fa": "❌ تاریخ شناسایی نشد. به فرمت وارد کنید: روز.ماه.سال\n\nمثال: *15.03.1995*",
+            "tr": "❌ Tarih tanınamadı. GG.AA.YYYY formatında girin\n\nÖrnek: *15.03.1995*",
+        }.get(lang, "❌ Can't recognize the date. Enter in DD.MM.YYYY format\n\nExample: *15.03.1995*")
+        await message.answer(_bad, reply_markup=cancel_fsm_keyboard(), parse_mode="Markdown")
         return
 
     if birth_date.year < 1900 or birth_date > date.today():
-        await message.answer(
-            "❌ Пожалуйста, введите корректную дату рождения.",
-            reply_markup=cancel_fsm_keyboard(),
-        )
+        _invalid = {
+            "ru": "❌ Пожалуйста, введите корректную дату рождения.",
+            "en": "❌ Please enter a valid date of birth.",
+            "fa": "❌ لطفاً یک تاریخ تولد معتبر وارد کنید.",
+            "tr": "❌ Lütfen geçerli bir doğum tarihi girin.",
+        }.get(lang, "❌ Please enter a valid date of birth.")
+        await message.answer(_invalid, reply_markup=cancel_fsm_keyboard())
         return
 
     user.birth_date = birth_date.strftime("%d.%m.%Y")
@@ -192,10 +206,14 @@ async def receive_birth_date(message: Message, state: FSMContext, user: User, se
 
     await session.commit()
 
-    await message.answer(
-        "✨ Отлично! Уточни свой пол для более точного разбора:",
-        reply_markup=gender_keyboard(),
-    )
+    _gender_prompt = {
+        "ru": "✨ Отлично! Уточни свой пол для более точного разбора:",
+        "en": "✨ Great! Please specify your gender for a more accurate reading:",
+        "fa": "✨ عالی! جنسیت خود را برای تفسیر دقیق‌تر مشخص کنید:",
+        "tr": "✨ Harika! Daha doğru bir okuma için cinsiyetinizi belirtin:",
+    }.get(lang, "✨ Great! Please specify your gender for a more accurate reading:")
+    await message.answer(_gender_prompt, reply_markup=gender_keyboard())
+    await state.update_data(lang=lang)
     await state.set_state(ProfileFSM.waiting_gender)
 
 
@@ -210,23 +228,25 @@ async def receive_gender(callback: CallbackQuery, state: FSMContext, user: User,
 
     data = await state.get_data()
     next_action = data.get("next_action", "free_reading")
+    lang: str = data.get("lang", "ru")
     await state.clear()
 
+    _sphere_label = {"ru": "🔮 *Выбери сферу для разбора:*", "en": "🔮 *Choose a sphere for the reading:*",
+                     "fa": "🔮 *حوزه‌ای برای تفسیر انتخاب کنید:*", "tr": "🔮 *Okuma için bir alan seçin:*"}.get(lang, "🔮 *Choose a sphere for the reading:*")
+
     if next_action == "free_reading":
-        await callback.message.edit_text(
-            "🔮 *Выбери сферу для разбора:*",
-            reply_markup=sphere_menu("sphere", back="menu:main"),
-            parse_mode="Markdown",
-        )
+        await callback.message.edit_text(_sphere_label, reply_markup=sphere_menu("sphere", back="menu:main"), parse_mode="Markdown")
     elif next_action and (next_action.startswith("menu:") or next_action == "matrix:start"):
-        # Сразу открываем нужный раздел без промежуточных экранов
         await _navigate_to_section(next_action, callback, user, session, state)
     else:
-        name = user.first_name or "друг"
-        await callback.message.edit_text(
-            f"✅ Профиль сохранён! Выберите что вас интересует, *{name}*:",
-            reply_markup=main_menu(),
-            parse_mode="Markdown",
-        )
+        _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
+        name = user.first_name or _friend
+        _saved = {
+            "ru": f"✅ Профиль сохранён! Выберите что вас интересует, *{name}*:",
+            "en": f"✅ Profile saved! Choose what interests you, *{name}*:",
+            "fa": f"✅ پروفایل ذخیره شد! *{name}*، چه چیزی برایتان جالب است:",
+            "tr": f"✅ Profil kaydedildi! *{name}*, sizi ne ilgilendiriyor:",
+        }.get(lang, f"✅ Profile saved! Choose what interests you, *{name}*:")
+        await callback.message.edit_text(_saved, reply_markup=main_menu(), parse_mode="Markdown")
 
     await callback.answer()

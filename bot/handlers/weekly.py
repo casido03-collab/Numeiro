@@ -116,7 +116,9 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
 
     birth_date_obj = parse_birth_date(user.birth_date)
     if not birth_date_obj:
-        await thinking_msg.edit_text("❌ Дата рождения не найдена.")
+        _err = {"ru": "❌ Дата рождения не найдена.", "en": "❌ Birth date not found.",
+                "fa": "❌ تاریخ تولد یافت نشد.", "tr": "❌ Doğum tarihi bulunamadı."}.get(lang, "❌ Birth date not found.")
+        await thinking_msg.edit_text(_err)
         await callback.answer()
         return
 
