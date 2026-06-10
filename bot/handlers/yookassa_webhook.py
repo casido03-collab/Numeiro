@@ -29,17 +29,28 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
     try:
         body = await request.text()
         data = json.loads(body)
-        logger.info("YooKassa webhook received: event=%s", data.get("event"))
-
-        event = data.get("event")
-        if event != "payment.succeeded":
-            return web.Response(status=200)
-
+        event      = data.get("event", "—")
         payment_obj = data.get("object", {})
-        if payment_obj.get("status") != "succeeded":
+        pay_id     = payment_obj.get("id", "—")
+        pay_status = payment_obj.get("status", "—")
+        metadata   = payment_obj.get("metadata", {})
+        uid        = metadata.get("user_id", "—")
+        platform   = metadata.get("platform", "—")
+        logger.info(
+            "YooKassa webhook: event=%s payment_id=%s status=%s uid=%s platform=%s",
+            event, pay_id, pay_status, uid, platform,
+        )
+
+        if event != "payment.succeeded":
+            logger.info("YooKassa webhook: skipping event=%s", event)
             return web.Response(status=200)
 
-        metadata = payment_obj.get("metadata", {})
+        if pay_status != "succeeded":
+            logger.warning(
+                "YooKassa webhook: payment_id=%s has status=%s (not succeeded) — skipping",
+                pay_id, pay_status,
+            )
+            return web.Response(status=200)
 
         # ── VK-платёж ─────────────────────────────────────────────────────────
         if metadata.get("platform") == "vk":
@@ -105,6 +116,10 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
             logger.warning("Webhook: payment %s already processed, skip", payment_id)
             return web.Response(status=200)
 
+        logger.info(
+            "Webhook: processing TG payment uid=%s type=%s key=%s amount=%s payment_id=%s",
+            user_telegram_id, product_type, product_key, amount, payment_id,
+        )
         await _process_payment(
             telegram_id=int(user_telegram_id),
             product_type=product_type,
@@ -112,6 +127,7 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
             amount=amount,
             payment_id=payment_id,
         )
+        logger.info("Webhook: TG payment processed OK uid=%s payment_id=%s", user_telegram_id, payment_id)
 
     except Exception:
         logger.exception("YooKassa webhook error")
