@@ -166,15 +166,6 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
     logger.info("CMD_START: showing lang selection, name=%s", name)
     try:
         from bot.handlers.lang_select import send_lang_selection
-        from bot.utils import safe_answer_menu
-        from bot.keyboards.reply import main_reply_keyboard
-        from bot.services.menu_tracker import mark_keyboard_shown
-
-        # Показываем reply-клавиатуру (на случай если пропала)
-        sent = await safe_answer_menu(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
-        if sent:
-            await mark_keyboard_shown(tg_id)
-
         await send_lang_selection(message)
         logger.info("CMD_START: lang selection sent")
         logger.info("MENU_RENDER_DONE handler=cmd_start duration_ms=%.0f", (time.monotonic() - t0) * 1000)

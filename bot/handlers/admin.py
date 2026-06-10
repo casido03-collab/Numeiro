@@ -689,10 +689,12 @@ async def reset_session_admin(message: Message, user: User, session: AsyncSessio
 
         await session.commit()
 
-        # Сбрасываем Redis-кеш спонсора для этого пользователя
+        # Сбрасываем Redis-кеши для этого пользователя
         from bot.services.cache import get_redis
         r = await get_redis()
         await r.delete(f"sponsor_checked:{user.telegram_id}")
+        await r.delete(f"kb_shown:{user.telegram_id}")
+        await r.delete(f"menu_msg:{user.telegram_id}")
 
         await message.answer(
             "✅ *Сессия сброшена.*\n\n"
