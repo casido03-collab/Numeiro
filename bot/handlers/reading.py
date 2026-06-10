@@ -18,29 +18,26 @@ from bot.services.thinking import random_thinking
 
 router = Router()
 
+# Русские названия — используются только как фоллбэк для кэш-ключей
 SPHERE_NAMES = {
-    "love":        "любовь и отношения",
-    "money":       "деньги и финансы",
-    "work":        "работа и карьера",
-    "health":      "здоровье и энергия",
-    "family":      "семья",
-    "decision":    "важные решения",
-    "general":     "общий прогноз",
-    "purpose":     "предназначение и миссия",
-    "growth":      "личностный рост",
-    "partnership": "партнёрство и отношения",
-    "children":    "дети и родительство",
-    "education":   "образование и обучение",
-    "relocation":  "переезд и путешествия",
-    "home":        "жильё и дом",
-    "spiritual":   "духовное развитие",
-    "creativity":  "творчество и таланты",
-    "friendship":  "дружба и окружение",
-    "motivation":  "мотивация и энергия",
-    "inner_peace": "внутренний мир и покой",
-    "karma":       "карма и прошлое",
-    "career":      "карьерный рост",
+    "love": "любовь и отношения", "money": "деньги и финансы", "work": "работа и карьера",
+    "health": "здоровье и энергия", "family": "семья", "decision": "важные решения",
+    "general": "общий прогноз", "purpose": "предназначение и миссия", "growth": "личностный рост",
+    "partnership": "партнёрство и отношения", "children": "дети и родительство",
+    "education": "образование и обучение", "relocation": "переезд и путешествия",
+    "home": "жильё и дом", "spiritual": "духовное развитие", "creativity": "творчество и таланты",
+    "friendship": "дружба и окружение", "motivation": "мотивация и энергия",
+    "inner_peace": "внутренний мир и покой", "karma": "карма и прошлое", "career": "карьерный рост",
 }
+
+
+def _sphere(sphere: str, lang: str = "ru") -> str:
+    """Название сферы на языке пользователя."""
+    translated = t(f"sphere_{sphere}", lang)
+    # t() возвращает ключ если не найдено — фоллбэк на SPHERE_NAMES
+    if translated == f"sphere_{sphere}":
+        return SPHERE_NAMES.get(sphere, sphere)
+    return translated
 
 
 async def show_sphere_selection(msg: Message, user: User, lang: str = "ru"):
@@ -106,31 +103,34 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
     cache_key = make_cache_key("free_reading", user.birth_date, sphere)
     cached = await get_cached(cache_key)
 
+    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
+    sphere_label = _sphere(sphere, lang)
+    sphere_label_ru = SPHERE_NAMES.get(sphere, sphere)  # для кэша/истории всегда ru
+
     if not cached:
         nums = numerology.calculate_all(birth_date)
         traits = numerology.get_traits(nums["life_path"])
         context = {
-            "name": user.first_name or "друг",
+            "name": user.first_name or _friend,
             "birth_date": user.birth_date,
-            "sphere": SPHERE_NAMES.get(sphere, sphere),
+            "sphere": sphere_label,
             "numbers": nums,
             "traits": traits,
         }
-        user_msg = f"Сделай бесплатный разбор для сферы '{SPHERE_NAMES.get(sphere, sphere)}'.\nДанные: {json.dumps(context, ensure_ascii=False)}"
+        user_msg = f"Сделай бесплатный разбор для сферы '{sphere_label}'.\nДанные: {json.dumps(context, ensure_ascii=False)}"
         cached = await generate(session, user.id, "free_reading", FREE_BIRTH_REPORT_PROMPT(lang), user_msg, complexity="simple", max_tokens=400)
         await set_cached(cache_key, cached, ttl=3600 * 24 * 3)
 
     from bot.services.reports_service import save_report
     await save_report(
         session, user.id, "mini_report",
-        title=f"Разбор: {SPHERE_NAMES.get(sphere, sphere)}",
+        title=f"Разбор: {sphere_label_ru}",
         content=cached,
         metadata={"sphere": sphere, "birth_date": user.birth_date},
     )
     await consume_limit(session, user.id, "mini_readings")
     await consume_limit(session, user.id, "ai_messages")
 
-    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend
     _title = {"ru": "Разбор для", "en": "Reading for", "fa": "بررسی برای", "tr": "Okuma:"}.get(lang, "Reading for")
     text = f"🔮 *{_title} {name}*\n\n{cached}"

@@ -44,6 +44,14 @@ RELATION_NAMES = {
 }
 
 
+def _relation(relation: str, lang: str = "ru") -> str:
+    """Тип отношений на языке пользователя."""
+    translated = t(f"relation_{relation}", lang)
+    if translated == f"relation_{relation}":
+        return RELATION_NAMES.get(relation, relation)
+    return translated
+
+
 class CompatibilityFSM(StatesGroup):
     waiting_partner_date = State()
     waiting_relation_type = State()
@@ -160,7 +168,7 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
             "name": user.first_name or "друг",
             "user_birth": user.birth_date,
             "partner_birth": partner_date_str,
-            "relation_type": RELATION_NAMES.get(relation_type, relation_type),
+            "relation_type": _relation(relation_type, lang),
             "compatibility": compat,
         }
         user_msg = f"Анализируй совместимость.\nДанные: {json.dumps(context, ensure_ascii=False)}"
@@ -187,7 +195,7 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
     from bot.services.reports_service import save_report
     await save_report(
         session, user.id, "compatibility",
-        title=f"Совместимость | {RELATION_NAMES.get(relation_type, relation_type)}",
+        title=f"Совместимость | {RELATION_NAMES.get(relation_type, relation_type)}",  # история всегда ru
         content=cached,
         metadata={"partner_birth": partner_date_str, "relation_type": relation_type},
     )
@@ -196,9 +204,10 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend
-    relation_name = RELATION_NAMES.get(relation_type, relation_type)
+    relation_name = _relation(relation_type, lang)
     _type_label = {"ru": "Тип связи", "en": "Relationship type", "fa": "نوع رابطه", "tr": "İlişki türü"}.get(lang, "Relationship type")
-    header = f"💞 *{'Совместимость' if lang == 'ru' else 'Compatibility'} — {name}*\n_{_type_label}: {relation_name}_\n\n"
+    _compat_title = {"ru": "Совместимость", "en": "Compatibility", "fa": "سازگاری", "tr": "Uyumluluk"}.get(lang, "Compatibility")
+    header = f"💞 *{_compat_title} — {name}*\n_{_type_label}: {relation_name}_\n\n"
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[

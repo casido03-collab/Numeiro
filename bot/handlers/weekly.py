@@ -18,28 +18,22 @@ from bot.keyboards.main import sphere_menu, limit_reached_keyboard, back_to_main
 router = Router()
 
 SPHERE_NAMES = {
-    "love":        "любовь и отношения",
-    "money":       "деньги и финансы",
-    "work":        "работа и карьера",
-    "health":      "здоровье и энергия",
-    "family":      "семья",
-    "decision":    "важные решения",
-    "general":     "общий прогноз",
-    "purpose":     "предназначение и миссия",
-    "growth":      "личностный рост",
-    "partnership": "партнёрство и отношения",
-    "children":    "дети и родительство",
-    "education":   "образование и обучение",
-    "relocation":  "переезд и путешествия",
-    "home":        "жильё и дом",
-    "spiritual":   "духовное развитие",
-    "creativity":  "творчество и таланты",
-    "friendship":  "дружба и окружение",
-    "motivation":  "мотивация и энергия",
-    "inner_peace": "внутренний мир и покой",
-    "karma":       "карма и прошлое",
-    "career":      "карьерный рост",
+    "love": "любовь и отношения", "money": "деньги и финансы", "work": "работа и карьера",
+    "health": "здоровье и энергия", "family": "семья", "decision": "важные решения",
+    "general": "общий прогноз", "purpose": "предназначение и миссия", "growth": "личностный рост",
+    "partnership": "партнёрство и отношения", "children": "дети и родительство",
+    "education": "образование и обучение", "relocation": "переезд и путешествия",
+    "home": "жильё и дом", "spiritual": "духовное развитие", "creativity": "творчество и таланты",
+    "friendship": "дружба и окружение", "motivation": "мотивация и энергия",
+    "inner_peace": "внутренний мир и покой", "karma": "карма и прошлое", "career": "карьерный рост",
 }
+
+
+def _sphere(sphere: str, lang: str = "ru") -> str:
+    translated = t(f"sphere_{sphere}", lang)
+    if translated == f"sphere_{sphere}":
+        return SPHERE_NAMES.get(sphere, sphere)
+    return translated
 
 WEEKDAY_RU = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
@@ -140,10 +134,11 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
                 "date": d.strftime("%d.%m"),
                 "weekday": _wd_list[d.weekday()],
             })
+        sphere_label = _sphere(sphere, lang)
         context = {
             "name": user.first_name or _FRIEND.get(lang, "friend"),
             "birth_date": user.birth_date,
-            "sphere": SPHERE_NAMES.get(sphere, sphere),
+            "sphere": sphere_label,
             "week_start": week_start.strftime("%d.%m.%Y"),
             "week_end": week_end.strftime("%d.%m.%Y"),
             "days": days,
@@ -151,7 +146,7 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
             "week_energy": week_nums,
         }
         user_msg = (
-            f"Создай недельный прогноз для сферы '{SPHERE_NAMES.get(sphere, sphere)}'.\n"
+            f"Создай недельный прогноз для сферы '{sphere_label}'.\n"
             f"Данные: {json.dumps(context, ensure_ascii=False)}"
         )
         cached = await generate(
@@ -161,10 +156,13 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
         )
         await set_cached(cache_key, cached, ttl=3600 * 24 * 7)
 
+    sphere_label = _sphere(sphere, lang)
+    sphere_label_ru = SPHERE_NAMES.get(sphere, sphere)  # для истории — всегда ru
+
     from bot.services.reports_service import save_report
     await save_report(
         session, user.id, "weekly_forecast",
-        title=f"Прогноз {week_start.strftime('%d.%m')}–{week_end.strftime('%d.%m')} | {SPHERE_NAMES.get(sphere, sphere)}",
+        title=f"Прогноз {week_start.strftime('%d.%m')}–{week_end.strftime('%d.%m')} | {sphere_label_ru}",
         content=cached,
         metadata={"sphere": sphere, "week_start": str(week_start), "week_end": str(week_end)},
     )
@@ -172,7 +170,7 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
     await consume_limit(session, user.id, "ai_messages")
 
     name = user.first_name or _FRIEND.get(lang, "friend")
-    sphere_name = SPHERE_NAMES.get(sphere, sphere)
+    sphere_name = sphere_label
     _hdr_title = {"ru": "Прогноз на неделю", "en": "Weekly forecast", "fa": "پیش‌بینی هفتگی", "tr": "Haftalık tahmin"}.get(lang, "Weekly forecast")
     _hdr_sphere = {"ru": "Сфера", "en": "Sphere", "fa": "حوزه", "tr": "Alan"}.get(lang, "Sphere")
     header = (
