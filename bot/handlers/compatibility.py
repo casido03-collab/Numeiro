@@ -14,6 +14,7 @@ from bot.services.ai_service import generate
 from bot.prompts.prompts import COMPATIBILITY_PROMPT
 from bot.i18n.translations import t
 from bot.keyboards.main import relation_type_menu, limit_reached_keyboard, back_to_main
+from bot.keyboards.reply import ALL_REPLY_TEXTS as _ALL_REPLY
 from bot.services.thinking import random_thinking
 from bot.utils import parse_birth_date as _parse_compat_date, safe_edit_ai
 
@@ -114,7 +115,7 @@ async def compat_start(callback: CallbackQuery, user: User, session: AsyncSessio
     await callback.answer()
 
 
-@router.message(CompatibilityFSM.waiting_partner_date, ~F.text.in_({"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}))
+@router.message(CompatibilityFSM.waiting_partner_date, ~F.text.in_(_ALL_REPLY))
 async def receive_partner_date(message: Message, state: FSMContext):
     partner_date = _parse_date(message.text or "")
     if not partner_date:

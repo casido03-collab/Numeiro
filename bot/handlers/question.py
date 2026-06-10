@@ -14,6 +14,7 @@ from bot.i18n.translations import t
 from bot.keyboards.main import limit_reached_keyboard, after_reading_keyboard, after_question_keyboard_free, after_question_keyboard_paid, back_to_main, main_menu
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai, replace_message
 from bot.services.thinking import random_thinking
+from bot.keyboards.reply import ALL_REPLY_TEXTS as _ALL_REPLY
 
 router = Router()
 
@@ -125,7 +126,7 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
     await callback.answer()
 
 
-@router.message(QuestionFSM.waiting_birth_date, ~F.text.in_({"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}))
+@router.message(QuestionFSM.waiting_birth_date, ~F.text.in_(_ALL_REPLY))
 async def receive_birth_date_for_question(message: Message, state: FSMContext, user: User, session: AsyncSession):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from bot.services.limits import check_limit
@@ -168,7 +169,7 @@ async def receive_birth_date_for_question(message: Message, state: FSMContext, u
     await state.set_state(QuestionFSM.waiting_question)
 
 
-@router.message(QuestionFSM.waiting_question, ~F.text.in_({"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}))
+@router.message(QuestionFSM.waiting_question, ~F.text.in_(_ALL_REPLY))
 async def receive_question(message: Message, state: FSMContext, user: User, session: AsyncSession, lang: str = "ru"):
     _fsm = await state.get_data()
     lang = _fsm.get("lang", lang)

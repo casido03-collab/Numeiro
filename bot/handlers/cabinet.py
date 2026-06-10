@@ -155,7 +155,7 @@ def _cabinet_kb(show_matrix: bool = False) -> InlineKeyboardMarkup:
 
 # ─── Обработчики ─────────────────────────────────────────────────────────────
 
-@router.message(F.text == "💎 Подписка")
+@router.message(F.text.in_({"💎 Подписка", "💎 Plans", "💎 اشتراک", "💎 Abonelik"}))
 async def reply_cabinet(message: Message, user: User, session: AsyncSession, state: FSMContext):
     t0 = time.monotonic()
     logger.info("MENU_HANDLER_STARTED handler=reply_cabinet user=%s", message.from_user.id)

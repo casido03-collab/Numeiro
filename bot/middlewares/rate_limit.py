@@ -41,7 +41,7 @@ class RateLimitMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             # Команды (/start, /help, ...) и reply-кнопки навигации не ограничиваем —
             # они не генерируют AI-запросы и должны работать всегда.
-            _EXEMPT_TEXTS = {"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}
+            from bot.keyboards.reply import ALL_REPLY_TEXTS as _EXEMPT_TEXTS
             if event.text and (
                 event.text.startswith("/") or event.text in _EXEMPT_TEXTS
             ):

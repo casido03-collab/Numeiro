@@ -198,7 +198,7 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
     if sponsor["enabled"] and sponsor["link"]:
         await show_sponsor_screen(callback, callback.message.bot, sponsor["link"])
         from bot.utils import ensure_keyboard
-        await ensure_keyboard(callback.message, user.telegram_id)
+        await ensure_keyboard(callback.message, user.telegram_id, lang)
         return
 
     # Открываем главное меню
@@ -214,7 +214,7 @@ async def ob_screen5_animation(callback: CallbackQuery, user: User, session: Asy
         parse_mode="Markdown",
     )
     await set_menu_msg_id(user.telegram_id, callback.message.message_id)
-    await ensure_keyboard(callback.message, user.telegram_id)
+    await ensure_keyboard(callback.message, user.telegram_id, lang)
     await callback.answer()
 
 
@@ -234,5 +234,5 @@ async def ob_open_menu(callback: CallbackQuery, user: User, lang: str = "ru"):
         parse_mode="Markdown",
     )
     await set_menu_msg_id(user.telegram_id, callback.message.message_id)
-    await ensure_keyboard(callback.message, user.telegram_id)
+    await ensure_keyboard(callback.message, user.telegram_id, lang)
     await callback.answer()

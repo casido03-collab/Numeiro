@@ -77,7 +77,7 @@ def _stats_kb() -> InlineKeyboardMarkup:
 
 # ─── Обработчики ─────────────────────────────────────────────────────────────
 
-@router.message(F.text == "👥 Друзья")
+@router.message(F.text.in_({"👥 Друзья", "👥 Friends", "👥 دوستان", "👥 Arkadaşlar"}))
 async def reply_friends(message: Message, user: User, session: AsyncSession, state: FSMContext):
     t0 = time.monotonic()
     logger.info("MENU_HANDLER_STARTED handler=reply_friends user=%s", message.from_user.id)

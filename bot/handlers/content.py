@@ -226,7 +226,7 @@ def content_menu_kb() -> InlineKeyboardMarkup:
 
 # ─── Обработчики reply-кнопки ─────────────────────────────────────────────────
 
-@router.message(F.text == "📚 Интересное")
+@router.message(F.text.in_({"📚 Интересное", "📚 Interesting", "📚 جالب", "📚 İlginç"}))
 async def reply_interesting(message: Message, state: FSMContext):
     t0 = time.monotonic()
     logger.info("MENU_HANDLER_STARTED handler=reply_interesting user=%s", message.from_user.id)
@@ -245,8 +245,8 @@ async def reply_interesting(message: Message, state: FSMContext):
     logger.info("MENU_RENDER_DONE handler=reply_interesting duration_ms=%.0f", (time.monotonic() - t0) * 1000)
 
 
-@router.message(F.text == "🔮 Меню")
-async def reply_menu(message: Message, user: User, state: FSMContext):
+@router.message(F.text.in_({"🔮 Меню", "🔮 Menu", "🔮 منو", "🔮 Menü"}))
+async def reply_menu(message: Message, user: User, state: FSMContext, lang: str = "ru"):
     """Кнопка «🔮 Меню» работает как /start — полный welcome-экран + клавиатура."""
     t0 = time.monotonic()
     logger.info("MENU_HANDLER_STARTED handler=reply_menu user=%s", message.from_user.id)
@@ -275,14 +275,14 @@ async def reply_menu(message: Message, user: User, state: FSMContext):
     name = user.first_name or None
     # Клавиатуру отправляем только если она не была показана ранее
     if not await is_keyboard_shown(user.telegram_id):
-        sent = await safe_answer_menu(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
+        sent = await safe_answer_menu(message, "🌙", reply_markup=main_reply_keyboard(lang), parse_mode=None)
         if sent:
             await mark_keyboard_shown(user.telegram_id)
     # Полный welcome-текст + inline меню одним новым сообщением
     await show_menu_message(
         message, user.telegram_id,
-        _welcome_text(name),
-        main_menu(),
+        _welcome_text(name, lang),
+        main_menu(lang),
         force_new=True,
         fast=True,
     )

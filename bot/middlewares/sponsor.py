@@ -13,10 +13,8 @@ _GATED_CALLBACKS = (
     "buy:", "cabinet:", "reports:", "share:", "content:",
 )
 
-# Reply-кнопки нижнего меню которые требуют проверки
-_GATED_REPLIES = {
-    "🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка",
-}
+# Reply-кнопки нижнего меню которые требуют проверки (все языки)
+from bot.keyboards.reply import ALL_REPLY_TEXTS as _GATED_REPLIES
 
 
 async def _get_sponsor_state() -> dict:

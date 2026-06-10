@@ -302,7 +302,7 @@ async def show_menu_message(
     return new_msg
 
 
-async def ensure_keyboard(message: Message, telegram_id: int) -> None:
+async def ensure_keyboard(message: Message, telegram_id: int, lang: str = "ru") -> None:
     """
     Отправить постоянную reply-клавиатуру ровно один раз за всё время жизни пользователя.
     """
@@ -311,7 +311,7 @@ async def ensure_keyboard(message: Message, telegram_id: int) -> None:
 
     if not await is_keyboard_shown(telegram_id):
         sent = await safe_answer_menu(
-            message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None
+            message, "🌙", reply_markup=main_reply_keyboard(lang), parse_mode=None
         )
         if sent:
             await mark_keyboard_shown(telegram_id)

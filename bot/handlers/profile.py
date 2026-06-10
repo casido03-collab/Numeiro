@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from datetime import date, datetime
 from bot.keyboards.main import gender_keyboard, main_menu, cancel_fsm_keyboard, sphere_menu
+from bot.keyboards.reply import ALL_REPLY_TEXTS as _ALL_REPLY
 from bot.models.user import User, UserProfile
 from bot.services.numerology import calculate_all
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -157,10 +158,10 @@ async def _navigate_to_section(section: str, callback, user, session, state=None
 
 # ─── Получение даты рождения ──────────────────────────────────────────────────
 
-_MENU_TEXTS = {"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}
+_MENU_TEXTS = _ALL_REPLY
 
 
-@router.message(ProfileFSM.waiting_birth_date, ~F.text.in_({"🔮 Меню", "📚 Интересное", "👥 Друзья", "💎 Подписка"}))
+@router.message(ProfileFSM.waiting_birth_date, ~F.text.in_(_ALL_REPLY))
 async def receive_birth_date(message: Message, state: FSMContext, user: User, session: AsyncSession):
     birth_date = _parse_date(message.text or "")
     if not birth_date:
