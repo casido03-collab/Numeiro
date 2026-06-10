@@ -85,14 +85,15 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
     # ── 1. Daily cap (1/day for all plans including free) ─────────────────────
     has_daily, used_daily, max_daily = await check_limit(session, user.id, "daily_forecasts")
 
+    _title = {"ru": "Энергия дня", "en": "Daily Energy", "fa": "انرژی روز", "tr": "Günün Enerjisi"}.get(lang, "Daily Energy")
     if not has_daily:
-        await callback.message.edit_text(
-            "⚡ *Энергия дня*\n\n"
-            "✨ Вы уже получили энергию дня сегодня.\n"
-            "Возвращайтесь завтра за новым прогнозом! 🌙",
-            reply_markup=limit_reached_keyboard(),
-            parse_mode="Markdown",
-        )
+        _already = {
+            "ru": f"⚡ *{_title}*\n\n✨ Вы уже получили энергию дня сегодня.\nВозвращайтесь завтра за новым прогнозом! 🌙",
+            "en": f"⚡ *{_title}*\n\n✨ You have already received today's energy.\nCome back tomorrow for a new forecast! 🌙",
+            "fa": f"⚡ *{_title}*\n\n✨ شما امروز انرژی روز را دریافت کرده‌اید.\nفردا برای پیش‌بینی جدید برگردید! 🌙",
+            "tr": f"⚡ *{_title}*\n\n✨ Bugünün enerjisini zaten aldınız.\nYeni tahmin için yarın gelin! 🌙",
+        }.get(lang, f"⚡ *{_title}*\n\n✨ You have already received today's energy.\nCome back tomorrow! 🌙")
+        await callback.message.edit_text(_already, reply_markup=limit_reached_keyboard(), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -100,25 +101,34 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
     ok_total, used_total, max_total = await _check_energy_total(user.id, plan)
     if not ok_total:
         plan_name = {"lite": "Lite", "pro": "Pro"}.get(plan, plan)
-        await callback.message.edit_text(
-            f"⚡ *Энергия дня*\n\n"
-            f"🔒 Вы использовали все {max_total} "
-            f"{'прогноза' if max_total < 5 else 'прогнозов'} по тарифу *{plan_name}*.\n\n"
-            f"Обновите подписку для продолжения.",
-            reply_markup=limit_reached_keyboard(),
-            parse_mode="Markdown",
-        )
+        _used_all = {
+            "ru": (f"⚡ *{_title}*\n\n🔒 Вы использовали все {max_total} "
+                   f"{'прогноза' if max_total < 5 else 'прогнозов'} по тарифу *{plan_name}*.\n\nОбновите подписку для продолжения."),
+            "en": f"⚡ *{_title}*\n\n🔒 You have used all {max_total} forecasts on the *{plan_name}* plan.\n\nUpgrade your subscription to continue.",
+            "fa": f"⚡ *{_title}*\n\n🔒 شما همه {max_total} پیش‌بینی طرح *{plan_name}* را استفاده کرده‌اید.\n\nبرای ادامه اشتراک خود را ارتقاء دهید.",
+            "tr": f"⚡ *{_title}*\n\n🔒 *{plan_name}* planındaki {max_total} tahminini kullandınız.\n\nDevam etmek için aboneliğinizi yükseltin.",
+        }.get(lang, f"⚡ *{_title}*\n\n🔒 All {max_total} forecasts used on *{plan_name}* plan.")
+        await callback.message.edit_text(_used_all, reply_markup=limit_reached_keyboard(), parse_mode="Markdown")
         await callback.answer()
         return
 
     # ── 3. Birth date required ────────────────────────────────────────────────
     if not user.birth_date:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        _no_dob = {
+            "ru": "✨ Для прогноза нужна дата рождения.\n\nВведите её — и я сразу верну вас сюда.",
+            "en": "✨ A birth date is needed for the forecast.\n\nEnter it — and I'll bring you right back here.",
+            "fa": "✨ برای پیش‌بینی به تاریخ تولد نیاز است.\n\nآن را وارد کنید — و بلافاصله اینجا برمی‌گردید.",
+            "tr": "✨ Tahmin için doğum tarihiniz gerekiyor.\n\nGirin — ve hemen buraya geri döneceğim.",
+        }.get(lang, "✨ A birth date is needed for the forecast.")
+        _enter = {"ru": "✨ Ввести дату рождения", "en": "✨ Enter birth date",
+                  "fa": "✨ تاریخ تولد را وارد کنید", "tr": "✨ Doğum tarihi gir"}.get(lang, "✨ Enter birth date")
+        _back = {"ru": "◀️ Назад", "en": "◀️ Back", "fa": "◀️ بازگشت", "tr": "◀️ Geri"}.get(lang, "◀️ Back")
         await callback.message.edit_text(
-            "✨ Для прогноза нужна дата рождения.\n\nВведите её — и я сразу верну вас сюда.",
+            _no_dob,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="birth_date:collect:menu:daily")],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
+                [InlineKeyboardButton(text=_enter, callback_data="birth_date:collect:menu:daily")],
+                [InlineKeyboardButton(text=_back, callback_data="menu:main")],
             ]),
             parse_mode="Markdown",
         )
@@ -131,7 +141,9 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
     birth_date_obj = parse_birth_date(user.birth_date)
 
     if not birth_date_obj:
-        await thinking_msg.edit_text("❌ Ошибка: дата рождения не найдена.")
+        _err = {"ru": "❌ Ошибка: дата рождения не найдена.", "en": "❌ Error: birth date not found.",
+                "fa": "❌ خطا: تاریخ تولد یافت نشد.", "tr": "❌ Hata: doğum tarihi bulunamadı."}.get(lang, "❌ Error: birth date not found.")
+        await thinking_msg.edit_text(_err)
         await callback.answer()
         return
 
@@ -159,9 +171,10 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
         await set_cached(cache_key, cached, ttl=3600 * 20)
 
     from bot.services.reports_service import save_report
+    _save_title = {"ru": "Энергия дня", "en": "Daily Energy", "fa": "انرژی روز", "tr": "Günün Enerjisi"}.get(lang, "Daily Energy")
     await save_report(
         session, user.id, "daily_energy",
-        title=f"Энергия дня {today.strftime('%d.%m.%Y')}",
+        title=f"{_save_title} {today.strftime('%d.%m.%Y')}",
         content=cached,
         metadata={"date": today.isoformat()},
     )
