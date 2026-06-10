@@ -371,11 +371,12 @@ TEXTS: dict[str, dict[str, str]] = {
             "Здесь вас ждёт:\n\n"
             "🔯 *Гороскоп* — ежедневный знак зодиака и послание звёзд\n"
             "⚡️ *Энергия дня* — ежедневный бесплатный прогноз\n"
-            "✨ *Мой разбор* — нумерологический анализ по дате рождения\n"
+            "✨ *Мой разбор* — нумерологический анализ по дате рождения _(Лимитированный бесплатный доступ)_\n"
             "🌟 *Матрица судьбы* — глубокий разбор арканов и энергий\n"
             "📅 *Прогноз на неделю* — по любой сфере жизни\n"
             "💞 *Совместимость* — числа двух людей\n"
             "🔮 *Вопрос Тарологу* — личный вопрос Бабушке Aisha\n\n"
+            "Всё основано на нумерологии, матрице судьбы, а AI интеллект помогает интерпретировать мысли Бабушки Аиши в понятный язык для каждого.\n\n"
             "_Выберите, с чего начать:_"
         ),
         "en": (
@@ -383,15 +384,40 @@ TEXTS: dict[str, dict[str, str]] = {
             "What's waiting for you:\n\n"
             "🔯 *Horoscope* — daily zodiac sign and message from the stars\n"
             "⚡️ *Energy of the day* — free daily forecast\n"
-            "✨ *My reading* — numerological analysis by date of birth\n"
+            "✨ *My reading* — numerological analysis by date of birth _(Limited free access)_\n"
             "🌟 *Destiny matrix* — deep reading of arcana and energies\n"
             "📅 *Weekly forecast* — for any area of life\n"
             "💞 *Compatibility* — numbers of two people\n"
             "🔮 *Ask a question* — personal question to Grandma Aisha\n\n"
+            "Everything is based on numerology and the destiny matrix — AI helps interpret Grandma Aisha's wisdom in a language you can understand.\n\n"
             "_Choose where to start:_"
         ),
-        "fa": "✨ به *Aisha AI* خوش آمدید — همراهی که بر پایه سال‌ها تجربه و دانسته‌های مادربزرگ Aisha ساخته شده است\n\nاینجا منتظر شماست:\n\n🔯 *طالع‌بینی* — نشانه روزانه زودیاک و پیام ستاره‌ها\n⚡️ *انرژی روز* — پیش‌بینی روزانه رایگان\n✨ *تحلیل من* — تحلیل عددشناسی بر اساس تاریخ تولد\n🌟 *ماتریس سرنوشت* — بررسی عمیق آرکان‌ها و انرژی‌ها\n📅 *پیش‌بینی هفتگی* — برای هر بخش از زندگی\n💞 *سازگاری* — اعداد دو نفر\n🔮 *پرسش از تارولوگ* — سؤال شخصی از مادربزرگ Aisha\n\n_انتخاب کنید از کجا شروع کنیم:_",
-        "tr": "✨ *Aisha AI*'ya hoş geldiniz — Büyükanne Aisha'nın yıllara dayanan birikimiyle hazırlanmış yol arkadaşınız\n\nBurada sizi şunlar bekliyor:\n\n🔯 *Burç yorumu* — günlük burç işareti ve yıldızlardan mesaj\n⚡️ *Günün enerjisi* — ücretsiz günlük tahmin\n✨ *Yorumum* — doğum tarihine göre numerolojik analiz\n🌟 *Kader matrisi* — arkanlar ve enerjiler üzerine derin yorum\n📅 *Haftalık tahmin* — hayatın her alanı için\n💞 *Uyumluluk* — iki kişinin sayıları\n🔮 *Taroloğa soru* — Büyükanne Aisha'ya kişisel soru\n\n_Nereden başlamak istersiniz?_",
+        "fa": (
+            "✨ به *Aisha AI* خوش آمدید — همراهی که بر پایه سال‌ها تجربه و دانسته‌های مادربزرگ Aisha ساخته شده است\n\n"
+            "اینجا منتظر شماست:\n\n"
+            "🔯 *طالع‌بینی* — نشانه روزانه زودیاک و پیام ستاره‌ها\n"
+            "⚡️ *انرژی روز* — پیش‌بینی روزانه رایگان\n"
+            "✨ *تحلیل من* — تحلیل عددشناسی بر اساس تاریخ تولد _(دسترسی رایگان محدود)_\n"
+            "🌟 *ماتریس سرنوشت* — بررسی عمیق آرکان‌ها و انرژی‌ها\n"
+            "📅 *پیش‌بینی هفتگی* — برای هر بخش از زندگی\n"
+            "💞 *سازگاری* — اعداد دو نفر\n"
+            "🔮 *پرسش از تارولوگ* — سؤال شخصی از مادربزرگ Aisha\n\n"
+            "همه چیز بر اساس عددشناسی و ماتریس سرنوشت است — هوش مصنوعی به تفسیر دانش مادربزرگ Aisha به زبانی که می‌فهمید کمک می‌کند.\n\n"
+            "_انتخاب کنید از کجا شروع کنیم:_"
+        ),
+        "tr": (
+            "✨ *Aisha AI*'ya hoş geldiniz — Büyükanne Aisha'nın yıllara dayanan birikimiyle hazırlanmış yol arkadaşınız\n\n"
+            "Burada sizi şunlar bekliyor:\n\n"
+            "🔯 *Burç yorumu* — günlük burç işareti ve yıldızlardan mesaj\n"
+            "⚡️ *Günün enerjisi* — ücretsiz günlük tahmin\n"
+            "✨ *Yorumum* — doğum tarihine göre numerolojik analiz _(Sınırlı ücretsiz erişim)_\n"
+            "🌟 *Kader matrisi* — arkanlar ve enerjiler üzerine derin yorum\n"
+            "📅 *Haftalık tahmin* — hayatın her alanı için\n"
+            "💞 *Uyumluluk* — iki kişinin sayıları\n"
+            "🔮 *Taroloğa soru* — Büyükanne Aisha'ya kişisel soru\n\n"
+            "Her şey numeroloji ve kader matrisine dayanmaktadır — yapay zeka, Büyükanne Aisha'nın bilgeliğini herkesin anlayabileceği bir dile çevirmeye yardımcı olur.\n\n"
+            "_Nereden başlamak istersiniz?_"
+        ),
     },
 
     # ══════════════════════════════════════════════════════════════════

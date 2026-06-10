@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 def _welcome_text(name: str | None, lang: str = "ru") -> str:
     """Полный приветственный текст над главным меню."""
     from bot.i18n.translations import t
-    greeting = f"🌟 *{name}!*\n\n" if name else ""
+    _hi = {"ru": "Привет", "en": "Hi", "fa": "سلام", "tr": "Merhaba"}.get(lang, "Hi")
+    greeting = f"🌟 *{_hi}, {name}!*\n\n" if name else ""
     return greeting + t("welcome", lang)
 
 # ─── Dynamic headers ──────────────────────────────────────────────────────────
