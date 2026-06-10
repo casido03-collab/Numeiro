@@ -39,7 +39,7 @@ async def send_lang_selection(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("ob:lang:"))
 async def lang_selected(callback: CallbackQuery, user: User, session: AsyncSession) -> None:
-    """Пользователь выбрал язык → сохраняем, показываем экран 1 онбординга."""
+    """Пользователь выбрал язык → сохраняем, показываем экран 1 онбординга или главное меню."""
     lang = callback.data.split(":")[-1]
     if lang not in _SUPPORTED_LANGS:
         lang = "ru"
@@ -49,11 +49,25 @@ async def lang_selected(callback: CallbackQuery, user: User, session: AsyncSessi
     # Сохраняем язык в DB + Redis
     await save_user_lang(session, user.id, user.telegram_id, lang)
 
-    # Показываем онбординг экран 1 в выбранном языке
-    from bot.handlers.onboarding import _screen1_kb
-    await callback.message.edit_text(
-        t("ob_screen1", lang),
-        reply_markup=_screen1_kb(lang),
-        parse_mode="Markdown",
-    )
+    # Если онбординг уже пройден — сразу главное меню
+    from bot.handlers.onboarding import is_onboarding_done
+    onboarding_done = await is_onboarding_done(session, user.id)
+
+    if onboarding_done:
+        from bot.keyboards.main import main_menu
+        from bot.handlers.start import _welcome_text
+        name = callback.from_user.first_name or None
+        await callback.message.edit_text(
+            _welcome_text(name, lang),
+            reply_markup=main_menu(lang),
+            parse_mode="Markdown",
+        )
+    else:
+        # Показываем онбординг экран 1 в выбранном языке
+        from bot.handlers.onboarding import _screen1_kb
+        await callback.message.edit_text(
+            t("ob_screen1", lang),
+            reply_markup=_screen1_kb(lang),
+            parse_mode="Markdown",
+        )
     await callback.answer()

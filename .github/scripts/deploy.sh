@@ -4,10 +4,11 @@ echo "🕐 $(date -u) — deploy start"
 
 if git diff HEAD~1 --name-only | grep -qE "requirements.txt|Dockerfile|docker-compose.yml|pyproject.toml|poetry.lock"; then
   echo "📦 Dependencies changed — rebuilding image..."
-  docker compose up -d --build bot
+  docker compose up -d --build --force-recreate bot
 else
   echo "⚡ Code-only change — fast restart..."
-  docker compose restart bot
+  docker compose stop bot
+  docker compose up -d bot
 fi
 
 echo "✅ $(date -u) — done"

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from bot.keyboards.main import main_menu, plans_keyboard
 from bot.models.user import User, Referral
 from bot.services.limits import get_user_plan
-from bot.handlers.onboarding import is_onboarding_done, start_onboarding
+from bot.handlers.onboarding import start_onboarding
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -162,61 +162,24 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
     except Exception:
         logger.exception("CMD_START: start arg processing failed — continuing anyway")
 
-    # ── 3. Онбординг или главное меню ────────────────────────────────────────
+    # ── 3. Всегда показываем выбор языка (сброс языка при /start) ────────────
+    logger.info("CMD_START: showing lang selection, name=%s", name)
     try:
-        onboarding_done = await is_onboarding_done(session, user.id)
-        logger.info("CMD_START: onboarding_done=%s", onboarding_done)
-    except Exception:
-        logger.exception("CMD_START: is_onboarding_done failed — treating as done")
-        onboarding_done = True   # безопаснее показать меню, чем зависнуть
-
-    if not onboarding_done:
-        logger.info("CMD_START: ONBOARDING STEP START")
-        try:
-            # Проверяем — выбран ли язык явно
-            from bot.models.user import UserProfile
-            from bot.handlers.lang_select import send_lang_selection
-            pr = await session.execute(
-                select(UserProfile).where(UserProfile.user_id == user.id)
-            )
-            ob_profile = pr.scalar_one_or_none()
-            explicit_lang = None
-            if ob_profile and ob_profile.preferences:
-                explicit_lang = ob_profile.preferences.get("lang")
-
-            if explicit_lang:
-                await start_onboarding(message, user, explicit_lang)
-            else:
-                await send_lang_selection(message)
-            logger.info("CMD_START: ONBOARDING MESSAGE SENT (lang=%s)", explicit_lang or "selecting")
-        except Exception:
-            logger.exception("CMD_START: start_onboarding failed — showing fallback menu")
-            await _send_fallback_menu(message, name)
-        return
-
-    # ── 4. Главное меню для вернувшегося пользователя ────────────────────────
-    logger.info("CMD_START: showing main menu, name=%s", name)
-    try:
-        from bot.utils import show_menu_message, safe_answer_menu
+        from bot.handlers.lang_select import send_lang_selection
+        from bot.utils import safe_answer_menu
         from bot.keyboards.reply import main_reply_keyboard
-        from bot.services.menu_tracker import is_keyboard_shown, mark_keyboard_shown
+        from bot.services.menu_tracker import mark_keyboard_shown
 
-        # На /start всегда показываем reply-клавиатуру (на случай если пропала)
+        # Показываем reply-клавиатуру (на случай если пропала)
         sent = await safe_answer_menu(message, "🌙", reply_markup=main_reply_keyboard(), parse_mode=None)
         if sent:
             await mark_keyboard_shown(tg_id)
-        logger.info("CMD_START: keyboard sent")
 
-        await show_menu_message(
-            message, tg_id,
-            _welcome_text(name, lang),
-            main_menu(lang),
-            force_new=True,
-            fast=True,
-        )
+        await send_lang_selection(message)
+        logger.info("CMD_START: lang selection sent")
         logger.info("MENU_RENDER_DONE handler=cmd_start duration_ms=%.0f", (time.monotonic() - t0) * 1000)
     except Exception:
-        logger.exception("CMD_START: menu sending failed — showing fallback")
+        logger.exception("CMD_START: lang selection failed — showing fallback menu")
         await _send_fallback_menu(message, name)
 
 
