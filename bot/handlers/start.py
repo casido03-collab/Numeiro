@@ -58,7 +58,8 @@ def random_header(name: str | None) -> str:
     return random.choice(_HEADERS_UNIVERSAL)
 
 
-PLANS_TEXT = """📜 <b>Тарифы Aisha AI</b>
+_PLANS_TEXT: dict[str, str] = {
+    "ru": """📜 <b>Тарифы Aisha AI</b>
 
 Ваш текущий тариф: <b>{current_plan}</b>
 
@@ -114,7 +115,187 @@ PLANS_TEXT = """📜 <b>Тарифы Aisha AI</b>
 
 🌟 <b>Матрица судьбы</b> — включена в Pro или разовая покупка 299 ₽ для Lite/Premium.
 
-💎 Разовые покупки доступны по кнопке ниже."""
+💎 Разовые покупки доступны по кнопке ниже.""",
+
+    "en": """📜 <b>Aisha AI Plans</b>
+
+Your current plan: <b>{current_plan}</b>
+
+━━━━━━━━━━━━━━━
+🆓 <b>Free</b> (limits given once)
+• 10 AI messages
+• 1 question to Grandma Aisha
+• 1 Daily Horoscope
+• 1 Energy of the day (daily)
+• 1 mini reading
+• 1 compatibility check
+• 1 Card of the day
+
+━━━━━━━━━━━━━━━
+💫 <b>Lite</b> — 299 ₽ / 7 days
+• 120 AI messages
+• 7 questions to Grandma Aisha
+• 1 Daily Horoscope
+• 1 compatibility check
+• 2 date selections
+• 3 Energies of the day
+• 3 mini readings
+• 5 Cards of the day
+• Weekly reading — one-time purchase
+
+━━━━━━━━━━━━━━━
+🌟 <b>Premium</b> — 999 ₽ / month
+• 800 AI messages
+• 30 questions to Grandma Aisha
+• 1 Daily Horoscope
+• 2 weekly readings
+• 7 compatibility checks
+• 30 Energies of the day
+• 15 mini readings
+• 10 date selections
+• 10 Cards of the day
+
+━━━━━━━━━━━━━━━
+🔥 <b>Pro</b> — 1 499 ₽ / month
+• 3 000 AI messages
+• 60 questions to Grandma Aisha
+• 1 Daily Horoscope
+• 4 weekly readings
+• 30 compatibility checks
+• 30 Energies of the day
+• 50 mini readings
+• 40 date selections
+• 30 Cards of the day
+• 🌟 1 Destiny Matrix per month
+
+━━━━━━━━━━━━━━━
+*Every answer is based on the practices, observations and interpretations of Grandma Aisha. AI does not make up answers — it interprets her knowledge for your situation.
+
+🌟 <b>Destiny Matrix</b> — included in Pro or one-time purchase 299 ₽ for Lite/Premium.
+
+💎 One-time purchases available via the button below.""",
+
+    "fa": """📜 <b>طرح‌های Aisha AI</b>
+
+طرح فعلی شما: <b>{current_plan}</b>
+
+━━━━━━━━━━━━━━━
+🆓 <b>رایگان</b> (محدودیت‌ها یک‌بار داده می‌شوند)
+• ۱۰ پیام هوش مصنوعی
+• ۱ سوال از مادربزرگ Aisha
+• ۱ طالع‌بینی روزانه
+• ۱ انرژی روز (روزانه)
+• ۱ بررسی کوتاه
+• ۱ بررسی سازگاری
+• ۱ کارت روز
+
+━━━━━━━━━━━━━━━
+💫 <b>Lite</b> — ۲۹۹ ₽ / ۷ روز
+• ۱۲۰ پیام هوش مصنوعی
+• ۷ سوال از مادربزرگ Aisha
+• ۱ طالع‌بینی روزانه
+• ۱ بررسی سازگاری
+• ۲ انتخاب تاریخ
+• ۳ انرژی روز
+• ۳ بررسی کوتاه
+• ۵ کارت روز
+• پیش‌بینی هفتگی — خرید یک‌بار
+
+━━━━━━━━━━━━━━━
+🌟 <b>Premium</b> — ۹۹۹ ₽ / ماه
+• ۸۰۰ پیام هوش مصنوعی
+• ۳۰ سوال از مادربزرگ Aisha
+• ۱ طالع‌بینی روزانه
+• ۲ پیش‌بینی هفتگی
+• ۷ بررسی سازگاری
+• ۳۰ انرژی روز
+• ۱۵ بررسی کوتاه
+• ۱۰ انتخاب تاریخ
+• ۱۰ کارت روز
+
+━━━━━━━━━━━━━━━
+🔥 <b>Pro</b> — ۱ ۴۹۹ ₽ / ماه
+• ۳ ۰۰۰ پیام هوش مصنوعی
+• ۶۰ سوال از مادربزرگ Aisha
+• ۱ طالع‌بینی روزانه
+• ۴ پیش‌بینی هفتگی
+• ۳۰ بررسی سازگاری
+• ۳۰ انرژی روز
+• ۵۰ بررسی کوتاه
+• ۴۰ انتخاب تاریخ
+• ۳۰ کارت روز
+• 🌟 ۱ ماتریس سرنوشت در ماه
+
+━━━━━━━━━━━━━━━
+*هر پاسخ بر اساس تجربیات، مشاهدات و تفسیرهای مادربزرگ Aisha است. هوش مصنوعی پاسخ‌ها را نمی‌سازد — بلکه دانش او را برای وضعیت شما تفسیر می‌کند.
+
+🌟 <b>ماتریس سرنوشت</b> — در Pro یا خرید یک‌بار ۲۹۹ ₽ برای Lite/Premium.
+
+💎 خریدهای یک‌بار از طریق دکمه زیر موجود است.""",
+
+    "tr": """📜 <b>Aisha AI Planları</b>
+
+Mevcut planınız: <b>{current_plan}</b>
+
+━━━━━━━━━━━━━━━
+🆓 <b>Ücretsiz</b> (limitler bir kez verilir)
+• 10 AI mesajı
+• Büyükanne Aisha'ya 1 soru
+• 1 Günlük Burç
+• 1 Günün Enerjisi (günlük)
+• 1 mini yorum
+• 1 uyumluluk kontrolü
+• 1 Günün Kartı
+
+━━━━━━━━━━━━━━━
+💫 <b>Lite</b> — 299 ₽ / 7 gün
+• 120 AI mesajı
+• Büyükanne Aisha'ya 7 soru
+• 1 Günlük Burç
+• 1 uyumluluk kontrolü
+• 2 tarih seçimi
+• 3 Günün Enerjisi
+• 3 mini yorum
+• 5 Günün Kartı
+• Haftalık yorum — tek seferlik satın alma
+
+━━━━━━━━━━━━━━━
+🌟 <b>Premium</b> — 999 ₽ / ay
+• 800 AI mesajı
+• Büyükanne Aisha'ya 30 soru
+• 1 Günlük Burç
+• 2 haftalık yorum
+• 7 uyumluluk kontrolü
+• 30 Günün Enerjisi
+• 15 mini yorum
+• 10 tarih seçimi
+• 10 Günün Kartı
+
+━━━━━━━━━━━━━━━
+🔥 <b>Pro</b> — 1 499 ₽ / ay
+• 3 000 AI mesajı
+• Büyükanne Aisha'ya 60 soru
+• 1 Günlük Burç
+• 4 haftalık yorum
+• 30 uyumluluk kontrolü
+• 30 Günün Enerjisi
+• 50 mini yorum
+• 40 tarih seçimi
+• 30 Günün Kartı
+• 🌟 Ayda 1 Kader Matrisi
+
+━━━━━━━━━━━━━━━
+*Her cevap Büyükanne Aisha'nın uygulamalarına, gözlemlerine ve yorumlarına dayanmaktadır. AI cevapları uydurmaz — bilgisini sizin durumunuza göre yorumlar.
+
+🌟 <b>Kader Matrisi</b> — Pro'ya dahil veya Lite/Premium için 299 ₽ tek seferlik satın alma.
+
+💎 Tek seferlik satın almalar aşağıdaki düğme aracılığıyla mevcuttur.""",
+}
+
+
+def _get_plans_text(current_plan: str, lang: str = "ru") -> str:
+    template = _PLANS_TEXT.get(lang) or _PLANS_TEXT["en"]
+    return template.format(current_plan=current_plan)
 
 
 @router.message(CommandStart())
@@ -250,15 +431,14 @@ async def menu_main(callback: CallbackQuery, user: User, lang: str = "ru"):
 
 @router.callback_query(F.data == "menu:plans")
 async def menu_plans(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    from bot.i18n.translations import t
     plan = await get_user_plan(session, user.id)
-    plan_names = {
-        "free":    t("plan_free_name", lang),
-        "lite":    "Lite",
-        "premium": "Premium",
-        "pro":     "Pro",
+    _plan_names = {
+        "ru": {"free": "Бесплатный", "lite": "💫 Lite", "premium": "🌟 Premium", "pro": "🔥 Pro"},
+        "en": {"free": "Free",       "lite": "💫 Lite", "premium": "🌟 Premium", "pro": "🔥 Pro"},
+        "fa": {"free": "رایگان",     "lite": "💫 Lite", "premium": "🌟 Premium", "pro": "🔥 Pro"},
+        "tr": {"free": "Ücretsiz",   "lite": "💫 Lite", "premium": "🌟 Premium", "pro": "🔥 Pro"},
     }
-    current = plan_names.get(plan, t("plan_free_name", lang))
-    text = PLANS_TEXT.format(current_plan=current)
+    current = (_plan_names.get(lang) or _plan_names["en"]).get(plan, plan)
+    text = _get_plans_text(current, lang)
     await callback.message.edit_text(text, reply_markup=plans_keyboard(lang), parse_mode="HTML")
     await callback.answer()
