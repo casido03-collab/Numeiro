@@ -9,6 +9,7 @@ from bot.services.dates import find_favorable_dates, EVENT_NAMES
 from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import DATE_SELECTION_PROMPT
+from bot.i18n.translations import t
 from bot.keyboards.main import event_type_menu, limit_reached_keyboard, back_to_main
 from bot.utils import safe_edit, safe_edit_ai
 from bot.services.thinking import random_thinking
@@ -17,7 +18,7 @@ router = Router()
 
 
 @router.callback_query(F.data == "menu:dates")
-async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession):
+async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     has_limit, used, max_val = await check_limit(session, user.id, "date_selections")
     if not has_limit:
         await callback.message.edit_text(
@@ -28,8 +29,14 @@ async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession)
         await callback.answer()
         return
 
+    _dates_prompt = {
+        "ru": "📆 *Подбор благоприятных дат*\n\nВыбери событие:",
+        "en": "📆 *Favorable date selection*\n\nChoose an event:",
+        "fa": "📆 *انتخاب تاریخ مناسب*\n\nیک رویداد انتخاب کنید:",
+        "tr": "📆 *Uygun tarih seçimi*\n\nBir etkinlik seçin:",
+    }.get(lang, "📆 *Favorable date selection*\n\nChoose an event:")
     await callback.message.edit_text(
-        "📆 *Подбор благоприятных дат*\n\nВыбери событие:",
+        _dates_prompt,
         reply_markup=event_type_menu(),
         parse_mode="Markdown",
     )
@@ -37,7 +44,7 @@ async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession)
 
 
 @router.callback_query(F.data.startswith("dates:event:"))
-async def select_event(callback: CallbackQuery, user: User, session: AsyncSession):
+async def select_event(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     event_type = callback.data.split(":")[-1]
 
     has_limit, used, max_val = await check_limit(session, user.id, "date_selections")
@@ -64,7 +71,7 @@ async def select_event(callback: CallbackQuery, user: User, session: AsyncSessio
     user_msg = f"Обоснуй выбор благоприятных дат для события '{event_name}'.\nДанные: {json.dumps(context, ensure_ascii=False)}"
     response = await generate(
         session, user.id, "date_selection",
-        DATE_SELECTION_PROMPT, user_msg,
+        DATE_SELECTION_PROMPT(lang), user_msg,
         complexity="simple", max_tokens=400,
     )
 
@@ -81,8 +88,11 @@ async def select_event(callback: CallbackQuery, user: User, session: AsyncSessio
     dates_list = "\n".join(
         f"• *{d['date']}* ({d['weekday']}) — энергия {d['energy']}" for d in favorable
     )
-    name = user.first_name or "друг"
-    header = f"📆 *Благоприятные даты для — {name}*\n_Событие: {event_name}_\n\n{dates_list}\n\n"
+    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
+    name = user.first_name or _friend
+    _hdr = {"ru": "Благоприятные даты для", "en": "Favorable dates for", "fa": "تاریخ‌های مناسب برای", "tr": "Uygun tarihler:"}.get(lang, "Favorable dates for")
+    _ev_label = {"ru": "Событие", "en": "Event", "fa": "رویداد", "tr": "Etkinlik"}.get(lang, "Event")
+    header = f"📆 *{_hdr} — {name}*\n_{_ev_label}: {event_name}_\n\n{dates_list}\n\n"
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[

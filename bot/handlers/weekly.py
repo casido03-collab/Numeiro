@@ -12,6 +12,7 @@ from bot.utils import parse_birth_date, safe_edit_ai
 from bot.services.thinking import random_thinking
 from bot.services.ai_service import generate
 from bot.prompts.prompts import WEEKLY_PREDICTION_PROMPT
+from bot.i18n.translations import t
 from bot.keyboards.main import sphere_menu, limit_reached_keyboard, back_to_main
 
 router = Router()
@@ -42,6 +43,15 @@ SPHERE_NAMES = {
 
 WEEKDAY_RU = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
+_WEEKDAY_NAMES: dict[str, list[str]] = {
+    "ru": WEEKDAY_RU,
+    "en": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    "fa": ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه"],
+    "tr": ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"],
+}
+
+_FRIEND: dict[str, str] = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}
+
 
 def _week_energy(birth_date: date, week_start: date) -> dict:
     """Calculate personal numbers for the week."""
@@ -59,7 +69,7 @@ def _week_energy(birth_date: date, week_start: date) -> dict:
 
 @router.callback_query(F.data == "menu:weekly")
 @router.callback_query(F.data == "weekly:start")
-async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSession):
+async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     has_limit, used, max_val = await check_limit(session, user.id, "weekly_reports")
     if not has_limit:
         await callback.message.edit_text(
@@ -86,8 +96,14 @@ async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSessio
         await callback.answer()
         return
 
+    _prompt_text = {
+        "ru": "📅 *Расклад на неделю*\n\nВыбери сферу для прогноза:",
+        "en": "📅 *Weekly forecast*\n\nChoose a sphere for the forecast:",
+        "fa": "📅 *پیش‌بینی هفتگی*\n\nیک حوزه برای پیش‌بینی انتخاب کن:",
+        "tr": "📅 *Haftalık tahmin*\n\nTahmin için bir alan seçin:",
+    }.get(lang, "📅 *Weekly forecast*\n\nChoose a sphere:")
     await callback.message.edit_text(
-        "📅 *Расклад на неделю*\n\nВыбери сферу для прогноза:",
+        _prompt_text,
         reply_markup=sphere_menu("weekly_sphere", back="menu:main"),
         parse_mode="Markdown",
     )
@@ -95,7 +111,7 @@ async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSessio
 
 
 @router.callback_query(F.data.startswith("weekly_sphere:"))
-async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: AsyncSession):
+async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     sphere = callback.data.split(":")[-1]
 
     thinking_msg = await callback.message.edit_text(random_thinking())
@@ -116,15 +132,16 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
     if not cached:
         nums = calculate_all(birth_date_obj)
         week_nums = _week_energy(birth_date_obj, week_start)
+        _wd_list = _WEEKDAY_NAMES.get(lang) or _WEEKDAY_NAMES["en"]
         days = []
         for i in range(7):
             d = today + timedelta(days=i)
             days.append({
                 "date": d.strftime("%d.%m"),
-                "weekday": WEEKDAY_RU[d.weekday()],
+                "weekday": _wd_list[d.weekday()],
             })
         context = {
-            "name": user.first_name or "друг",
+            "name": user.first_name or _FRIEND.get(lang, "friend"),
             "birth_date": user.birth_date,
             "sphere": SPHERE_NAMES.get(sphere, sphere),
             "week_start": week_start.strftime("%d.%m.%Y"),
@@ -139,7 +156,7 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
         )
         cached = await generate(
             session, user.id, "weekly_report",
-            WEEKLY_PREDICTION_PROMPT, user_msg,
+            WEEKLY_PREDICTION_PROMPT(lang), user_msg,
             complexity="medium", max_tokens=700,
         )
         await set_cached(cache_key, cached, ttl=3600 * 24 * 7)
@@ -154,12 +171,14 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
     await consume_limit(session, user.id, "weekly_reports")
     await consume_limit(session, user.id, "ai_messages")
 
-    name = user.first_name or "друг"
+    name = user.first_name or _FRIEND.get(lang, "friend")
     sphere_name = SPHERE_NAMES.get(sphere, sphere)
+    _hdr_title = {"ru": "Прогноз на неделю", "en": "Weekly forecast", "fa": "پیش‌بینی هفتگی", "tr": "Haftalık tahmin"}.get(lang, "Weekly forecast")
+    _hdr_sphere = {"ru": "Сфера", "en": "Sphere", "fa": "حوزه", "tr": "Alan"}.get(lang, "Sphere")
     header = (
-        f"📅 *Прогноз на неделю — {name}*\n"
+        f"📅 *{_hdr_title} — {name}*\n"
         f"_{week_start.strftime('%d.%m')} — {week_end.strftime('%d.%m.%Y')}_\n"
-        f"Сфера: *{sphere_name}*\n\n"
+        f"{_hdr_sphere}: *{sphere_name}*\n\n"
     )
     from bot.keyboards.main import after_reading_keyboard_weekly
     await safe_edit_ai(thinking_msg, header + cached, reply_markup=after_reading_keyboard_weekly())

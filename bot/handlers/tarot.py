@@ -14,6 +14,7 @@ from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.services.thinking import random_thinking
 from bot.prompts.prompts import TAROT_CARD_PROMPT
+from bot.i18n.translations import t
 from bot.keyboards.main import after_tarot_keyboard, limit_reached_keyboard, back_to_main
 from bot.utils import parse_birth_date
 
@@ -77,7 +78,7 @@ def _time_until_midnight_msk() -> str:
 # ─── Обработчики ──────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "menu:tarot")
-async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession):
+async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     today_str = date.today().strftime("%Y-%m-%d")
     cache_key = make_cache_key("tarot_card", user.id, today_str)
 
@@ -149,7 +150,7 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
     )
     card_text = await generate(
         session, user.id, "tarot_card",
-        TAROT_CARD_PROMPT, user_msg,
+        TAROT_CARD_PROMPT(lang), user_msg,
         complexity="medium", max_tokens=500,
     )
 
@@ -171,8 +172,10 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession)
     await consume_limit(session, user.id, "ai_messages")
 
     # ── Отправляем: фото сверху, текст+кнопки снизу ───────────────────────────
-    name = user.first_name or "друг"
-    text = f"🃏 *Карта дня — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{card_text}"
+    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
+    name = user.first_name or _friend
+    _card_title = {"ru": "Карта дня", "en": "Card of the day", "fa": "کارت روز", "tr": "Günün kartı"}.get(lang, "Card of the day")
+    text = f"🃏 *{_card_title} — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{card_text}"
 
     image_path = ASSETS_DIR / f"{file_key}.png"
     try:

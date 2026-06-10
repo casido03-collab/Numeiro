@@ -11,6 +11,7 @@ from bot.services.cache import get_cached, set_cached, make_cache_key
 from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import FREE_BIRTH_REPORT_PROMPT, FULL_MATRIX_PROMPT, UPSELL_PROMPT
+from bot.i18n.translations import t
 from bot.keyboards.main import sphere_menu, upsell_keyboard, limit_reached_keyboard, back_to_main, main_menu, upsell_keyboard_reading, after_reading_keyboard_matrix
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
 from bot.services.thinking import random_thinking
@@ -42,17 +43,20 @@ SPHERE_NAMES = {
 }
 
 
-async def show_sphere_selection(msg: Message, user: User):
-    name = user.first_name or "друг"
+async def show_sphere_selection(msg: Message, user: User, lang: str = "ru"):
+    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
+    name = user.first_name or _friend
+    _prompt = {"ru": "выберите сферу для разбора", "en": "choose a sphere for your reading",
+               "fa": "حوزه‌ای را برای بررسی انتخاب کنید", "tr": "okuma için bir alan seçin"}.get(lang, "choose a sphere")
     await msg.edit_text(
-        f"🔮 *{name}*, выберите сферу для разбора:",
+        f"🔮 *{name}*, {_prompt}:",
         reply_markup=sphere_menu("sphere", back="menu:main"),
         parse_mode="Markdown",
     )
 
 
 @router.callback_query(F.data == "menu:reading")
-async def menu_reading(callback: CallbackQuery, user: User, session: AsyncSession):
+async def menu_reading(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     if not user.birth_date:
         # Запустим FSM для ввода даты
         from bot.keyboards.main import cancel_fsm_keyboard
@@ -71,12 +75,12 @@ async def menu_reading(callback: CallbackQuery, user: User, session: AsyncSessio
         await callback.answer()
         return
 
-    await show_sphere_selection(callback.message, user)  # reading оставляем как есть
+    await show_sphere_selection(callback.message, user, lang)  # reading оставляем как есть
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("sphere:"))
-async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSession):
+async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     sphere = callback.data.split(":")[-1]
 
     has_limit, used, max_val = await check_limit(session, user.id, "mini_readings")
@@ -113,7 +117,7 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
             "traits": traits,
         }
         user_msg = f"Сделай бесплатный разбор для сферы '{SPHERE_NAMES.get(sphere, sphere)}'.\nДанные: {json.dumps(context, ensure_ascii=False)}"
-        cached = await generate(session, user.id, "free_reading", FREE_BIRTH_REPORT_PROMPT, user_msg, complexity="simple", max_tokens=400)
+        cached = await generate(session, user.id, "free_reading", FREE_BIRTH_REPORT_PROMPT(lang), user_msg, complexity="simple", max_tokens=400)
         await set_cached(cache_key, cached, ttl=3600 * 24 * 3)
 
     from bot.services.reports_service import save_report
@@ -126,8 +130,10 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
     await consume_limit(session, user.id, "mini_readings")
     await consume_limit(session, user.id, "ai_messages")
 
-    name = user.first_name or "друг"
-    text = f"🔮 *Разбор для {name}*\n\n{cached}"
+    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
+    name = user.first_name or _friend
+    _title = {"ru": "Разбор для", "en": "Reading for", "fa": "بررسی برای", "tr": "Okuma:"}.get(lang, "Reading for")
+    text = f"🔮 *{_title} {name}*\n\n{cached}"
 
     # CTA кнопка встроена прямо в клавиатуру — не нужен лишний API-вызов
     from bot.keyboards.main import upsell_keyboard_reading
@@ -136,7 +142,7 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
 
 
 @router.callback_query(F.data == "matrix:start")
-async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSession):
+async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     from bot.services.limits import get_user_plan
     plan = await get_user_plan(session, user.id)
 
@@ -205,7 +211,7 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
             "numbers": nums,
         }
         user_msg = f"Сделай полный разбор матрицы судьбы.\nДанные: {json.dumps(context, ensure_ascii=False)}"
-        cached = await generate(session, user.id, "full_matrix", FULL_MATRIX_PROMPT, user_msg, complexity="complex", max_tokens=900)
+        cached = await generate(session, user.id, "full_matrix", FULL_MATRIX_PROMPT(lang), user_msg, complexity="complex", max_tokens=900)
         await set_cached(cache_key, cached, ttl=3600 * 24 * 7)
 
     from bot.services.reports_service import save_report as _save
@@ -218,11 +224,13 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
     await consume_limit(session, user.id, "mini_readings")
     await consume_limit(session, user.id, "ai_messages")
 
-    name = user.first_name or "друг"
-    text = f"🌟 *Матрица судьбы — {name}*\n\n{cached}"
+    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
+    name = user.first_name or _friend
+    _matrix_title = {"ru": "Матрица судьбы", "en": "Destiny Matrix", "fa": "ماتریس سرنوشت", "tr": "Kader Matrisi"}.get(lang, "Destiny Matrix")
+    text = f"🌟 *{_matrix_title} — {name}*\n\n{cached}"
     await safe_edit_ai(thinking_msg, text, reply_markup=after_reading_keyboard_matrix())
     await callback.answer()
 
 
-async def show_free_reading(msg: Message, user: User, session):
-    await show_sphere_selection(msg, user)
+async def show_free_reading(msg: Message, user: User, session, lang: str = "ru"):
+    await show_sphere_selection(msg, user, lang)

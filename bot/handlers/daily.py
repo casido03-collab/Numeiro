@@ -11,12 +11,22 @@ from bot.services.cache import get_cached, set_cached, make_cache_key, get_redis
 from bot.services.limits import check_limit, consume_limit, get_user_plan
 from bot.services.ai_service import generate
 from bot.prompts.prompts import DAILY_FORECAST_PROMPT
+from bot.i18n.translations import t
 from bot.keyboards.main import back_to_main, limit_reached_keyboard
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
 from bot.services.thinking import random_thinking
 from config import PLANS
 
 router = Router()
+
+_WEEKDAY_NAMES: dict[str, list[str]] = {
+    "ru": ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"],
+    "en": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    "fa": ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه"],
+    "tr": ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"],
+}
+
+_FRIEND: dict[str, str] = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}
 
 
 def _day_number(birth_date: date, target: date) -> int:
@@ -69,7 +79,7 @@ async def _consume_energy_total(user_id: int, plan: str, session: AsyncSession) 
 
 
 @router.callback_query(F.data == "menu:daily")
-async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSession):
+async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     plan = await get_user_plan(session, user.id)
 
     # ── 1. Daily cap (1/day for all plans including free) ─────────────────────
@@ -132,18 +142,18 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
     if not cached:
         day_num = _day_number(birth_date_obj, today)
         nums = calculate_all(birth_date_obj)
-        weekday_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+        weekday_name = (_WEEKDAY_NAMES.get(lang) or _WEEKDAY_NAMES["en"])[today.weekday()]
         context = {
-            "name": user.first_name or "друг",
+            "name": user.first_name or _FRIEND.get(lang, "friend"),
             "date": today.strftime("%d.%m.%Y"),
-            "weekday": weekday_names[today.weekday()],
+            "weekday": weekday_name,
             "day_number": day_num,
             "numbers": {k: v for k, v in nums.items() if k in ["life_path", "destiny", "personality"]},
         }
         user_msg = f"Создай ежедневный прогноз.\nДанные: {json.dumps(context, ensure_ascii=False)}"
         cached = await generate(
             session, user.id, "daily_forecast",
-            DAILY_FORECAST_PROMPT, user_msg,
+            DAILY_FORECAST_PROMPT(lang), user_msg,
             complexity="simple", max_tokens=300,
         )
         await set_cached(cache_key, cached, ttl=3600 * 20)
@@ -162,15 +172,16 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
     await _consume_energy_total(user.id, plan, session)
 
     # ── 6. Send result ────────────────────────────────────────────────────────
-    name = user.first_name or "друг"
-    weekday_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-    header = f"⚡ *Энергия дня — {name}*\n_{weekday_names[today.weekday()]}, {today.strftime('%d.%m.%Y')}_\n\n"
+    name = user.first_name or _FRIEND.get(lang, "friend")
+    weekday_name = (_WEEKDAY_NAMES.get(lang) or _WEEKDAY_NAMES["en"])[today.weekday()]
+    _energy_title = {"ru": "Энергия дня", "en": "Energy of the day", "fa": "انرژی روز", "tr": "Günün enerjisi"}.get(lang, "Energy of the day")
+    header = f"⚡ *{_energy_title} — {name}*\n_{weekday_name}, {today.strftime('%d.%m.%Y')}_\n\n"
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📅 Прогноз на неделю", callback_data="weekly:start")],
-        [InlineKeyboardButton(text="❓ Задать вопрос", callback_data="menu:question")],
-        [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
+        [InlineKeyboardButton(text=t("menu_weekly", lang), callback_data="weekly:start")],
+        [InlineKeyboardButton(text=t("menu_question", lang), callback_data="menu:question")],
+        [InlineKeyboardButton(text=t("btn_back_to_main", lang), callback_data="menu:main")],
     ])
     await safe_edit_ai(thinking_msg, header + cached, reply_markup=kb)
     await callback.answer()

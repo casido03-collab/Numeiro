@@ -12,6 +12,7 @@ from bot.services.cache import get_cached, set_cached, make_cache_key
 from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
 from bot.prompts.prompts import COMPATIBILITY_PROMPT
+from bot.i18n.translations import t
 from bot.keyboards.main import relation_type_menu, limit_reached_keyboard, back_to_main
 from bot.services.thinking import random_thinking
 from bot.utils import parse_birth_date as _parse_compat_date, safe_edit_ai
@@ -59,7 +60,7 @@ def _parse_date(text: str) -> date | None:
 
 @router.callback_query(F.data == "menu:compatibility")
 @router.callback_query(F.data == "compat:start")
-async def compat_start(callback: CallbackQuery, user: User, session: AsyncSession, state: FSMContext):
+async def compat_start(callback: CallbackQuery, user: User, session: AsyncSession, state: FSMContext, lang: str = "ru"):
     has_limit, used, max_val = await check_limit(session, user.id, "compatibility")
     if not has_limit:
         await callback.message.edit_text(
@@ -86,11 +87,18 @@ async def compat_start(callback: CallbackQuery, user: User, session: AsyncSessio
         await callback.answer()
         return
 
+    await state.update_data(lang=lang)
+    _compat_prompt = {
+        "ru": "💞 *Совместимость*\n\nВведи дату рождения второго человека в формате *ДД.ММ.ГГГГ*",
+        "en": "💞 *Compatibility*\n\nEnter the second person's birth date in format *DD.MM.YYYY*",
+        "fa": "💞 *سازگاری*\n\nتاریخ تولد نفر دوم را به صورت *DD.MM.YYYY* وارد کنید",
+        "tr": "💞 *Uyumluluk*\n\nİkinci kişinin doğum tarihini *GG.AA.YYYY* formatında girin",
+    }.get(lang, "💞 *Compatibility*\n\nEnter the second person's birth date in format *DD.MM.YYYY*")
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     await callback.message.edit_text(
-        "💞 *Совместимость*\n\nВведи дату рождения второго человека в формате *ДД.ММ.ГГГГ*",
+        _compat_prompt,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="compat:cancel")]
+            [InlineKeyboardButton(text=t("btn_back", lang), callback_data="compat:cancel")]
         ]),
         parse_mode="Markdown",
     )
@@ -121,10 +129,11 @@ async def receive_partner_date(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("compat:type:"), CompatibilityFSM.waiting_relation_type)
-async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user: User, session: AsyncSession):
+async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user: User, session: AsyncSession, lang: str = "ru"):
     relation_type = callback.data.split(":")[-1]
     data = await state.get_data()
     partner_date_str = data.get("partner_date")
+    lang = data.get("lang", lang)
     await state.clear()
 
     if not partner_date_str:
@@ -157,7 +166,7 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
         user_msg = f"Анализируй совместимость.\nДанные: {json.dumps(context, ensure_ascii=False)}"
         cached = await generate(
             session, user.id, "compatibility",
-            COMPATIBILITY_PROMPT, user_msg,
+            COMPATIBILITY_PROMPT(lang), user_msg,
             complexity="medium", max_tokens=700,
         )
         await set_cached(cache_key, cached, ttl=3600 * 24 * 30)
@@ -185,9 +194,11 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
     await consume_limit(session, user.id, "compatibility")
     await consume_limit(session, user.id, "ai_messages")
 
-    name = user.first_name or "друг"
+    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
+    name = user.first_name or _friend
     relation_name = RELATION_NAMES.get(relation_type, relation_type)
-    header = f"💞 *Совместимость — {name}*\n_Тип связи: {relation_name}_\n\n"
+    _type_label = {"ru": "Тип связи", "en": "Relationship type", "fa": "نوع رابطه", "tr": "İlişki türü"}.get(lang, "Relationship type")
+    header = f"💞 *{'Совместимость' if lang == 'ru' else 'Compatibility'} — {name}*\n_{_type_label}: {relation_name}_\n\n"
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
