@@ -50,3 +50,10 @@ async def mark_keyboard_shown(telegram_id: int) -> None:
         await (await _r()).set(f"kb_shown:{telegram_id}", "1", ex=_KB_TTL)
     except Exception:
         pass
+
+
+async def clear_keyboard_shown(telegram_id: int) -> None:
+    try:
+        await (await _r()).delete(f"kb_shown:{telegram_id}")
+    except Exception:
+        pass

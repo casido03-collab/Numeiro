@@ -55,8 +55,15 @@ async def lang_selected(callback: CallbackQuery, user: User, session: AsyncSessi
 
     if onboarding_done:
         from bot.keyboards.main import main_menu
+        from bot.keyboards.reply import main_reply_keyboard
         from bot.handlers.start import _welcome_text
+        from bot.services.menu_tracker import clear_keyboard_shown, mark_keyboard_shown
+        from bot.utils import safe_answer_menu
         name = callback.from_user.first_name or None
+        # Сбрасываем флаг и всегда переотправляем reply-клавиатуру при выборе языка
+        await clear_keyboard_shown(user.telegram_id)
+        await safe_answer_menu(callback.message, "🌙", reply_markup=main_reply_keyboard(lang), parse_mode=None)
+        await mark_keyboard_shown(user.telegram_id)
         await callback.message.edit_text(
             _welcome_text(name, lang),
             reply_markup=main_menu(lang),
