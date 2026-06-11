@@ -132,22 +132,14 @@ def payment_method_keyboard(
     back: str = "menu:plans",
     lang: str = "ru",
 ) -> InlineKeyboardMarkup:
-    """Выбор способа оплаты.
-    Для не-RU пользователей: только Telegram Stars (без карты/СБП).
-    """
+    """Выбор способа оплаты — только Telegram Stars."""
     buttons = [
         [InlineKeyboardButton(
             text=t("pay_btn_stars", lang).format(stars=stars),
             callback_data=f"pay:stars:{product_type}:{product_key}",
         )],
+        [InlineKeyboardButton(text=t("btn_back", lang), callback_data=back)],
     ]
-    # Карта/СБП доступна только для RU
-    if lang == "ru":
-        buttons.append([InlineKeyboardButton(
-            text=f"💳 Картой / СБП — {stars} ₽",
-            callback_data=f"pay:card:{product_type}:{product_key}",
-        )])
-    buttons.append([InlineKeyboardButton(text=t("btn_back", lang), callback_data=back)])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

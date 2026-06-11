@@ -7,23 +7,16 @@ from aiogram.types import (
     CallbackQuery, Message, LabeledPrice, PreCheckoutQuery,
     InlineKeyboardMarkup, InlineKeyboardButton,
 )
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from bot.models.user import User, Payment, Subscription, PlanEnum, SubscriptionStatusEnum
 from bot.keyboards.main import (
-    payment_method_keyboard,
     plans_keyboard, one_time_products_keyboard, back_to_main,
 )
 from config import PLANS, ONE_TIME_PRODUCTS, settings
 
 router = Router()
 logger = logging.getLogger(__name__)
-
-
-class PaymentFSM(StatesGroup):
-    waiting_email = State()
 
 
 def _valid_email(email: str) -> bool:
@@ -52,148 +45,50 @@ PRODUCT_DESCRIPTIONS = {
 }
 
 
-# ─── Шаг 1: нажатие кнопки тарифа / продукта → выбор метода ──────────────────
+# ─── Шаг 1: нажатие кнопки тарифа / продукта → Stars-инвойс сразу ────────────
+
+async def _send_stars_invoice(callback: CallbackQuery, product_type: str, product_key: str):
+    """Отправляет Telegram Stars invoice напрямую, без промежуточного экрана."""
+    info = PLAN_DISPLAY.get(product_key) or PRODUCT_DISPLAY.get(product_key)
+    if not info:
+        await callback.answer("❌ Товар не найден")
+        return
+    label = info["label"]
+    stars = info["price"]
+    desc = PRODUCT_DESCRIPTIONS.get(product_key, label)
+    payload = f"{product_type}:{product_key}"
+    await callback.message.answer_invoice(
+        title=label,
+        description=desc,
+        payload=payload,
+        currency="XTR",
+        prices=[LabeledPrice(label=label, amount=stars)],
+    )
+    await callback.answer()
+
 
 @router.callback_query(F.data.startswith("buy:plan:"))
 async def buy_plan_choose_method(callback: CallbackQuery, lang: str = "ru"):
     plan_key = callback.data.split(":")[-1]
-    info = PLAN_DISPLAY.get(plan_key)
-    if not info:
-        await callback.answer("❌ Тариф не найден")
-        return
-
-    text = (
-        f"🛒 *Тариф {info['label']}* — {info['price']} ₽ / {info['period']}\n\n"
-        f"Выбери способ оплаты:"
-    )
-    await callback.message.edit_text(
-        text,
-        reply_markup=payment_method_keyboard(
-            product_type="plan",
-            product_key=plan_key,
-            stars=info["price"],
-            back="menu:plans",
-            lang=lang,
-        ),
-        parse_mode="Markdown",
-    )
-    await callback.answer()
+    await _send_stars_invoice(callback, "plan", plan_key)
 
 
 @router.callback_query(F.data.startswith("buy:product:"))
 async def buy_product_choose_method(callback: CallbackQuery, lang: str = "ru"):
     product_key = callback.data.split(":")[-1]
-    info = PRODUCT_DISPLAY.get(product_key)
-    if not info:
-        await callback.answer("❌ Продукт не найден")
-        return
-
-    text = (
-        f"🛒 *{info['label']}* — {info['price']} ₽\n\n"
-        f"Выбери способ оплаты:"
-    )
-    await callback.message.edit_text(
-        text,
-        reply_markup=payment_method_keyboard(
-            product_type="product",
-            product_key=product_key,
-            stars=info["price"],
-            back="buy:oneoff",
-            lang=lang,
-        ),
-        parse_mode="Markdown",
-    )
-    await callback.answer()
+    await _send_stars_invoice(callback, "product", product_key)
 
 
-# ─── Шаг 2а: выбрана карта (ЮКасса) → запрашиваем email ─────────────────────
+# ─── Шаг 2а: pay:card → заглушка (Юкасса отключена) ─────────────────────────
 
 @router.callback_query(F.data.startswith("pay:card:"))
-async def card_pay_ask_email(callback: CallbackQuery, state: FSMContext):
-    parts = callback.data.split(":")  # ['pay', 'card', type, key]
-    if len(parts) < 4:
-        await callback.answer()
-        return
-    product_type, product_key = parts[2], parts[3]
-
-    if not settings.yookassa_shop_id or not settings.yookassa_secret_key:
-        await callback.answer("❌ Оплата картой временно недоступна", show_alert=True)
-        return
-
-    await state.set_state(PaymentFSM.waiting_email)
-    await state.update_data(product_type=product_type, product_key=product_key)
-
-    await callback.message.edit_text(
-        "📧 *Введите email для получения чека:*\n\n"
-        "_Например: example@mail.ru_\n\n"
-        "После оплаты мы пришлём чек на этот адрес.",
-        parse_mode="Markdown",
-    )
-    await callback.answer()
-
-
-@router.message(PaymentFSM.waiting_email, ~F.text.startswith("/"))
-async def card_pay_create(message: Message, state: FSMContext, user: User):
-    email = (message.text or "").strip()
-    if not _valid_email(email):
-        await message.answer(
-            "❌ Некорректный email. Введите снова:\n\n_Например: example@mail.ru_",
-            parse_mode="Markdown",
-        )
-        return
-
-    data = await state.get_data()
-    product_type = data.get("product_type")
-    product_key  = data.get("product_key")
-    await state.clear()
-
-    info = PLAN_DISPLAY.get(product_key) or PRODUCT_DISPLAY.get(product_key)
-    if not info:
-        await message.answer("❌ Товар не найден.")
-        return
-
-    label  = info["label"]
-    amount = float(info["price"])
-    desc   = PRODUCT_DESCRIPTIONS.get(product_key, label)
-
-    try:
-        from bot.services.yookassa_service import create_payment as yk_create
-        payment = await yk_create(
-            shop_id=settings.yookassa_shop_id,
-            secret_key=settings.yookassa_secret_key,
-            amount=amount,
-            description=desc,
-            return_url=settings.yookassa_return_url,
-            metadata={
-                "user_id":       str(user.telegram_id),
-                "product_type":  product_type,
-                "product_key":   product_key,
-                "platform":      "tg",
-            },
-            email=email,
-        )
-        await message.answer(
-            f"💳 *{label}* — {int(amount)} ₽\n\n"
-            f"Нажмите кнопку чтобы перейти к оплате.\n"
-            f"После оплаты доступ откроется автоматически. ✅",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment["confirmation_url"])],
-                [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
-            ]),
-            parse_mode="Markdown",
-        )
-    except Exception as e:
-        logger.error("YooKassa payment creation error: %s", e)
-        await message.answer(
-            "❌ Не удалось создать платёж. Попробуйте оплатить через Telegram Stars:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text=f"⭐ Оплатить Stars",
-                    callback_data=f"pay:stars:{product_type}:{product_key}",
-                )],
-                [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],
-            ]),
-        )
+async def card_pay_disabled(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    product_type = parts[2] if len(parts) > 2 else ""
+    product_key  = parts[3] if len(parts) > 3 else ""
+    await callback.answer("⭐ Доступна только оплата Telegram Stars", show_alert=True)
+    # Перенаправляем сразу на Stars-инвойс
+    await _send_stars_invoice(callback, product_type, product_key)
 
 
 # ─── Шаг 2б: выбраны Stars → счёт ────────────────────────────────────────────
@@ -225,29 +120,16 @@ async def stars_pay_invoice(callback: CallbackQuery, user: User):
     await callback.answer()
 
 
-# ─── Навигация: назад к методам оплаты (из выбора карточной системы) ─────────
+# ─── Навигация: pay:method → редирект на Stars-инвойс ────────────────────────
 
 @router.callback_query(F.data.startswith("pay:method:"))
 async def back_to_pay_method(callback: CallbackQuery, lang: str = "ru"):
-    parts = callback.data.split(":")  # ['pay', 'method', type, key]
+    parts = callback.data.split(":")
     if len(parts) < 4:
         await callback.answer()
         return
     product_type, product_key = parts[2], parts[3]
-    info = PLAN_DISPLAY.get(product_key) or PRODUCT_DISPLAY.get(product_key)
-    label = info["label"] if info else product_key
-    price = info["price"] if info else "—"
-
-    back_cb = "menu:plans" if product_type == "plan" else "buy:oneoff"
-    period = info.get("period", "") if product_type == "plan" else ""
-    suffix = f" / {period}" if period else ""
-
-    await callback.message.edit_text(
-        f"🛒 *{label}* — {price} ₽{suffix}\n\nВыбери способ оплаты:",
-        reply_markup=payment_method_keyboard(product_type, product_key, price, back_cb, lang=lang),
-        parse_mode="Markdown",
-    )
-    await callback.answer()
+    await _send_stars_invoice(callback, product_type, product_key)
 
 
 # ─── Навигация: разовые покупки ───────────────────────────────────────────────
