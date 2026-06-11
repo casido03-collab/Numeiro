@@ -24,6 +24,7 @@ def _configure_yookassa():
 
 _VK_TIERS = {
     "monthly_990": {"price": 990, "name": "Работа со мной — месяц", "days": 30},
+    "q29":         {"price": 29,  "name": "Ответ на вопрос"},
 }
 
 
@@ -113,6 +114,8 @@ async def handle_vk_payment_webhook(
 
         if tier_key == "monthly_990":
             await _process_vk_monthly(int(vk_user_id), payment_id)
+        elif tier_key == "q29":
+            await _process_vk_q29(int(vk_user_id), payment_id)
         else:
             await _process_vk_payment(int(vk_user_id), tier_key, payment_id, int(amount))
 
@@ -223,6 +226,89 @@ async def _process_vk_payment(vk_user_id: int, tier_key: str, payment_id: str, a
     await _typing(3)
     await _send(followup_invite(followup_limit))
     await set_stage(vk_user_id, "followup")
+
+
+async def _process_vk_q29(vk_user_id: int, payment_id: str) -> None:
+    """Ответить на один вопрос за 29 ₽, затем пригласить задать следующий."""
+    import json
+    import asyncio
+    import random
+    from datetime import datetime
+    from bot.vk_dialog.session_manager import set_stage, get_profile
+    from bot.business_dialog.services import generate_business
+    from bot.prompts.prompts import PERSONAL_QUESTION_PAID_PROMPT
+    from bot.services.numerology import calculate_all
+
+    if not _vk_api:
+        logger.error("VK API not initialized in payments.py")
+        return
+
+    profile = await get_profile(vk_user_id)
+
+    async def _send_msg(text: str) -> None:
+        try:
+            await _vk_api.messages.send(
+                peer_id=vk_user_id,
+                message=text,
+                random_id=random.randint(1, 2**31),
+            )
+        except Exception as e:
+            logger.warning("VK q29 send failed for %s: %s", vk_user_id, e)
+
+    async def _typing_sec(seconds: float) -> None:
+        elapsed = 0.0
+        while elapsed < seconds:
+            try:
+                await _vk_api.messages.set_activity(peer_id=vk_user_id, type="typing")
+            except Exception:
+                pass
+            sleep_for = min(5.0, seconds - elapsed)
+            await asyncio.sleep(sleep_for)
+            elapsed += sleep_for
+
+    def _calc_typing_secs(text: str) -> float:
+        chars = len(text)
+        total = random.uniform(1.5, 3.0) + chars / 4.0
+        return min(total * random.uniform(0.85, 1.15), 22.0)
+
+    await _send_msg("Оплата прошла, душа моя 🌙\n\nСейчас посмотрю ваш вопрос…")
+
+    # Числа судьбы из даты рождения
+    birth_date_str = profile.get("birth_date", "")
+    nums: dict = {}
+    if birth_date_str:
+        try:
+            bd = datetime.strptime(birth_date_str, "%d.%m.%Y").date()
+            nums = calculate_all(bd)
+        except Exception:
+            pass
+
+    question = profile.get("problem", "")
+    context = json.dumps({
+        "name":       profile.get("name", ""),
+        "birth_date": birth_date_str,
+        "question":   question,
+        "numbers":    {k: v for k, v in nums.items() if k in ("life_path", "destiny", "personality")},
+    }, ensure_ascii=False)
+
+    await _typing_sec(6)
+    answer = await generate_business(
+        PERSONAL_QUESTION_PAID_PROMPT("ru"),
+        f"Ответь на личный вопрос пользователя.\nДанные: {context}",
+        complexity="medium",
+        max_tokens=600,
+    )
+    await _typing_sec(_calc_typing_secs(answer))
+    await _send_msg(answer)
+
+    # Приглашение задать следующий вопрос
+    await asyncio.sleep(2)
+    emo = random.choice(["🌙", "✨", "💫", "🔮"])
+    await _send_msg(
+        f"Если хотите задать ещё вопрос — напишите его, душа моя {emo}\n\n"
+        f"Ответ на один вопрос — 29 ₽. Я здесь."
+    )
+    await set_stage(vk_user_id, "collecting_problem")
 
 
 async def _process_vk_monthly(vk_user_id: int, payment_id: str) -> None:
