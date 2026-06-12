@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from bot.models.user import User, UserProfile, Subscription, SubscriptionStatusEnum, PlanEnum
 from bot.services.limits import get_user_plan, get_limits_summary
-from bot.keyboards.main import plans_keyboard
+from bot.keyboards.main import back_to_main
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -193,8 +193,8 @@ def _cabinet_kb(show_matrix: bool = False, lang: str = "ru") -> InlineKeyboardMa
     if show_matrix:
         rows.append([InlineKeyboardButton(text=_matrix, callback_data="matrix:start")])
     rows += [
-        [InlineKeyboardButton(text=_renew, callback_data="menu:plans")],
-        [InlineKeyboardButton(text=_all,   callback_data="menu:plans")],
+        [InlineKeyboardButton(text=_renew, callback_data="menu:main")],
+        [InlineKeyboardButton(text=_all,   callback_data="menu:main")],
         [InlineKeyboardButton(text=_menu,  callback_data="menu:main")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)

@@ -223,6 +223,11 @@ def back_to_main() -> InlineKeyboardMarkup:
     ])
 
 
+def plans_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Тарифов больше нет — перенаправляем в главное меню."""
+    return back_to_main()
+
+
 def back_to_plans() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="◀️ К тарифам", callback_data="menu:plans")]

@@ -430,15 +430,56 @@ async def menu_main(callback: CallbackQuery, user: User, lang: str = "ru"):
 
 
 @router.callback_query(F.data == "menu:plans")
-async def menu_plans(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    plan = await get_user_plan(session, user.id)
-    _plan_names = {
-        "ru": {"free": "Бесплатный", "lite": "💫 Lite", "premium": "🌟 Premium", "pro": "🔥 Pro"},
-        "en": {"free": "Free",       "lite": "💫 Lite", "premium": "🌟 Premium", "pro": "🔥 Pro"},
-        "fa": {"free": "رایگان",     "lite": "💫 Lite", "premium": "🌟 Premium", "pro": "🔥 Pro"},
-        "tr": {"free": "Ücretsiz",   "lite": "💫 Lite", "premium": "🌟 Premium", "pro": "🔥 Pro"},
-    }
-    current = (_plan_names.get(lang) or _plan_names["en"]).get(plan, plan)
-    text = _get_plans_text(current, lang)
-    await callback.message.edit_text(text, reply_markup=plans_keyboard(lang), parse_mode="HTML")
+async def menu_plans(callback: CallbackQuery, lang: str = "ru"):
+    _text = {
+        "ru": (
+            "✨ <b>Разделы и цены</b>\n\n"
+            "🔯 Гороскоп дня — <b>бесплатно</b>\n"
+            "⚡ Энергия дня — <b>бесплатно</b>\n"
+            "🃏 Карта дня — <b>49 ₽ / 49 ⭐</b>\n"
+            "🔮 Личный вопрос — <b>29 ₽ / 29 ⭐</b>\n"
+            "📖 Мини-разбор — <b>49 ₽ / 49 ⭐</b>\n"
+            "🌟 Матрица судьбы — <b>199 ₽ / 199 ⭐</b>\n"
+            "💞 Совместимость — <b>99 ₽ / 99 ⭐</b>\n"
+            "📅 Расклад на неделю — <b>79 ₽ / 79 ⭐</b>\n"
+            "🎯 Подбор дат — <b>99 ₽ / 99 ⭐</b>"
+        ),
+        "en": (
+            "✨ <b>Features & prices</b>\n\n"
+            "🔯 Daily horoscope — <b>free</b>\n"
+            "⚡ Daily energy — <b>free</b>\n"
+            "🃏 Card of the day — <b>49 ⭐</b>\n"
+            "🔮 Personal question — <b>29 ⭐</b>\n"
+            "📖 Mini reading — <b>49 ⭐</b>\n"
+            "🌟 Destiny matrix — <b>199 ⭐</b>\n"
+            "💞 Compatibility — <b>99 ⭐</b>\n"
+            "📅 Weekly reading — <b>79 ⭐</b>\n"
+            "🎯 Date selection — <b>99 ⭐</b>"
+        ),
+        "fa": (
+            "✨ <b>بخش‌ها و قیمت‌ها</b>\n\n"
+            "🔯 طالع‌بینی روزانه — <b>رایگان</b>\n"
+            "⚡ انرژی روز — <b>رایگان</b>\n"
+            "🃏 کارت روز — <b>49 ⭐</b>\n"
+            "🔮 سؤال شخصی — <b>29 ⭐</b>\n"
+            "📖 تحلیل کوتاه — <b>49 ⭐</b>\n"
+            "🌟 ماتریس سرنوشت — <b>199 ⭐</b>\n"
+            "💞 سازگاری — <b>99 ⭐</b>\n"
+            "📅 فال هفتگی — <b>79 ⭐</b>\n"
+            "🎯 انتخاب تاریخ — <b>99 ⭐</b>"
+        ),
+        "tr": (
+            "✨ <b>Bölümler ve fiyatlar</b>\n\n"
+            "🔯 Günlük burç — <b>ücretsiz</b>\n"
+            "⚡ Günlük enerji — <b>ücretsiz</b>\n"
+            "🃏 Günün kartı — <b>49 ⭐</b>\n"
+            "🔮 Kişisel soru — <b>29 ⭐</b>\n"
+            "📖 Mini yorum — <b>49 ⭐</b>\n"
+            "🌟 Kader matrisi — <b>199 ⭐</b>\n"
+            "💞 Uyumluluk — <b>99 ⭐</b>\n"
+            "📅 Haftalık açılım — <b>79 ⭐</b>\n"
+            "🎯 Tarih seçimi — <b>99 ⭐</b>"
+        ),
+    }.get(lang, "")
+    await callback.message.edit_text(_text, reply_markup=plans_keyboard(lang), parse_mode="HTML")
     await callback.answer()
