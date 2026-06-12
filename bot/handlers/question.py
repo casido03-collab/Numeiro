@@ -175,8 +175,8 @@ async def receive_birth_date_for_question(message: Message, state: FSMContext, u
         await message.answer("❌ Неверный формат. Введите дату так: *15.03.1990*", parse_mode="Markdown")
         return
 
-    # Сохраняем дату рождения
-    user.birth_date = dt
+    # Сохраняем дату рождения как строку (модель User.birth_date = String(10))
+    user.birth_date = dt.strftime("%d.%m.%Y")
     await session.commit()
 
     # Теперь показываем экран вопроса
