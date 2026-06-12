@@ -84,11 +84,33 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
     if not await has_credit(user.id, "mini_reading"):
         _locked = {
-            "ru": "🔒 *Мини-разбор*\n\nДоступно за *49 ₽* или *49 ⭐*",
-            "en": "🔒 *Mini Reading*\n\nAvailable for *49 ⭐*",
-            "fa": "🔒 *تحلیل کوتاه*\n\nقابل دسترس برای *49 ⭐*",
-            "tr": "🔒 *Mini Yorum*\n\n*49 ⭐* karşılığında erişilebilir",
-        }.get(lang, "🔒 *Mini Reading*\n\nAvailable for *49 ⭐*")
+            "ru": (
+                "📖 *Мини-разбор*\n\n"
+                "Я посмотрю одну сферу вашей жизни — отношения, деньги, работу, здоровье или другое — "
+                "и дам глубокий разбор с учётом ваших личных чисел.\n\n"
+                "Что мешает. Что помогает. Что делать.\n\n"
+                "💳 Стоимость: *49 ₽* или *49 ⭐*"
+            ),
+            "en": (
+                "📖 *Mini Reading*\n\n"
+                "I will look at one area of your life — relationships, money, work, health or other — "
+                "and give a deep reading based on your personal numbers.\n\n"
+                "What's blocking you. What helps. What to do.\n\n"
+                "💳 Price: *49 ⭐*"
+            ),
+            "fa": (
+                "📖 *تحلیل کوتاه*\n\n"
+                "یک حوزه از زندگی شما را بررسی می‌کنم — روابط، پول، کار، سلامتی یا موارد دیگر — "
+                "و تحلیل عمیقی بر اساس اعداد شخصی شما ارائه می‌دهم.\n\n"
+                "💳 قیمت: *49 ⭐*"
+            ),
+            "tr": (
+                "📖 *Mini Yorum*\n\n"
+                "Hayatınızın bir alanına bakacağım — ilişkiler, para, iş, sağlık veya başka bir şey — "
+                "ve kişisel sayılarınıza dayalı derin bir yorum sunacağım.\n\n"
+                "💳 Fiyat: *49 ⭐*"
+            ),
+        }.get(lang, "📖 *Mini Reading*\n\nA deep look at one area of your life.\n\n💳 Price: *49 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("mini_reading", 49, 49, lang), parse_mode="Markdown")
         await callback.answer()
         return
@@ -150,11 +172,35 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
     if not await has_credit(user.id, "full_matrix"):
         _locked = {
-            "ru": "🔒 *Полная матрица судьбы*\n\nДоступно за *199 ₽* или *199 ⭐*",
-            "en": "🔒 *Full Destiny Matrix*\n\nAvailable for *199 ⭐*",
-            "fa": "🔒 *ماتریس سرنوشت*\n\nقابل دسترس برای *199 ⭐*",
-            "tr": "🔒 *Kader Matrisi*\n\n*199 ⭐* karşılığında erişilebilir",
-        }.get(lang, "🔒 *Full Destiny Matrix*\n\nAvailable for *199 ⭐*")
+            "ru": (
+                "🌟 *Матрица судьбы*\n\n"
+                "Полный разбор вашего предназначения, кармы и сильных сторон.\n\n"
+                "Я рассмотрю все ключевые точки вашей карты — таланты, задачи, кармические уроки, "
+                "сильные и слабые энергии.\n\n"
+                "Самый глубокий анализ из всех доступных разборов.\n\n"
+                "💳 Стоимость: *199 ₽* или *199 ⭐*"
+            ),
+            "en": (
+                "🌟 *Destiny Matrix*\n\n"
+                "A full reading of your purpose, karma and strengths.\n\n"
+                "I will examine all the key points of your map — talents, life tasks, karmic lessons, "
+                "strong and weak energies.\n\n"
+                "The deepest analysis available.\n\n"
+                "💳 Price: *199 ⭐*"
+            ),
+            "fa": (
+                "🌟 *ماتریس سرنوشت*\n\n"
+                "تحلیل کامل هدف، کارما و نقاط قوت شما.\n\n"
+                "تمام نقاط کلیدی نقشه شما را بررسی می‌کنم — استعدادها، وظایف زندگی، درس‌های کارمایی.\n\n"
+                "💳 قیمت: *199 ⭐*"
+            ),
+            "tr": (
+                "🌟 *Kader Matrisi*\n\n"
+                "Amacınızın, karmanızın ve güçlü yönlerinizin tam analizi.\n\n"
+                "Haritanızın tüm önemli noktalarını inceleyeceğim — yetenekler, yaşam görevleri, karmik dersler.\n\n"
+                "💳 Fiyat: *199 ⭐*"
+            ),
+        }.get(lang, "🌟 *Destiny Matrix*\n\nThe deepest analysis of your purpose and karma.\n\n💳 Price: *199 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("full_matrix", 199, 199, lang), parse_mode="Markdown")
         await callback.answer()
         return

@@ -44,11 +44,54 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
 
     if not await has_credit(user.id, "personal_question"):
         _locked = {
-            "ru": "🔒 *Личный вопрос*\n\nДоступно за *29 ₽* или *29 ⭐*",
-            "en": "🔒 *Personal Question*\n\nAvailable for *29 ⭐*",
-            "fa": "🔒 *سؤال شخصی*\n\nقابل دسترس برای *29 ⭐*",
-            "tr": "🔒 *Kişisel Soru*\n\n*29 ⭐* karşılığında erişilebilir",
-        }.get(lang, "🔒 *Personal Question*\n\nAvailable for *29 ⭐*")
+            "ru": (
+                "🔮 *Личный расклад*\n\n"
+                "Добро пожаловать, мои хорошие.\n\n"
+                "Сейчас Вы можете задать мне свой вопрос и получить индивидуальный разбор ситуации.\n\n"
+                "Чем подробнее Вы опишете ситуацию, тем глубже я смогу её рассмотреть.\n\n"
+                "Например:\n\n"
+                "❤️ Что чувствует ко мне этот человек?\n"
+                "💼 Стоит ли принимать новое предложение?\n"
+                "🌙 Что ожидает меня в ближайшее время?\n"
+                "⭐ На что мне стоит обратить внимание сейчас?\n\n"
+                "💳 Стоимость: *29 ₽* или *29 ⭐*"
+            ),
+            "en": (
+                "🔮 *Personal Reading*\n\n"
+                "Welcome, dear ones.\n\n"
+                "You can ask me your question and receive a personal reading of your situation.\n\n"
+                "The more detail you provide, the deeper I can look into it.\n\n"
+                "For example:\n\n"
+                "❤️ What does this person feel for me?\n"
+                "💼 Should I accept the new offer?\n"
+                "🌙 What awaits me in the near future?\n"
+                "⭐ What should I pay attention to right now?\n\n"
+                "💳 Price: *29 ⭐*"
+            ),
+            "fa": (
+                "🔮 *خواندن شخصی*\n\n"
+                "خوش آمدید، عزیزانم.\n\n"
+                "می‌توانید سؤال خود را بپرسید و تفسیر شخصی دریافت کنید.\n\n"
+                "هرچه بیشتر توضیح دهید، عمیق‌تر می‌توانم بررسی کنم.\n\n"
+                "مثلاً:\n\n"
+                "❤️ این شخص چه احساسی نسبت به من دارد؟\n"
+                "💼 آیا باید پیشنهاد جدید را بپذیرم؟\n"
+                "🌙 در آینده نزدیک چه چیزی در انتظار من است؟\n\n"
+                "💳 قیمت: *29 ⭐*"
+            ),
+            "tr": (
+                "🔮 *Kişisel Okuma*\n\n"
+                "Hoş geldiniz, canlarım.\n\n"
+                "Sorunuzu sorabilir ve durumunuz için kişisel bir yorum alabilirsiniz.\n\n"
+                "Ne kadar ayrıntı verirseniz, o kadar derin bakabilirim.\n\n"
+                "Örneğin:\n\n"
+                "❤️ Bu kişi benim için ne hissediyor?\n"
+                "💼 Yeni teklifi kabul etmeli miyim?\n"
+                "🌙 Yakın gelecekte beni ne bekliyor?\n"
+                "⭐ Şu an neye dikkat etmeliyim?\n\n"
+                "💳 Fiyat: *29 ⭐*"
+            ),
+        }.get(lang, "🔮 *Personal Reading*\n\nAsk me your question and receive a personal reading.\n\n💳 Price: *29 ⭐*")
         await replace_message(callback.message, _locked, reply_markup=_pay_kb("personal_question", 29, 29, lang))
         await callback.answer()
         return

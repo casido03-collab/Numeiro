@@ -23,11 +23,34 @@ async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession,
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
     if not await has_credit(user.id, "date_selection"):
         _locked = {
-            "ru": "🔒 *Подбор дат*\n\nДоступно за *99 ₽* или *99 ⭐*",
-            "en": "🔒 *Date Selection*\n\nAvailable for *99 ⭐*",
-            "fa": "🔒 *انتخاب تاریخ*\n\nقابل دسترس برای *99 ⭐*",
-            "tr": "🔒 *Tarih Seçimi*\n\n*99 ⭐* karşılığında erişilebilir",
-        }.get(lang, "🔒 *Date Selection*\n\nAvailable for *99 ⭐*")
+            "ru": (
+                "🎯 *Подбор благоприятных дат*\n\n"
+                "Выберите тип события — свадьба, запуск проекта, важный разговор, сделка — "
+                "и я найду для вас благоприятные даты в ближайшие недели.\n\n"
+                "Каждая дата будет с объяснением, почему именно она подходит по вашим личным циклам.\n\n"
+                "💳 Стоимость: *99 ₽* или *99 ⭐*"
+            ),
+            "en": (
+                "🎯 *Favorable Date Selection*\n\n"
+                "Choose an event type — wedding, project launch, important conversation, deal — "
+                "and I will find favorable dates for you in the coming weeks.\n\n"
+                "Each date will come with an explanation of why it fits your personal cycles.\n\n"
+                "💳 Price: *99 ⭐*"
+            ),
+            "fa": (
+                "🎯 *انتخاب تاریخ مناسب*\n\n"
+                "نوع رویداد را انتخاب کنید — عروسی، راه‌اندازی پروژه، مکالمه مهم — "
+                "و من تاریخ‌های مناسب را در هفته‌های آینده برای شما پیدا می‌کنم.\n\n"
+                "💳 قیمت: *99 ⭐*"
+            ),
+            "tr": (
+                "🎯 *Uygun Tarih Seçimi*\n\n"
+                "Etkinlik türünü seçin — düğün, proje lansmanı, önemli konuşma, anlaşma — "
+                "ve önümüzdeki haftalarda sizin için uygun tarihleri bulacağım.\n\n"
+                "Her tarih, kişisel döngülerinize neden uyduğunun açıklamasıyla birlikte gelecek.\n\n"
+                "💳 Fiyat: *99 ⭐*"
+            ),
+        }.get(lang, "🎯 *Favorable Date Selection*\n\nFind the best dates for your upcoming events.\n\n💳 Price: *99 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("date_selection", 99, 99, lang), parse_mode="Markdown")
         await callback.answer()
         return

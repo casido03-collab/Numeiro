@@ -68,11 +68,31 @@ async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSessio
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
     if not await has_credit(user.id, "weekly_report"):
         _locked = {
-            "ru": "🔒 *Расклад на неделю*\n\nДоступно за *79 ₽* или *79 ⭐*",
-            "en": "🔒 *Weekly Reading*\n\nAvailable for *79 ⭐*",
-            "fa": "🔒 *فال هفتگی*\n\nقابل دسترس برای *79 ⭐*",
-            "tr": "🔒 *Haftalık Açılım*\n\n*79 ⭐* karşılığında erişilebilir",
-        }.get(lang, "🔒 *Weekly Reading*\n\nAvailable for *79 ⭐*")
+            "ru": (
+                "📅 *Расклад на неделю*\n\n"
+                "Прогноз на каждый день предстоящей недели с учётом ваших личных числовых циклов.\n\n"
+                "Узнаете, какие дни благоприятны для действий, переговоров, важных решений и отдыха.\n\n"
+                "💳 Стоимость: *79 ₽* или *79 ⭐*"
+            ),
+            "en": (
+                "📅 *Weekly Reading*\n\n"
+                "A forecast for each day of the coming week based on your personal number cycles.\n\n"
+                "Find out which days are favorable for action, negotiations, important decisions and rest.\n\n"
+                "💳 Price: *79 ⭐*"
+            ),
+            "fa": (
+                "📅 *فال هفتگی*\n\n"
+                "پیش‌بینی برای هر روز هفته آینده بر اساس چرخه‌های عددی شخصی شما.\n\n"
+                "بدانید کدام روزها برای اقدام، مذاکره، تصمیم‌گیری و استراحت مناسب است.\n\n"
+                "💳 قیمت: *79 ⭐*"
+            ),
+            "tr": (
+                "📅 *Haftalık Açılım*\n\n"
+                "Kişisel sayı döngülerinize göre gelecek haftanın her günü için tahmin.\n\n"
+                "Hangi günlerin eylem, müzakere, önemli kararlar ve dinlenme için uygun olduğunu öğrenin.\n\n"
+                "💳 Fiyat: *79 ⭐*"
+            ),
+        }.get(lang, "📅 *Weekly Reading*\n\nYour personal forecast for the week ahead.\n\n💳 Price: *79 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("weekly_report", 79, 79, lang), parse_mode="Markdown")
         await callback.answer()
         return

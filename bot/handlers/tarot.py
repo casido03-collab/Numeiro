@@ -101,11 +101,36 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
     if not await has_credit(user.id, "tarot_card"):
         _locked = {
-            "ru": "🔒 *Карта дня*\n\nДоступно за *49 ₽* или *49 ⭐*",
-            "en": "🔒 *Card of the Day*\n\nAvailable for *49 ⭐*",
-            "fa": "🔒 *کارت روز*\n\nقابل دسترس برای *49 ⭐*",
-            "tr": "🔒 *Günün Kartı*\n\n*49 ⭐* karşılığında erişilebilir",
-        }.get(lang, "🔒 *Card of the Day*\n\nAvailable for *49 ⭐*")
+            "ru": (
+                "🃏 *Карта дня*\n\n"
+                "Каждый день Вселенная посылает вам особое послание.\n\n"
+                "Я достану для вас карту Старшего Аркана и расскажу, что она означает именно для вас сегодня — "
+                "с учётом вашей даты рождения и личных чисел.\n\n"
+                "Это ваш ориентир на день.\n\n"
+                "💳 Стоимость: *49 ₽* или *49 ⭐*"
+            ),
+            "en": (
+                "🃏 *Card of the Day*\n\n"
+                "Every day the Universe sends you a special message.\n\n"
+                "I will draw your Major Arcana card and tell you what it means for you today — "
+                "based on your date of birth and personal numbers.\n\n"
+                "Your guide for the day.\n\n"
+                "💳 Price: *49 ⭐*"
+            ),
+            "fa": (
+                "🃏 *کارت روز*\n\n"
+                "هر روز کیهان پیام ویژه‌ای برای شما می‌فرستد.\n\n"
+                "من کارت آرکان اصلی شما را می‌کشم و معنای آن را برای امروز شما توضیح می‌دهم.\n\n"
+                "💳 قیمت: *49 ⭐*"
+            ),
+            "tr": (
+                "🃏 *Günün Kartı*\n\n"
+                "Her gün Evren size özel bir mesaj gönderir.\n\n"
+                "Büyük Arcana kartınızı çekerek bugün sizin için ne anlama geldiğini anlatacağım — "
+                "doğum tarihiniz ve kişisel sayılarınıza göre.\n\n"
+                "💳 Fiyat: *49 ⭐*"
+            ),
+        }.get(lang, "🃏 *Card of the Day*\n\nYour daily guidance from the Universe.\n\n💳 Price: *49 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("tarot_card", 49, 49, lang), parse_mode="Markdown")
         await callback.answer()
         return

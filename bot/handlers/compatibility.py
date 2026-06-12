@@ -74,11 +74,32 @@ async def compat_start(callback: CallbackQuery, user: User, session: AsyncSessio
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
     if not await has_credit(user.id, "compatibility"):
         _locked = {
-            "ru": "🔒 *Совместимость*\n\nДоступно за *99 ₽* или *99 ⭐*",
-            "en": "🔒 *Compatibility*\n\nAvailable for *99 ⭐*",
-            "fa": "🔒 *سازگاری*\n\nقابل دسترس برای *99 ⭐*",
-            "tr": "🔒 *Uyumluluk*\n\n*99 ⭐* karşılığında erişilebilir",
-        }.get(lang, "🔒 *Compatibility*\n\nAvailable for *99 ⭐*")
+            "ru": (
+                "💞 *Совместимость*\n\n"
+                "Введите дату рождения второго человека — и я разберу вашу совместимость по нумерологии.\n\n"
+                "Где вы усиливаете друг друга, где возникают трения и как выстроить гармонию.\n\n"
+                "Работает для романтики, дружбы и бизнеса.\n\n"
+                "💳 Стоимость: *99 ₽* или *99 ⭐*"
+            ),
+            "en": (
+                "💞 *Compatibility*\n\n"
+                "Enter the second person's date of birth — and I'll break down your compatibility by numerology.\n\n"
+                "Where you strengthen each other, where friction arises and how to build harmony.\n\n"
+                "Works for romance, friendship and business.\n\n"
+                "💳 Price: *99 ⭐*"
+            ),
+            "fa": (
+                "💞 *سازگاری*\n\n"
+                "تاریخ تولد نفر دوم را وارد کنید — و من سازگاری شما را از نظر عددشناسی بررسی می‌کنم.\n\n"
+                "💳 قیمت: *99 ⭐*"
+            ),
+            "tr": (
+                "💞 *Uyumluluk*\n\n"
+                "İkinci kişinin doğum tarihini girin — numerolojiye göre uyumluluğunuzu analiz edeceğim.\n\n"
+                "Birbirinizi nerede güçlendirdiğinizi, nerede sürtüşme yaşandığını ve nasıl uyum kurulacağını göreceksiniz.\n\n"
+                "💳 Fiyat: *99 ⭐*"
+            ),
+        }.get(lang, "💞 *Compatibility*\n\nNumerology-based compatibility reading for two people.\n\n💳 Price: *99 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("compatibility", 99, 99, lang), parse_mode="Markdown")
         await callback.answer()
         return
