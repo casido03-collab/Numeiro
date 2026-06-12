@@ -70,17 +70,37 @@ async def cmd_stats(message: Message, session: AsyncSession):
             select(func.count(User.id)).where(User.created_at >= week_start)
         )).scalar() or 0
 
-        today_revenue = (await session.execute(
+        # Рублёвый доход (хранится в копейках → делим на 100)
+        today_revenue_rub = (await session.execute(
             select(func.sum(Payment.amount)).where(
                 Payment.status == "completed",
                 Payment.created_at >= today_start,
+                Payment.currency == "RUB",
             )
         )).scalar() or 0
 
-        month_revenue = (await session.execute(
+        month_revenue_rub = (await session.execute(
             select(func.sum(Payment.amount)).where(
                 Payment.status == "completed",
                 Payment.created_at >= month_start,
+                Payment.currency == "RUB",
+            )
+        )).scalar() or 0
+
+        # Stars-доход
+        today_revenue_stars = (await session.execute(
+            select(func.sum(Payment.amount)).where(
+                Payment.status == "completed",
+                Payment.created_at >= today_start,
+                Payment.currency == "XTR",
+            )
+        )).scalar() or 0
+
+        month_revenue_stars = (await session.execute(
+            select(func.sum(Payment.amount)).where(
+                Payment.status == "completed",
+                Payment.created_at >= month_start,
+                Payment.currency == "XTR",
             )
         )).scalar() or 0
 
@@ -96,15 +116,39 @@ async def cmd_stats(message: Message, session: AsyncSession):
             )
         )).scalar() or 0
 
-        plan_counts = {}
-        for plan in PlanEnum:
-            count = (await session.execute(
-                select(func.count(Subscription.id)).where(
-                    Subscription.plan == plan,
-                    Subscription.status == SubscriptionStatusEnum.active,
-                )
-            )).scalar() or 0
-            plan_counts[plan.value] = count
+        # Покупки по услугам (все время)
+        product_rows = (await session.execute(
+            select(Payment.product_type, func.count(Payment.id))
+            .where(Payment.status == "completed")
+            .group_by(Payment.product_type)
+            .order_by(func.count(Payment.id).desc())
+        )).all()
+
+        _product_labels = {
+            "product:tarot_card":        "🃏 Карта дня",
+            "product:personal_question": "🔮 Личный вопрос",
+            "product:mini_reading":      "📖 Мини-разбор",
+            "product:full_matrix":       "🌟 Матрица судьбы",
+            "product:compatibility":     "💞 Совместимость",
+            "product:weekly_report":     "📅 Расклад на неделю",
+            "product:date_selection":    "🎯 Подбор дат",
+        }
+        products_text = ""
+        for pt, cnt in product_rows:
+            label = _product_labels.get(pt, pt)
+            products_text += f"• {label}: {cnt}\n"
+        if not products_text:
+            products_text = "• Покупок пока нет\n"
+
+        today_rub = today_revenue_rub // 100
+        month_rub = month_revenue_rub // 100
+
+        revenue_text = f"• Сегодня: {today_rub} ₽"
+        if today_revenue_stars:
+            revenue_text += f" + {today_revenue_stars} ⭐"
+        revenue_text += f"\n• Месяц: {month_rub} ₽"
+        if month_revenue_stars:
+            revenue_text += f" + {month_revenue_stars} ⭐"
 
         text = (
             f"📊 *Статистика Aisha AI*\n"
@@ -115,15 +159,10 @@ async def cmd_stats(message: Message, session: AsyncSession):
             f"• Сегодня: *{new_today}*\n"
             f"• Вчера: *{new_yesterday}*\n"
             f"• Эта неделя: *{new_week}*\n\n"
-            f"💎 Активных подписок: *{active_subs}*\n\n"
-            f"📋 *По тарифам:*\n"
-            f"• Free: {plan_counts.get('free', 0)}\n"
-            f"• Lite: {plan_counts.get('lite', 0)}\n"
-            f"• Premium: {plan_counts.get('premium', 0)}\n"
-            f"• Pro: {plan_counts.get('pro', 0)}\n\n"
+            f"🛍 *Продажи по услугам:*\n"
+            f"{products_text}\n"
             f"💰 *Доход:*\n"
-            f"• Сегодня: {today_revenue} ₽\n"
-            f"• Месяц: {month_revenue} ₽\n\n"
+            f"{revenue_text}\n\n"
             f"🤖 *AI расходы:*\n"
             f"• Сегодня: ${ai_cost_today:.4f}\n"
             f"• Месяц: ${ai_cost_month:.4f}"
