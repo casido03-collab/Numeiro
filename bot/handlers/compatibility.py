@@ -70,16 +70,16 @@ def _parse_date(text: str) -> date | None:
 @router.callback_query(F.data == "menu:compatibility")
 @router.callback_query(F.data == "compat:start")
 async def compat_start(callback: CallbackQuery, user: User, session: AsyncSession, state: FSMContext, lang: str = "ru"):
-    has_limit, used, max_val = await check_limit(session, user.id, "compatibility")
-    if not has_limit:
-        await callback.message.edit_text(
-            "🔒 *Совместимость*\n\nЭта функция требует подписки или разовой покупки.\n\n"
-            "• Lite: 1 совместимость\n"
-            "• Premium: 4 совместимости\n"
-            "• Pro: 15 совместимостей",
-            reply_markup=limit_reached_keyboard(),
-            parse_mode="Markdown",
-        )
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    if not await has_credit(user.id, "compatibility"):
+        _locked = {
+            "ru": "🔒 *Совместимость*\n\nДоступно за *99 ₽* или *99 ⭐*",
+            "en": "🔒 *Compatibility*\n\nAvailable for *99 ⭐*",
+            "fa": "🔒 *سازگاری*\n\nقابل دسترس برای *99 ⭐*",
+            "tr": "🔒 *Uyumluluk*\n\n*99 ⭐* karşılığında erişilebilir",
+        }.get(lang, "🔒 *Compatibility*\n\nAvailable for *99 ⭐*")
+        await callback.message.edit_text(_locked, reply_markup=_pay_kb("compatibility", 99, 99, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -200,8 +200,8 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
         content=cached,
         metadata={"partner_birth": partner_date_str, "relation_type": relation_type},
     )
-    await consume_limit(session, user.id, "compatibility")
-    await consume_limit(session, user.id, "ai_messages")
+    from bot.services.limits import use_credit
+    await use_credit(user.id, "compatibility")
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend

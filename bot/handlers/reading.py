@@ -80,13 +80,16 @@ async def menu_reading(callback: CallbackQuery, user: User, session: AsyncSessio
 async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     sphere = callback.data.split(":")[-1]
 
-    has_limit, used, max_val = await check_limit(session, user.id, "mini_readings")
-    if not has_limit:
-        await callback.message.edit_text(
-            "✨ Ваш лимит исчерпан\n\nОткройте больше возможностей для продолжения:",
-            reply_markup=limit_reached_keyboard(),
-            parse_mode="Markdown",
-        )
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    if not await has_credit(user.id, "mini_reading"):
+        _locked = {
+            "ru": "🔒 *Мини-разбор*\n\nДоступно за *49 ₽* или *49 ⭐*",
+            "en": "🔒 *Mini Reading*\n\nAvailable for *49 ⭐*",
+            "fa": "🔒 *تحلیل کوتاه*\n\nقابل دسترس برای *49 ⭐*",
+            "tr": "🔒 *Mini Yorum*\n\n*49 ⭐* karşılığında erişilebilir",
+        }.get(lang, "🔒 *Mini Reading*\n\nAvailable for *49 ⭐*")
+        await callback.message.edit_text(_locked, reply_markup=_pay_kb("mini_reading", 49, 49, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -128,8 +131,8 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
         content=cached,
         metadata={"sphere": sphere, "birth_date": user.birth_date},
     )
-    await consume_limit(session, user.id, "mini_readings")
-    await consume_limit(session, user.id, "ai_messages")
+    from bot.services.limits import use_credit
+    await use_credit(user.id, "mini_reading")
 
     name = user.first_name or _friend
     _title = {"ru": "Разбор для", "en": "Reading for", "fa": "بررسی برای", "tr": "Okuma:"}.get(lang, "Reading for")
@@ -143,33 +146,18 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
 
 @router.callback_query(F.data == "matrix:start")
 async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    from bot.services.limits import get_user_plan
-    plan = await get_user_plan(session, user.id)
-
-    # Бесплатным — недоступно
-    if plan == "free":
-        await callback.message.edit_text(
-            "🔒 *Матрица судьбы*\n\nЭта функция доступна для:\n"
-            "• Тариф Pro — 1 разбор в месяц\n"
-            "• Разовая покупка — 299 ₽\n\n"
-            "Бесплатным пользователям недоступна.",
-            reply_markup=limit_reached_keyboard(),
-            parse_mode="Markdown",
-        )
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    if not await has_credit(user.id, "full_matrix"):
+        _locked = {
+            "ru": "🔒 *Полная матрица судьбы*\n\nДоступно за *199 ₽* или *199 ⭐*",
+            "en": "🔒 *Full Destiny Matrix*\n\nAvailable for *199 ⭐*",
+            "fa": "🔒 *ماتریس سرنوشت*\n\nقابل دسترس برای *199 ⭐*",
+            "tr": "🔒 *Kader Matrisi*\n\n*199 ⭐* karşılığında erişilebilir",
+        }.get(lang, "🔒 *Full Destiny Matrix*\n\nAvailable for *199 ⭐*")
+        await callback.message.edit_text(_locked, reply_markup=_pay_kb("full_matrix", 199, 199, lang), parse_mode="Markdown")
         await callback.answer()
         return
-
-    # Pro — проверяем лимит из плана
-    if plan == "pro":
-        has_limit, used, max_val = await check_limit(session, user.id, "matrix_readings")
-        if not has_limit:
-            await callback.message.edit_text(
-                "🔒 *Матрица судьбы*\n\nВы использовали свой разбор на этот месяц.\n\nПодождите следующего периода.",
-                reply_markup=limit_reached_keyboard(),
-                parse_mode="Markdown",
-            )
-            await callback.answer()
-            return
 
     if not user.birth_date:
         await callback.message.edit_text(
@@ -178,16 +166,6 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
                 [InlineKeyboardButton(text="✨ Ввести дату рождения", callback_data="birth_date:collect:matrix:start")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="menu:main")],
             ]),
-            parse_mode="Markdown",
-        )
-        await callback.answer()
-        return
-
-    has_limit, used, max_val = await check_limit(session, user.id, "mini_readings")
-    if not has_limit:
-        await callback.message.edit_text(
-            "🔒 *Полная матрица судьбы*\n\nЭта функция требует подписки или разовой покупки.",
-            reply_markup=limit_reached_keyboard(),
             parse_mode="Markdown",
         )
         await callback.answer()
@@ -221,8 +199,8 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
         content=cached,
         metadata={"birth_date": user.birth_date},
     )
-    await consume_limit(session, user.id, "mini_readings")
-    await consume_limit(session, user.id, "ai_messages")
+    from bot.services.limits import use_credit
+    await use_credit(user.id, "full_matrix")
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend

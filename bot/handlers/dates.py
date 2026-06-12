@@ -19,13 +19,16 @@ router = Router()
 
 @router.callback_query(F.data == "menu:dates")
 async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    has_limit, used, max_val = await check_limit(session, user.id, "date_selections")
-    if not has_limit:
-        await callback.message.edit_text(
-            "🔒 *Подбор благоприятных дат*\n\nЭта функция доступна в Premium и Pro тарифах.",
-            reply_markup=limit_reached_keyboard(),
-            parse_mode="Markdown",
-        )
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    if not await has_credit(user.id, "date_selection"):
+        _locked = {
+            "ru": "🔒 *Подбор дат*\n\nДоступно за *99 ₽* или *99 ⭐*",
+            "en": "🔒 *Date Selection*\n\nAvailable for *99 ⭐*",
+            "fa": "🔒 *انتخاب تاریخ*\n\nقابل دسترس برای *99 ⭐*",
+            "tr": "🔒 *Tarih Seçimi*\n\n*99 ⭐* karşılığında erişilebilir",
+        }.get(lang, "🔒 *Date Selection*\n\nAvailable for *99 ⭐*")
+        await callback.message.edit_text(_locked, reply_markup=_pay_kb("date_selection", 99, 99, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -47,11 +50,13 @@ async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession,
 async def select_event(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     event_type = callback.data.split(":")[-1]
 
-    has_limit, used, max_val = await check_limit(session, user.id, "date_selections")
-    if not has_limit:
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    if not await has_credit(user.id, "date_selection"):
         await callback.message.edit_text(
-            "🔒 Лимит подборов дат исчерпан.",
-            reply_markup=limit_reached_keyboard(),
+            "🔒 *Подбор дат*\n\nДоступно за *99 ₽* или *99 ⭐*",
+            reply_markup=_pay_kb("date_selection", 99, 99, lang),
+            parse_mode="Markdown",
         )
         await callback.answer()
         return
@@ -82,8 +87,8 @@ async def select_event(callback: CallbackQuery, user: User, session: AsyncSessio
         content=response,
         metadata={"event": event_type, "event_name": event_name},
     )
-    await consume_limit(session, user.id, "date_selections")
-    await consume_limit(session, user.id, "ai_messages")
+    from bot.services.limits import use_credit
+    await use_credit(user.id, "date_selection")
 
     dates_list = "\n".join(
         f"• *{d['date']}* ({d['weekday']}) — энергия {d['energy']}" for d in favorable

@@ -39,18 +39,17 @@ async def question_cancel(callback: CallbackQuery, state: FSMContext, user: User
 @router.callback_query(F.data == "menu:question")
 async def question_start(callback: CallbackQuery, user: User, session: AsyncSession, state: FSMContext, lang: str = "ru"):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
 
-    has_limit, used, max_val = await check_limit(session, user.id, "personal_questions")
-    if not has_limit:
-        await replace_message(
-            callback.message,
-            "🔒 *Вопрос Бабушке Aisha*\n\nЭта функция требует подписки или разовой покупки.\n\n"
-            "• Free: 1 вопрос\n"
-            "• Lite: 7 вопросов\n"
-            "• Premium: 30 вопросов\n"
-            "• Pro: 60 вопросов",
-            reply_markup=limit_reached_keyboard(),
-        )
+    if not await has_credit(user.id, "personal_question"):
+        _locked = {
+            "ru": "🔒 *Личный вопрос*\n\nДоступно за *29 ₽* или *29 ⭐*",
+            "en": "🔒 *Personal Question*\n\nAvailable for *29 ⭐*",
+            "fa": "🔒 *سؤال شخصی*\n\nقابل دسترس برای *29 ⭐*",
+            "tr": "🔒 *Kişisel Soru*\n\n*29 ⭐* karşılığında erişilebilir",
+        }.get(lang, "🔒 *Personal Question*\n\nAvailable for *29 ⭐*")
+        await replace_message(callback.message, _locked, reply_markup=_pay_kb("personal_question", 29, 29, lang))
         await callback.answer()
         return
 
@@ -67,54 +66,48 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
         return
 
     await state.update_data(lang=lang)
-    remaining = max_val - used
-    _remaining_label = {"ru": "Доступно вопросов", "en": "Questions remaining", "fa": "سؤالات باقی‌مانده", "tr": "Kalan soru sayısı"}.get(lang, "Questions remaining")
     _write_label = {"ru": "📝 Напишите свой вопрос сообщением ниже", "en": "📝 Write your question in the next message",
                     "fa": "📝 سؤال خود را در پیام بعدی بنویسید", "tr": "📝 Sorunuzu bir sonraki mesajda yazın"}.get(lang, "📝 Write your question")
     _welcome = {
         "ru": (
-            f"🔮 *Личный расклад*\n\n"
-            f"Добро пожаловать, мои хорошие.\n\n"
-            f"Сейчас Вы можете задать мне свой вопрос и получить индивидуальный разбор ситуации.\n\n"
-            f"✨ {_remaining_label}: *{remaining}*\n\n"
-            f"Чем подробнее Вы опишете ситуацию, тем глубже я смогу её рассмотреть.\n\n"
-            f"Например:\n\n"
-            f"❤️ Что чувствует ко мне этот человек?\n"
-            f"💼 Стоит ли принимать новое предложение?\n"
-            f"🌙 Что ожидает меня в ближайшее время?\n"
-            f"⭐ На что мне стоит обратить внимание сейчас?\n\n"
+            "🔮 *Личный расклад*\n\n"
+            "Добро пожаловать, мои хорошие.\n\n"
+            "Сейчас Вы можете задать мне свой вопрос и получить индивидуальный разбор ситуации.\n\n"
+            "Чем подробнее Вы опишете ситуацию, тем глубже я смогу её рассмотреть.\n\n"
+            "Например:\n\n"
+            "❤️ Что чувствует ко мне этот человек?\n"
+            "💼 Стоит ли принимать новое предложение?\n"
+            "🌙 Что ожидает меня в ближайшее время?\n"
+            "⭐ На что мне стоит обратить внимание сейчас?\n\n"
             f"{_write_label}"
         ),
         "en": (
-            f"🔮 *Personal reading*\n\n"
-            f"Welcome, dear ones.\n\n"
-            f"You can now ask me your question and receive a personal reading of your situation.\n\n"
-            f"✨ {_remaining_label}: *{remaining}*\n\n"
-            f"The more detail you provide, the deeper I can look into it.\n\n"
-            f"For example:\n\n"
-            f"❤️ What does this person feel for me?\n"
-            f"💼 Should I accept the new offer?\n"
-            f"🌙 What awaits me in the near future?\n"
-            f"⭐ What should I pay attention to right now?\n\n"
+            "🔮 *Personal reading*\n\n"
+            "Welcome, dear ones.\n\n"
+            "You can now ask me your question and receive a personal reading of your situation.\n\n"
+            "The more detail you provide, the deeper I can look into it.\n\n"
+            "For example:\n\n"
+            "❤️ What does this person feel for me?\n"
+            "💼 Should I accept the new offer?\n"
+            "🌙 What awaits me in the near future?\n"
+            "⭐ What should I pay attention to right now?\n\n"
             f"{_write_label}"
         ),
         "fa": (
-            f"🔮 *خواندن شخصی*\n\n"
-            f"خوش آمدید، عزیزانم.\n\n"
-            f"می‌توانید سؤال خود را بپرسید و تفسیر شخصی دریافت کنید.\n\n"
-            f"✨ {_remaining_label}: *{remaining}*\n\n"
-            f"هرچه بیشتر توضیح دهید، عمیق‌تر می‌توانم بررسی کنم.\n\n"
+            "🔮 *خواندن شخصی*\n\n"
+            "خوش آمدید، عزیزانم.\n\n"
+            "می‌توانید سؤال خود را بپرسید و تفسیر شخصی دریافت کنید.\n\n"
+            "هرچه بیشتر توضیح دهید، عمیق‌تر می‌توانم بررسی کنم.\n\n"
             f"{_write_label}"
         ),
         "tr": (
-            f"🔮 *Kişisel okuma*\n\n"
-            f"Hoş geldiniz, canlarım.\n\n"
-            f"Sorunuzu sorabilir ve kişisel bir yorum alabilirsiniz.\n\n"
-            f"✨ {_remaining_label}: *{remaining}*\n\n"
-            f"Ne kadar ayrıntı verirseniz, o kadar derin bakabilirim.\n\n"
+            "🔮 *Kişisel okuma*\n\n"
+            "Hoş geldiniz, canlarım.\n\n"
+            "Sorunuzu sorabilir ve kişisel bir yorum alabilirsiniz.\n\n"
+            "Ne kadar ayrıntı verirseniz, o kadar derin bakabilirim.\n\n"
             f"{_write_label}"
         ),
-    }.get(lang, f"🔮 *Personal reading*\n\n✨ {_remaining_label}: *{remaining}*\n\n{_write_label}")
+    }.get(lang, f"🔮 *Personal reading*\n\n{_write_label}")
     await replace_message(
         callback.message,
         _welcome,
@@ -144,23 +137,21 @@ async def receive_birth_date_for_question(message: Message, state: FSMContext, u
     await session.commit()
 
     # Теперь показываем экран вопроса
-    has_limit, used, max_val = await check_limit(session, user.id, "personal_questions")
-    if not has_limit:
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    if not await has_credit(user.id, "personal_question"):
         await state.clear()
         await message.answer(
-            "🔒 *Вопрос Бабушке Aisha*\n\nЛимит вопросов исчерпан.\n\n"
-            "• Free: 1 вопрос\n• Lite: 7 вопросов\n• Premium: 30 вопросов\n• Pro: 60 вопросов",
-            reply_markup=limit_reached_keyboard(),
+            "🔒 *Личный вопрос*\n\nДоступно за *29 ₽* или *29 ⭐*",
+            reply_markup=_pay_kb("personal_question", 29, 29, "ru"),
             parse_mode="Markdown",
         )
         return
 
-    remaining = max_val - used
     await message.answer(
-        f"🔮 *Личный расклад*\n\n"
-        f"Добро пожаловать, мои хорошие.\n\n"
-        f"✨ Доступно вопросов: *{remaining}*\n\n"
-        f"📝 Напишите свой вопрос сообщением ниже",
+        "🔮 *Личный расклад*\n\n"
+        "Добро пожаловать, мои хорошие.\n\n"
+        "📝 Напишите свой вопрос сообщением ниже",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◀️ Назад", callback_data="question:cancel")]
         ]),
@@ -221,8 +212,8 @@ async def receive_question(message: Message, state: FSMContext, user: User, sess
         content=response,
         metadata={"question": question},
     )
-    await consume_limit(session, user.id, "personal_questions")
-    await consume_limit(session, user.id, "ai_messages")
+    from bot.services.limits import use_credit
+    await use_credit(user.id, "personal_question")
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend

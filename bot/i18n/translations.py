@@ -472,34 +472,34 @@ TEXTS: dict[str, dict[str, str]] = {
     # ══════════════════════════════════════════════════════════════════
 
     "product_btn_matrix": {
-        "ru": "🌟 Матрица судьбы — 299 ₽",
-        "en": "🌟 Destiny matrix — 299 ⭐",
-        "fa": "🌟 ماتریس سرنوشت — 299 ⭐",
-        "tr": "🌟 Kader matrisi — 299 ⭐",
+        "ru": "🌟 Матрица судьбы — 199 ₽",
+        "en": "🌟 Destiny matrix — 199 ⭐",
+        "fa": "🌟 ماتریس سرنوشت — 199 ⭐",
+        "tr": "🌟 Kader matrisi — 199 ⭐",
     },
     "product_btn_compat": {
-        "ru": "💞 Совместимость — 199 ₽",
-        "en": "💞 Compatibility — 199 ⭐",
-        "fa": "💞 سازگاری — 199 ⭐",
-        "tr": "💞 Uyumluluk — 199 ⭐",
+        "ru": "💞 Совместимость — 99 ₽",
+        "en": "💞 Compatibility — 99 ⭐",
+        "fa": "💞 سازگاری — 99 ⭐",
+        "tr": "💞 Uyumluluk — 99 ⭐",
     },
     "product_btn_weekly": {
-        "ru": "📅 Расклад на неделю — 199 ₽",
-        "en": "📅 Weekly reading — 199 ⭐",
-        "fa": "📅 فال هفتگی — 199 ⭐",
-        "tr": "📅 Haftalık açılım — 199 ⭐",
+        "ru": "📅 Расклад на неделю — 79 ₽",
+        "en": "📅 Weekly reading — 79 ⭐",
+        "fa": "📅 فال هفتگی — 79 ⭐",
+        "tr": "📅 Haftalık açılım — 79 ⭐",
     },
     "product_btn_question": {
-        "ru": "❓ Личный вопрос — 99 ₽",
-        "en": "❓ Personal question — 99 ⭐",
-        "fa": "❓ سؤال شخصی — 99 ⭐",
-        "tr": "❓ Kişisel soru — 99 ⭐",
+        "ru": "🔮 Личный вопрос — 29 ₽",
+        "en": "🔮 Personal question — 29 ⭐",
+        "fa": "🔮 سؤال شخصی — 29 ⭐",
+        "tr": "🔮 Kişisel soru — 29 ⭐",
     },
     "product_btn_dates": {
-        "ru": "📆 Подбор дат — 199 ₽",
-        "en": "📆 Date selection — 199 ⭐",
-        "fa": "📆 انتخاب تاریخ — 199 ⭐",
-        "tr": "📆 Tarih seçimi — 199 ⭐",
+        "ru": "📆 Подбор дат — 99 ₽",
+        "en": "📆 Date selection — 99 ⭐",
+        "fa": "📆 انتخاب تاریخ — 99 ⭐",
+        "tr": "📆 Tarih seçimi — 99 ⭐",
     },
 
     # ══════════════════════════════════════════════════════════════════
@@ -588,6 +588,30 @@ TEXTS: dict[str, dict[str, str]] = {
         "en": "📜 View plans",
         "fa": "📜 دیدن تعرفه‌ها",
         "tr": "📜 Tarifeleri gör",
+    },
+    "feature_locked": {
+        "ru": "🔒 *{name}*\n\nДоступно за *{price_rub} ₽* или *{price_stars} ⭐*",
+        "en": "🔒 *{name}*\n\nAvailable for *{price_stars} ⭐*",
+        "fa": "🔒 *{name}*\n\nقابل دسترس برای *{price_stars} ⭐*",
+        "tr": "🔒 *{name}*\n\n*{price_stars} ⭐* karşılığında erişilebilir",
+    },
+    "pay_method_title": {
+        "ru": "Выберите способ оплаты:",
+        "en": "Choose payment method:",
+        "fa": "روش پرداخت را انتخاب کنید:",
+        "tr": "Ödeme yöntemini seçin:",
+    },
+    "pay_link_created": {
+        "ru": "✅ Ссылка создана!\n\n💳 *{name}* — {price} ₽\n\n👉 [Оплатить]({link})\n\nПосле оплаты доступ откроется автоматически.",
+        "en": "✅ Payment link created!\n\n💳 *{name}* — {price} ₽\n\n👉 [Pay now]({link})\n\nAccess opens automatically after payment.",
+        "fa": "✅ لینک پرداخت ایجاد شد!\n\n💳 *{name}* — {price} ₽\n\n👉 [پرداخت]({link})\n\nپس از پرداخت دسترسی به‌صورت خودکار باز می‌شود.",
+        "tr": "✅ Ödeme bağlantısı oluşturuldu!\n\n💳 *{name}* — {price} ₽\n\n👉 [Öde]({link})\n\nÖdemeden sonra erişim otomatik açılır.",
+    },
+    "pay_error": {
+        "ru": "❌ Ошибка при создании платежа. Попробуйте через Stars или обратитесь в поддержку.",
+        "en": "❌ Payment creation failed. Try Stars or contact support.",
+        "fa": "❌ خطا در ایجاد پرداخت. از Stars استفاده کنید یا با پشتیبانی تماس بگیرید.",
+        "tr": "❌ Ödeme oluşturulamadı. Stars'ı deneyin veya destek ile iletişime geçin.",
     },
 
     # ══════════════════════════════════════════════════════════════════

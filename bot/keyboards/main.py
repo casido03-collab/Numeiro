@@ -20,10 +20,7 @@ def main_menu(lang: str = "ru") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=t("menu_question", lang),         callback_data="menu:question")],
         [InlineKeyboardButton(text=t("menu_dates", lang),            callback_data="menu:dates")],
         [InlineKeyboardButton(text=t("menu_reviews", lang),          url="https://t.me/ezoterika_aisha")],
-        [
-            InlineKeyboardButton(text=t("menu_plans", lang),         callback_data="menu:plans"),
-            InlineKeyboardButton(text=t("menu_history", lang),       callback_data="reports:menu"),
-        ],
+        [InlineKeyboardButton(text=t("menu_history", lang),          callback_data="reports:menu")],
     ])
 
 
@@ -102,44 +99,28 @@ def event_type_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-# ─── Тарифы ────────────────────────────────────────────────────────────────────
-
-def plans_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=t("plan_btn_lite", lang),    callback_data="buy:plan:lite")],
-        [InlineKeyboardButton(text=t("plan_btn_premium", lang), callback_data="buy:plan:premium")],
-        [InlineKeyboardButton(text=t("plan_btn_pro", lang),     callback_data="buy:plan:pro")],
-        [InlineKeyboardButton(text=t("plan_btn_oneoff", lang),  callback_data="buy:oneoff")],
-        [InlineKeyboardButton(text=t("btn_back", lang),         callback_data="menu:main")],
-    ])
-
-
-def one_time_products_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=t("product_btn_matrix", lang),   callback_data="buy:product:full_matrix")],
-        [InlineKeyboardButton(text=t("product_btn_compat", lang),   callback_data="buy:product:compatibility")],
-        [InlineKeyboardButton(text=t("product_btn_weekly", lang),   callback_data="buy:product:weekly_report")],
-        [InlineKeyboardButton(text=t("product_btn_question", lang), callback_data="buy:product:personal_question")],
-        [InlineKeyboardButton(text=t("product_btn_dates", lang),    callback_data="buy:product:date_selection")],
-        [InlineKeyboardButton(text=t("btn_back_to_plans", lang),    callback_data="menu:plans")],
-    ])
-
-
 def payment_method_keyboard(
-    product_type: str,
     product_key: str,
-    stars: int,
-    back: str = "menu:plans",
+    price_rub: int,
+    price_stars: int,
     lang: str = "ru",
+    back: str = "menu:main",
 ) -> InlineKeyboardMarkup:
-    """Выбор способа оплаты — только Telegram Stars."""
-    buttons = [
-        [InlineKeyboardButton(
-            text=t("pay_btn_stars", lang).format(stars=stars),
-            callback_data=f"pay:stars:{product_type}:{product_key}",
-        )],
-        [InlineKeyboardButton(text=t("btn_back", lang), callback_data=back)],
-    ]
+    """Stars + Картой/СБП (только RU). EN/FA/TR — только Stars."""
+    buttons = []
+    if lang == "ru":
+        buttons.append([InlineKeyboardButton(
+            text=f"💳 {price_rub} ₽ — Картой / СБП",
+            callback_data=f"pay:card:product:{product_key}",
+        )])
+    buttons.append([InlineKeyboardButton(
+        text=f"⭐ {price_stars} Stars",
+        callback_data=f"pay:stars:product:{product_key}",
+    )])
+    buttons.append([InlineKeyboardButton(
+        text=t("btn_back", lang),
+        callback_data=back,
+    )])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

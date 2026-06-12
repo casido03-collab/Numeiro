@@ -123,6 +123,16 @@ ONE_TIME_PRODUCTS = {
     "date_selection": {"name": "Подбор благоприятной даты", "stars": 199},
 }
 
+PRODUCTS = {
+    "tarot_card":        {"name": "Карта дня",             "price_rub": 49,  "price_stars": 49},
+    "personal_question": {"name": "Личный вопрос",         "price_rub": 29,  "price_stars": 29},
+    "mini_reading":      {"name": "Мини-разбор",           "price_rub": 49,  "price_stars": 49},
+    "full_matrix":       {"name": "Полная матрица судьбы", "price_rub": 199, "price_stars": 199},
+    "compatibility":     {"name": "Совместимость пары",    "price_rub": 99,  "price_stars": 99},
+    "weekly_report":     {"name": "Расклад на неделю",     "price_rub": 79,  "price_stars": 79},
+    "date_selection":    {"name": "Подбор дат",            "price_rub": 99,  "price_stars": 99},
+}
+
 # Лимиты rate-limiting
 RATE_LIMITS = {
     "ai_per_10sec": 3,

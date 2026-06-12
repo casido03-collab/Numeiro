@@ -149,9 +149,7 @@ async def _process_payment(
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from bot.models.user import User, Payment
     from bot.handlers.payments import (
-        PLAN_DISPLAY,
         PRODUCT_DISPLAY,
-        _activate_subscription,
         _activate_one_time_product,
         _process_referral_reward,
         _product_callback,
@@ -176,29 +174,18 @@ async def _process_payment(
             status="completed",
         ))
 
-        if product_type == "plan":
-            await _activate_subscription(session, user, product_key)
-            info = PLAN_DISPLAY.get(product_key, {})
-            text = (
-                f"✅ *Подписка {info.get('label', product_key)} активирована!*\n\n"
-                f"Доступ открыт на *{info.get('period', '30 дней')}*. 🌟"
-            )
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔮 Перейти к разборам", callback_data="menu:main")]
-            ])
-        else:
-            await _activate_one_time_product(session, user, product_key)
-            info = PRODUCT_DISPLAY.get(product_key, {})
-            text = (
-                f"✅ *{info.get('label', product_key)} куплен!*\n\n"
-                f"Функция доступна для использования. 🌟"
-            )
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="🔮 Использовать сейчас",
-                    callback_data=_product_callback(product_key),
-                )]
-            ])
+        await _activate_one_time_product(user, product_key)
+        info = PRODUCT_DISPLAY.get(product_key, {})
+        text = (
+            f"✅ *{info.get('label', product_key)}* — оплачено! 🌟\n\n"
+            f"Можете использовать раздел прямо сейчас."
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="🔮 Использовать сейчас",
+                callback_data=_product_callback(product_key),
+            )]
+        ])
 
         await _process_referral_reward(session, user, _bot)
         await session.commit()
