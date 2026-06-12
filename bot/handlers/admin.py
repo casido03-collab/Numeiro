@@ -209,16 +209,56 @@ async def cmd_user(message: Message, session: AsyncSession):
             select(func.count(AIRequest.id)).where(AIRequest.user_id == user.id)
         )).scalar() or 0
 
-        payments_total = (await session.execute(
-            select(func.sum(Payment.amount)).where(
-                Payment.user_id == user.id, Payment.status == "completed"
-            )
-        )).scalar() or 0
+        # Платежи пользователя
+        payment_rows = (await session.execute(
+            select(Payment.product_type, Payment.amount, Payment.currency, Payment.created_at)
+            .where(Payment.user_id == user.id, Payment.status == "completed")
+            .order_by(Payment.created_at.desc())
+            .limit(10)
+        )).all()
+
+        payments_rub = sum(p.amount for p in payment_rows if p.currency == "RUB") // 100
+        payments_stars = sum(p.amount for p in payment_rows if p.currency == "XTR")
+
+        # Redis-кредиты (реальный доступ к услугам)
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        _product_keys = [
+            "tarot_card", "personal_question", "mini_reading",
+            "full_matrix", "compatibility", "weekly_report", "date_selection",
+        ]
+        credits_text = ""
+        for pk in _product_keys:
+            val = await r.get(f"oneoff:{pk}:{user.id}")
+            if val and int(val) > 0:
+                credits_text += f"  ✅ {pk}: {val}\n"
+        if not credits_text:
+            credits_text = "  нет активных кредитов\n"
+
+        _product_labels = {
+            "product:tarot_card":        "🃏 Карта дня",
+            "product:personal_question": "🔮 Личный вопрос",
+            "product:mini_reading":      "📖 Мини-разбор",
+            "product:full_matrix":       "🌟 Матрица судьбы",
+            "product:compatibility":     "💞 Совместимость",
+            "product:weekly_report":     "📅 Расклад на неделю",
+            "product:date_selection":    "🎯 Подбор дат",
+        }
+        payments_text = ""
+        for p in payment_rows:
+            label = _product_labels.get(p.product_type, p.product_type)
+            amt = f"{p.amount // 100} ₽" if p.currency == "RUB" else f"{p.amount} ⭐"
+            dt = p.created_at.strftime("%d.%m %H:%M") if p.created_at else "—"
+            payments_text += f"  {dt} — {label} — {amt}\n"
+        if not payments_text:
+            payments_text = "  нет платежей\n"
 
         plan = sub.plan.value if sub else "free"
-        status = sub.status.value if sub else "—"
-        expires = sub.expires_at.strftime("%d.%m.%Y") if (sub and sub.expires_at) else "—"
         created = user.created_at.strftime("%d.%m.%Y %H:%M") if user.created_at else "—"
+
+        paid_total = f"{payments_rub} ₽"
+        if payments_stars:
+            paid_total += f" + {payments_stars} ⭐"
 
         text = (
             f"👤 *Пользователь \\#{user.id}*\n"
@@ -226,18 +266,59 @@ async def cmd_user(message: Message, session: AsyncSession):
             f"Telegram ID: `{user.telegram_id}`\n"
             f"Имя: {user.first_name or '—'}\n"
             f"Username: @{user.username or '—'}\n"
-            f"Дата рождения: {user.birth_date or '—'}\n\n"
-            f"📋 *Тариф:* {plan}\n"
-            f"Статус: {status}\n"
-            f"Истекает: {expires}\n\n"
-            f"💰 Оплачено: {payments_total} ₽\n"
-            f"🤖 AI запросов: {ai_requests}\n"
-            f"💸 AI расходы: ${ai_cost:.4f}\n\n"
-            f"Зарегистрирован: {created}"
+            f"Дата рождения: {user.birth_date or '—'}\n"
+            f"Зарегистрирован: {created}\n\n"
+            f"🛍 *Покупки:*\n{payments_text}\n"
+            f"💰 Итого оплачено: {paid_total}\n\n"
+            f"🔑 *Активные кредиты (Redis):*\n{credits_text}\n"
+            f"🤖 AI запросов: {ai_requests} | Расходы: ${ai_cost:.4f}"
         )
         await message.answer(text, parse_mode="Markdown")
     except Exception as e:
         logger.exception("cmd_user error")
+        await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
+
+
+# ─── /recent ─────────────────────────────────────────────────────────────────
+
+@router.message(Command("recent"))
+async def cmd_recent(message: Message, session: AsyncSession):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        rows = (await session.execute(
+            select(Payment.created_at, Payment.product_type, Payment.amount, Payment.currency, User.telegram_id, User.first_name)
+            .join(User, User.id == Payment.user_id)
+            .where(Payment.status == "completed")
+            .order_by(Payment.created_at.desc())
+            .limit(20)
+        )).all()
+
+        _product_labels = {
+            "product:tarot_card":        "🃏 Карта дня",
+            "product:personal_question": "🔮 Личный вопрос",
+            "product:mini_reading":      "📖 Мини-разбор",
+            "product:full_matrix":       "🌟 Матрица судьбы",
+            "product:compatibility":     "💞 Совместимость",
+            "product:weekly_report":     "📅 Расклад на неделю",
+            "product:date_selection":    "🎯 Подбор дат",
+        }
+
+        if not rows:
+            await message.answer("Покупок ещё нет")
+            return
+
+        lines = ["📋 *Последние 20 покупок:*\n"]
+        for r in rows:
+            label = _product_labels.get(r.product_type, r.product_type)
+            amt = f"{r.amount // 100} ₽" if r.currency == "RUB" else f"{r.amount} ⭐"
+            dt = r.created_at.strftime("%d.%m %H:%M") if r.created_at else "—"
+            name = r.first_name or "—"
+            lines.append(f"`{dt}` — {label} — {amt}\n  👤 {name} (`{r.telegram_id}`)")
+
+        await message.answer("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        logger.exception("cmd_recent error")
         await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
 
 
