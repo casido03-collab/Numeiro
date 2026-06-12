@@ -261,19 +261,19 @@ async def cmd_user(message: Message, session: AsyncSession):
             paid_total += f" + {payments_stars} ⭐"
 
         text = (
-            f"👤 *Пользователь \\#{user.id}*\n"
+            f"👤 <b>Пользователь #{user.id}</b>\n"
             f"━━━━━━━━━━━━━━━\n"
-            f"Telegram ID: `{user.telegram_id}`\n"
+            f"Telegram ID: <code>{user.telegram_id}</code>\n"
             f"Имя: {user.first_name or '—'}\n"
             f"Username: @{user.username or '—'}\n"
             f"Дата рождения: {user.birth_date or '—'}\n"
             f"Зарегистрирован: {created}\n\n"
-            f"🛍 *Покупки:*\n{payments_text}\n"
+            f"🛍 <b>Покупки:</b>\n{payments_text}\n"
             f"💰 Итого оплачено: {paid_total}\n\n"
-            f"🔑 *Активные кредиты (Redis):*\n{credits_text}\n"
+            f"🔑 <b>Активные кредиты (Redis):</b>\n{credits_text}\n"
             f"🤖 AI запросов: {ai_requests} | Расходы: ${ai_cost:.4f}"
         )
-        await message.answer(text, parse_mode="Markdown")
+        await message.answer(text, parse_mode="HTML")
     except Exception as e:
         logger.exception("cmd_user error")
         await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
