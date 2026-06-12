@@ -198,3 +198,41 @@ async def get_limits_summary(session: AsyncSession, user_id: int) -> dict:
             "remaining": max(0, max_val - used),
         }
     return summary
+
+
+async def has_credit(user_id: int, product_key: str) -> bool:
+    """Check if user has a purchased credit for this feature (Redis oneoff key)."""
+    try:
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        val = await r.get(f"oneoff:{product_key}:{user_id}")
+        return bool(val and int(val) > 0)
+    except Exception:
+        return False
+
+
+async def use_credit(user_id: int, product_key: str) -> bool:
+    """Decrement one credit. Returns True if successful."""
+    try:
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        key = f"oneoff:{product_key}:{user_id}"
+        val = await r.get(key)
+        if not val or int(val) <= 0:
+            return False
+        await r.decr(key)
+        return True
+    except Exception:
+        return False
+
+
+async def add_credit(user_id: int, product_key: str, amount: int = 1) -> None:
+    """Add purchased credits for a feature."""
+    try:
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        key = f"oneoff:{product_key}:{user_id}"
+        await r.incrby(key, amount)
+        await r.expire(key, 86400 * 365)
+    except Exception:
+        pass

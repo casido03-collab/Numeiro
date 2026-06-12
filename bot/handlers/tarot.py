@@ -96,16 +96,17 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
         await callback.answer()
         return
 
-    # ── Проверка лимита за период ─────────────────────────────────────────────
-    has_limit, used, max_val = await check_limit(session, user.id, "tarot_cards")
-    if not has_limit:
-        _limit_text = {
-            "ru": "🔒 *Карта дня*\n\nЛимит карт за этот период исчерпан.\n\n• Бесплатно: 2 карты за период\n• Lite: 5 карт за период\n• Premium: 10 карт за период\n• Pro: 30 карт за период",
-            "en": "🔒 *Card of the Day*\n\nCard limit for this period is reached.\n\n• Free: 2 cards per period\n• Lite: 5 cards per period\n• Premium: 10 cards per period\n• Pro: 30 cards per period",
-            "fa": "🔒 *کارت روز*\n\nمحدودیت کارت برای این دوره تمام شد.\n\n• رایگان: ۲ کارت\n• Lite: ۵ کارت\n• Premium: ۱۰ کارت\n• Pro: ۳۰ کارت",
-            "tr": "🔒 *Günün Kartı*\n\nBu dönem için kart limiti doldu.\n\n• Ücretsiz: 2 kart\n• Lite: 5 kart\n• Premium: 10 kart\n• Pro: 30 kart",
-        }.get(lang, "🔒 *Card of the Day*\n\nCard limit reached.")
-        await callback.message.edit_text(_limit_text, reply_markup=limit_reached_keyboard(), parse_mode="Markdown")
+    # ── Проверка кредита ──────────────────────────────────────────────────────
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    if not await has_credit(user.id, "tarot_card"):
+        _locked = {
+            "ru": "🔒 *Карта дня*\n\nДоступно за *49 ₽* или *49 ⭐*",
+            "en": "🔒 *Card of the Day*\n\nAvailable for *49 ⭐*",
+            "fa": "🔒 *کارت روز*\n\nقابل دسترس برای *49 ⭐*",
+            "tr": "🔒 *Günün Kartı*\n\n*49 ⭐* karşılığında erişilebilir",
+        }.get(lang, "🔒 *Card of the Day*\n\nAvailable for *49 ⭐*")
+        await callback.message.edit_text(_locked, reply_markup=_pay_kb("tarot_card", 49, 49, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -179,8 +180,8 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
         content=card_text,
         metadata={"card_key": file_key, "card_name": card_name_ru, "date": today_str},
     )
-    await consume_limit(session, user.id, "tarot_cards")
-    await consume_limit(session, user.id, "ai_messages")
+    from bot.services.limits import use_credit
+    await use_credit(user.id, "tarot_card")
 
     # ── Отправляем: фото сверху, текст+кнопки снизу ───────────────────────────
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")

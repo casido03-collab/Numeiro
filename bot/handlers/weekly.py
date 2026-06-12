@@ -64,16 +64,16 @@ def _week_energy(birth_date: date, week_start: date) -> dict:
 @router.callback_query(F.data == "menu:weekly")
 @router.callback_query(F.data == "weekly:start")
 async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    has_limit, used, max_val = await check_limit(session, user.id, "weekly_reports")
-    if not has_limit:
-        await callback.message.edit_text(
-            "🔒 *Расклад на неделю*\n\nЭта функция требует подписки или разовой покупки.\n\n"
-            "• Lite: недельные расклады не включены\n"
-            "• Premium: 2 расклада в месяц\n"
-            "• Pro: 4 расклада в месяц",
-            reply_markup=limit_reached_keyboard(),
-            parse_mode="Markdown",
-        )
+    from bot.services.limits import has_credit
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    if not await has_credit(user.id, "weekly_report"):
+        _locked = {
+            "ru": "🔒 *Расклад на неделю*\n\nДоступно за *79 ₽* или *79 ⭐*",
+            "en": "🔒 *Weekly Reading*\n\nAvailable for *79 ⭐*",
+            "fa": "🔒 *فال هفتگی*\n\nقابل دسترس برای *79 ⭐*",
+            "tr": "🔒 *Haftalık Açılım*\n\n*79 ⭐* karşılığında erişilebilir",
+        }.get(lang, "🔒 *Weekly Reading*\n\nAvailable for *79 ⭐*")
+        await callback.message.edit_text(_locked, reply_markup=_pay_kb("weekly_report", 79, 79, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -168,8 +168,8 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
         content=cached,
         metadata={"sphere": sphere, "week_start": str(week_start), "week_end": str(week_end)},
     )
-    await consume_limit(session, user.id, "weekly_reports")
-    await consume_limit(session, user.id, "ai_messages")
+    from bot.services.limits import use_credit
+    await use_credit(user.id, "weekly_report")
 
     name = user.first_name or _FRIEND.get(lang, "friend")
     sphere_name = sphere_label
