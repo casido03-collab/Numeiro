@@ -279,6 +279,42 @@ async def cmd_user(message: Message, session: AsyncSession):
         await message.answer(f"❌ Ошибка: `{e}`", parse_mode="Markdown")
 
 
+# ─── /subs ───────────────────────────────────────────────────────────────────
+
+@router.message(Command("subs"))
+async def cmd_subs(message: Message, session: AsyncSession):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        rows = (await session.execute(
+            select(Subscription.plan, Subscription.status, Subscription.expires_at,
+                   User.telegram_id, User.first_name, User.username)
+            .join(User, User.id == Subscription.user_id)
+            .where(Subscription.plan != PlanEnum.free)
+            .order_by(Subscription.updated_at.desc() if hasattr(Subscription, "updated_at") else Subscription.id.desc())
+        )).all()
+
+        if not rows:
+            await message.answer("Платных подписок не найдено")
+            return
+
+        lines = [f"💎 <b>Пользователи с платными тарифами ({len(rows)}):</b>\n"]
+        for r in rows:
+            expires = r.expires_at.strftime("%d.%m.%Y") if r.expires_at else "—"
+            name = r.first_name or r.username or "—"
+            status_icon = "✅" if r.status == SubscriptionStatusEnum.active else "❌"
+            lines.append(
+                f"{status_icon} <b>{r.plan.value.upper()}</b> — {name} "
+                f"(<code>{r.telegram_id}</code>)\n"
+                f"   до {expires}"
+            )
+
+        await message.answer("\n".join(lines), parse_mode="HTML")
+    except Exception as e:
+        logger.exception("cmd_subs error")
+        await message.answer(f"❌ Ошибка: <code>{e}</code>", parse_mode="HTML")
+
+
 # ─── /recent ─────────────────────────────────────────────────────────────────
 
 @router.message(Command("recent"))
