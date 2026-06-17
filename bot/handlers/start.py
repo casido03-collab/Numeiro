@@ -320,6 +320,19 @@ async def cmd_start(message: Message, user: User, session: AsyncSession, state: 
             arg = args[1]
             logger.info("CMD_START: start arg=%s", arg)
 
+            # Подтверждение перехода через bubbles-партнёрскую ссылку
+            if arg.startswith("bub_"):
+                import aiohttp
+                try:
+                    async with aiohttp.ClientSession() as _s:
+                        await _s.post(
+                            "https://drawme.live/api/astro_verify",
+                            json={"user_id": str(message.from_user.id), "secret": "bubbles_astro_2024"},
+                            timeout=aiohttp.ClientTimeout(total=5),
+                        )
+                except Exception:
+                    pass
+
             # Оплата подписки бизнес-чата через Stars
             if arg == "biz990":
                 from aiogram.types import LabeledPrice
