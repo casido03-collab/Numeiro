@@ -266,3 +266,76 @@ async def run_trial_upsell(bot: Bot, session: AsyncSession) -> None:
             if "can't parse entities" in str(e):
                 activity.trial_upsell_sent = True
                 await session.commit()
+
+
+# ─── Onboarding nudge — 3 пуша для незавершённого онбординга ─────────────────
+
+_ONBOARD_PUSHES = [
+    (30, (
+        "🌙 Вы начали знакомство, но не завершили его.\n\n"
+        "Мне нужна всего пара минут, чтобы настроить всё под Вас — "
+        "дата рождения и сфера интереса.\n\n"
+        "Нажмите /start — продолжим ✨"
+    )),
+    (60, (
+        "🔮 Ваш персональный разбор ждёт Вас.\n\n"
+        "Без даты рождения я не смогу рассчитать Ваши числа "
+        "и дать точный прогноз.\n\n"
+        "Завершите знакомство — это займёт меньше минуты.\n\n"
+        "/start"
+    )),
+    (120, (
+        "✨ Последнее напоминание.\n\n"
+        "Сотни людей уже получили свой разбор — гороскоп, карту дня, матрицу судьбы.\n\n"
+        "Всё это доступно и для Вас. Осталось только завершить знакомство.\n\n"
+        "/start — и я начну 🌙"
+    )),
+]
+
+
+async def run_onboarding_nudge(bot: Bot, session: AsyncSession) -> None:
+    """Отправить до 3 пушей пользователям, не завершившим онбординг."""
+    if not _is_push_time():
+        return
+
+    from bot.models.user import User, UserProfile
+    from bot.services.cache import get_redis
+
+    r = await get_redis()
+    now = datetime.now(timezone.utc)
+
+    # Пользователи без onboarding_done
+    all_profiles = await session.execute(select(UserProfile.user_id, UserProfile.preferences))
+    onboarded_ids = set()
+    for row in all_profiles.all():
+        prefs = row.preferences or {}
+        if prefs.get("onboarding_done"):
+            onboarded_ids.add(row.user_id)
+
+    result = await session.execute(
+        select(User).where(
+            User.is_blocked == False,  # noqa: E712
+            User.id.notin_(onboarded_ids) if onboarded_ids else User.id.isnot(None),
+        )
+    )
+    users = result.scalars().all()
+
+    for user in users:
+        if not user.created_at:
+            continue
+        minutes_since = (now - user.created_at).total_seconds() / 60
+
+        for delay_min, text in _ONBOARD_PUSHES:
+            if minutes_since < delay_min:
+                break
+            nudge_key = f"onboard_nudge:{delay_min}:{user.id}"
+            already = await r.get(nudge_key)
+            if already:
+                continue
+            try:
+                await bot.send_message(user.telegram_id, text)
+                await r.set(nudge_key, "1", ex=86400 * 30)
+                logger.info("Onboarding nudge %smin sent to user %s", delay_min, user.telegram_id)
+            except Exception as e:
+                await r.set(nudge_key, "1", ex=86400 * 30)
+                logger.warning("Onboarding nudge failed for user %s: %s", user.telegram_id, e)

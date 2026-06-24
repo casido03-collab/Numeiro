@@ -123,6 +123,11 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
         async with session_maker() as session:
             await run_trial_upsell(bot, session)
 
+    async def _onboarding_nudge():
+        from bot.services.retention import run_onboarding_nudge
+        async with session_maker() as session:
+            await run_onboarding_nudge(bot, session)
+
     async def _business_reminders():
         await _send_business_reminders(bot, session_maker)
 
@@ -175,6 +180,8 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     scheduler.add_job(_retention, CronTrigger(minute="*/10"))
     # Trial upsell — каждые 5 минут (проверяет 1ч неактивности для free)
     scheduler.add_job(_trial_upsell, CronTrigger(minute="*/5"))
+    # Onboarding nudge — каждые 5 минут (30/60/120 мин после регистрации)
+    scheduler.add_job(_onboarding_nudge, CronTrigger(minute="*/5"))
     # ── СТАРЫЕ пуши бизнес-чата ОТКЛЮЧЕНЫ (заменены новой системой monthly_990) ──
     # _business_reminders, _business_second_reminders, _business_abandoned
     # _followup_reminders, _accompaniment_morning
