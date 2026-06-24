@@ -39,10 +39,11 @@ async def question_cancel(callback: CallbackQuery, state: FSMContext, user: User
 @router.callback_query(F.data == "menu:question")
 async def question_start(callback: CallbackQuery, user: User, session: AsyncSession, state: FSMContext, lang: str = "ru"):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    from bot.services.limits import has_credit
+    from bot.services.limits import has_credit, is_vip, check_vip_limit
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
 
-    if not await has_credit(user.id, "personal_question"):
+    _is_vip = await is_vip(user.id)
+    if not _is_vip and not await has_credit(user.id, "personal_question"):
         _locked = {
             "ru": (
                 "🔮 *Личный расклад*\n\n"
@@ -93,6 +94,17 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
             ),
         }.get(lang, "🔮 *Personal Reading*\n\nAsk me your question and receive a personal reading.\n\n💳 Price: *29 ⭐*")
         await replace_message(callback.message, _locked, reply_markup=_pay_kb("personal_question", 29, 29, lang))
+        await callback.answer()
+        return
+
+    if _is_vip and not await check_vip_limit(user.id, "personal_question"):
+        _exhausted = {
+            "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
+            "en": "💎 VIP limit for this section exhausted this month.",
+            "fa": "💎 محدودیت VIP برای این بخش تمام شده.",
+            "tr": "💎 Bu bölüm için VIP limitiniz doldu.",
+        }.get(lang, "💎 VIP limit exhausted.")
+        await replace_message(callback.message, _exhausted, reply_markup=back_to_main())
         await callback.answer()
         return
 
@@ -180,9 +192,10 @@ async def receive_birth_date_for_question(message: Message, state: FSMContext, u
     await session.commit()
 
     # Теперь показываем экран вопроса
-    from bot.services.limits import has_credit
+    from bot.services.limits import has_credit, is_vip as _is_vip_bd
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
-    if not await has_credit(user.id, "personal_question"):
+    _vip_bd = await _is_vip_bd(user.id)
+    if not _vip_bd and not await has_credit(user.id, "personal_question"):
         await state.clear()
         await message.answer(
             "🔒 *Личный вопрос*\n\nДоступно за *29 ₽* или *29 ⭐*",
@@ -255,8 +268,13 @@ async def receive_question(message: Message, state: FSMContext, user: User, sess
         content=response,
         metadata={"question": question},
     )
-    from bot.services.limits import use_credit
-    await use_credit(user.id, "personal_question")
+    from bot.services.limits import is_vip as _is_vip_fn
+    if await _is_vip_fn(user.id):
+        from bot.services.limits import use_vip_limit
+        await use_vip_limit(user.id, "personal_question")
+    else:
+        from bot.services.limits import use_credit
+        await use_credit(user.id, "personal_question")
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend
