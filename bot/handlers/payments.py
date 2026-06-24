@@ -209,7 +209,7 @@ async def _activate_one_time_product(user: User, product_key: str):
 
 
 async def _process_referral_reward(session: AsyncSession, user: User, bot):
-    from bot.models.user import Referral, User as UserModel, Subscription, SubscriptionStatusEnum, PlanEnum
+    from bot.models.user import Referral, User as UserModel
     if not user.invited_by:
         return
     result = await session.execute(
@@ -230,18 +230,58 @@ async def _process_referral_reward(session: AsyncSession, user: User, bot):
     ref.reward_given = True
     ref.purchase_status = True
 
-    # Дарим рефереру 1 бесплатный мини-разбор
-    from bot.services.limits import add_credit
-    await add_credit(inviter.id, "mini_reading", 1)
+    # Считаем общее число рефералов пригласителя
+    from sqlalchemy import func
+    total_res = await session.execute(
+        select(func.count()).where(Referral.inviter_telegram_id == user.invited_by)
+    )
+    total_refs = total_res.scalar() or 0
 
-    try:
-        await bot.send_message(
-            inviter.telegram_id,
-            "🎁 *Твой реферал совершил покупку!*\n\n✨ Тебе начислен 1 бесплатный мини-разбор.",
-            parse_mode="Markdown",
-        )
-    except Exception:
-        pass
+    from bot.handlers.referral import REFERRAL_LEVELS
+    from bot.services.limits import add_credit, activate_vip
+    from bot.services.cache import get_redis
+
+    r = await get_redis()
+    rewards_given = []
+
+    for threshold, level_name, rewards in REFERRAL_LEVELS:
+        if total_refs < threshold:
+            break
+        level_key = f"ref_level:{threshold}:{inviter.id}"
+        already = await r.get(level_key)
+        if already:
+            continue
+        await r.set(level_key, "1", ex=86400 * 365)
+        for product_key, amount in rewards:
+            if product_key == "vip_days":
+                await activate_vip(inviter.id, days=amount)
+                rewards_given.append(f"👑 {amount} дня VIP")
+            else:
+                await add_credit(inviter.id, product_key, amount)
+                label = PRODUCT_DISPLAY.get(product_key, {}).get("label", product_key)
+                rewards_given.append(f"✨ {label} ×{amount}")
+
+    if rewards_given:
+        rewards_text = "\n".join(rewards_given)
+        try:
+            await bot.send_message(
+                inviter.telegram_id,
+                f"🎁 *Новый уровень рефералов!*\n\n"
+                f"👥 Друзей приглашено: *{total_refs}*\n\n"
+                f"Твои награды:\n{rewards_text}",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+    elif total_refs == 1 or ref.purchase_status:
+        try:
+            await bot.send_message(
+                inviter.telegram_id,
+                f"👥 Твой друг зарегистрировался! Всего приглашено: *{total_refs}*",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
 
 
 def _product_callback(product_key: str) -> str:

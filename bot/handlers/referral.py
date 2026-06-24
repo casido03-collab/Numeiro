@@ -62,33 +62,52 @@ _REFERRAL_INVITE_TEXT: dict[str, str] = {
 }
 
 
+REFERRAL_LEVELS = [
+    (1,  "🌱 Новичок",     [("personal_question", 1)]),
+    (3,  "⭐ Активный",    [("tarot_card", 1), ("mini_reading", 1)]),
+    (5,  "🔥 Продвинутый", [("compatibility", 1), ("weekly_report", 1)]),
+    (10, "💎 Мастер",      [("full_matrix", 1), ("personal_question", 2)]),
+    (20, "👑 Легенда",     [("vip_days", 3)]),
+]
+
+
+def _get_level(total: int) -> tuple[str, str]:
+    """Вернуть (эмоджи+имя, следующий порог) по числу рефералов."""
+    level_name = "🌑 Начало"
+    for threshold, name, _ in REFERRAL_LEVELS:
+        if total >= threshold:
+            level_name = name
+    next_threshold = None
+    for threshold, _, _ in REFERRAL_LEVELS:
+        if total < threshold:
+            next_threshold = threshold
+            break
+    return level_name, next_threshold
+
+
 def _build_referral_text(stats: dict, link: str, lang: str = "ru") -> str:
-    _title   = {"ru": "👥 Раздел «Друзья»",   "en": "👥 Friends",           "fa": "👥 بخش دوستان",       "tr": "👥 Arkadaşlar"}.get(lang, "👥 Friends")
-    _desc    = {"ru": "Приглашай друзей и получай бонусные дни к подписке.",
-                "en": "Invite friends and earn bonus days for your subscription.",
-                "fa": "دوستان را دعوت کنید و روزهای جایزه برای اشتراکتان دریافت کنید.",
-                "tr": "Arkadaşlarınızı davet edin ve aboneliğinize bonus günler kazanın."}.get(lang, "Invite friends and earn bonus days for your subscription.")
-    _bonus   = {"ru": f"ты получишь *+1 день* к своей подписке",
-                "en": f"you will receive *+1 day* to your subscription",
-                "fa": f"*۱ روز* به اشتراک شما اضافه می‌شود",
-                "tr": f"aboneliğinize *+1 gün* eklenecektir"}.get(lang, "you will receive *+1 day* to your subscription")
-    _cond    = {"ru": "Если друг зарегистрируется по твоей ссылке и оформит любой тариф —",
-                "en": "If a friend registers via your link and purchases any plan —",
-                "fa": "اگر دوستی از طریق لینک شما ثبت‌نام کند و هر طرحی بخرد —",
-                "tr": "Bir arkadaşınız bağlantınız aracılığıyla kayıt olur ve herhangi bir plan satın alırsa —"}.get(lang, "If a friend registers via your link and purchases any plan —")
-    _invited = {"ru": "Приглашено друзей", "en": "Friends invited", "fa": "دوستان دعوت شده", "tr": "Davet edilen arkadaşlar"}.get(lang, "Friends invited")
-    _bonuses = {"ru": "Активировано бонусов", "en": "Bonuses activated", "fa": "جوایز فعال شده", "tr": "Etkinleştirilen bonuslar"}.get(lang, "Bonuses activated")
-    _days    = {"ru": "дней", "en": "days", "fa": "روز", "tr": "gün"}.get(lang, "days")
-    _link_l  = {"ru": "Твоя ссылка", "en": "Your link", "fa": "لینک شما", "tr": "Bağlantınız"}.get(lang, "Your link")
+    total = stats["total"]
+    level_name, next_threshold = _get_level(total)
+
+    _link_l = {"ru": "Твоя ссылка", "en": "Your link", "fa": "لینک شما", "tr": "Bağlantınız"}.get(lang, "Your link")
+    _next = ""
+    if next_threshold:
+        _next = f"\n🎯 До следующего уровня: *{next_threshold - total}* друзей"
 
     return (
-        f"*{_title}*\n\n"
-        f"{_desc}\n\n"
-        f"{_cond} {_bonus}.\n\n"
+        f"*👥 Раздел «Друзья»*\n\n"
+        f"Приглашай друзей — получай бесплатный доступ к разделам!\n\n"
+        f"Чем больше друзей — тем больше подарков:\n\n"
+        f"🌱 1 друг → Личный вопрос\n"
+        f"⭐ 3 друга → Карта дня + Мини-разбор\n"
+        f"🔥 5 друзей → Совместимость + Расклад на неделю\n"
+        f"💎 10 друзей → Матрица судьбы + 2 Личных вопроса\n"
+        f"👑 20 друзей → 3 дня VIP (полный доступ)\n\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"👥 {_invited}: *{stats['total']}*\n"
-        f"💎 {_bonuses}: *+{stats['bonus_days']} {_days}*\n\n"
-        f"━━━━━━━━━━━━━━━\n"
+        f"👥 Приглашено друзей: *{total}*\n"
+        f"🏆 Уровень: *{level_name}*"
+        f"{_next}\n"
+        f"━━━━━━━━━━━━━━━\n\n"
         f"🔗 {_link_l}:\n`{link}`"
     )
 
@@ -150,27 +169,26 @@ async def referral_back(callback: CallbackQuery, user: User, session: AsyncSessi
 @router.callback_query(F.data == "referral:stats")
 async def referral_stats(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     stats = await _get_stats(session, user.telegram_id)
-    _title   = {"ru": "📊 Твоя статистика",   "en": "📊 Your statistics",  "fa": "📊 آمار شما",         "tr": "📊 İstatistikleriniz"}.get(lang, "📊 Your statistics")
-    _invited = {"ru": "Приглашено",            "en": "Invited",             "fa": "دعوت شده",            "tr": "Davet edilen"}.get(lang, "Invited")
-    _active  = {"ru": "Активных рефералов",    "en": "Active referrals",    "fa": "ارجاع‌های فعال",     "tr": "Aktif yönlendirmeler"}.get(lang, "Active referrals")
-    _bonuses = {"ru": "Получено бонусов",      "en": "Bonuses received",    "fa": "جوایز دریافتی",       "tr": "Alınan bonuslar"}.get(lang, "Bonuses received")
-    _days    = {"ru": "дней",                  "en": "days",                "fa": "روز",                 "tr": "gün"}.get(lang, "days")
-    _note1   = {"ru": "Бонусные дни начисляются автоматически после первой оплаты приглашённого.",
-                "en": "Bonus days are credited automatically after the first payment of the invited person.",
-                "fa": "روزهای جایزه به طور خودکار پس از اولین پرداخت دعوت‌شده اضافه می‌شوند.",
-                "tr": "Bonus günler, davet edilen kişinin ilk ödemesinden sonra otomatik olarak eklenir."}.get(lang, "Bonus days are credited automatically after the first payment of the invited person.")
-    _note2   = {"ru": "Если у вас нет активной подписки — дни сохранятся и применятся при следующей покупке.",
-                "en": "If you don't have an active subscription — days will be saved and applied on your next purchase.",
-                "fa": "اگر اشتراک فعال ندارید — روزها ذخیره می‌شوند و در خرید بعدی اعمال می‌شوند.",
-                "tr": "Aktif bir aboneliğiniz yoksa — günler kaydedilir ve bir sonraki satın alımınızda uygulanır."}.get(lang, "If you don't have an active subscription — days will be saved and applied on your next purchase.")
+    total = stats["total"]
+    level_name, next_threshold = _get_level(total)
+
+    # Показать какие уровни получены
+    lines = []
+    for threshold, name, rewards in REFERRAL_LEVELS:
+        check = "✅" if total >= threshold else "⬜"
+        lines.append(f"{check} {name} ({threshold} друзей)")
+
+    levels_block = "\n".join(lines)
+    _next = ""
+    if next_threshold:
+        _next = f"\n\n🎯 До следующего уровня: *{next_threshold - total}* друзей"
 
     text = (
-        f"*{_title}*\n\n"
-        f"👥 {_invited}: *{stats['total']}*\n"
-        f"💎 {_active}: *{stats['paid']}*\n"
-        f"✨ {_bonuses}: *+{stats['bonus_days']} {_days}*\n\n"
-        f"_{_note1}_\n"
-        f"_{_note2}_"
+        f"*📊 Твоя статистика*\n\n"
+        f"👥 Приглашено: *{total}*\n"
+        f"🏆 Уровень: *{level_name}*\n\n"
+        f"*Прогресс по уровням:*\n{levels_block}"
+        f"{_next}"
     )
     await callback.message.edit_text(text, reply_markup=_stats_kb(lang), parse_mode="Markdown")
     await callback.answer()
