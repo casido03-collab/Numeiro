@@ -200,6 +200,73 @@ async def get_limits_summary(session: AsyncSession, user_id: int) -> dict:
     return summary
 
 
+async def is_vip(user_id: int) -> bool:
+    """Check if user has active VIP subscription (Redis key vip:{user_id})."""
+    try:
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        val = await r.get(f"vip:{user_id}")
+        return bool(val)
+    except Exception:
+        return False
+
+
+async def activate_vip(user_id: int, days: int = 30) -> None:
+    """Activate VIP subscription for N days."""
+    try:
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        await r.set(f"vip:{user_id}", "1", ex=86400 * days)
+        # Set all VIP limits
+        from config import VIP_PLAN
+        for product_key, limit in VIP_PLAN["limits"].items():
+            await r.set(f"vip_limit:{product_key}:{user_id}", str(limit), ex=86400 * days)
+    except Exception:
+        pass
+
+
+async def check_vip_limit(user_id: int, product_key: str) -> bool:
+    """Check if VIP user has remaining uses for this feature."""
+    try:
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        val = await r.get(f"vip_limit:{product_key}:{user_id}")
+        return bool(val and int(val) > 0)
+    except Exception:
+        return False
+
+
+async def use_vip_limit(user_id: int, product_key: str) -> bool:
+    """Decrement VIP limit for a feature. Returns True if successful."""
+    try:
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        key = f"vip_limit:{product_key}:{user_id}"
+        val = await r.get(key)
+        if not val or int(val) <= 0:
+            return False
+        await r.decr(key)
+        return True
+    except Exception:
+        return False
+
+
+async def get_vip_limits_summary(user_id: int) -> dict:
+    """Get all VIP limits remaining."""
+    try:
+        from bot.services.cache import get_redis
+        from config import VIP_PLAN
+        r = await get_redis()
+        result = {}
+        for product_key, max_val in VIP_PLAN["limits"].items():
+            val = await r.get(f"vip_limit:{product_key}:{user_id}")
+            remaining = int(val) if val else 0
+            result[product_key] = {"remaining": remaining, "max": max_val}
+        return result
+    except Exception:
+        return {}
+
+
 async def has_credit(user_id: int, product_key: str) -> bool:
     """Check if user has a purchased credit for this feature (Redis oneoff key)."""
     try:

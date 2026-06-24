@@ -97,9 +97,11 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
         return
 
     # ── Проверка кредита ──────────────────────────────────────────────────────
-    from bot.services.limits import has_credit
+    from bot.services.limits import has_credit, is_vip, check_vip_limit
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
-    if not await has_credit(user.id, "tarot_card"):
+
+    _is_vip = await is_vip(user.id)
+    if not _is_vip and not await has_credit(user.id, "tarot_card"):
         _locked = {
             "ru": (
                 "🃏 *Карта дня*\n\n"
@@ -132,6 +134,17 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
             ),
         }.get(lang, "🃏 *Card of the Day*\n\nYour daily guidance from the Universe.\n\n💳 Price: *49 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("tarot_card", 49, 49, lang), parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    if _is_vip and not await check_vip_limit(user.id, "tarot_card"):
+        _exhausted = {
+            "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
+            "en": "💎 VIP limit for this section exhausted this month.",
+            "fa": "💎 محدودیت VIP برای این بخش تمام شده.",
+            "tr": "💎 Bu bölüm için VIP limitiniz doldu.",
+        }.get(lang, "💎 VIP limit exhausted.")
+        await callback.message.edit_text(_exhausted, reply_markup=back_to_main(), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -205,8 +218,12 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
         content=card_text,
         metadata={"card_key": file_key, "card_name": card_name_ru, "date": today_str},
     )
-    from bot.services.limits import use_credit
-    await use_credit(user.id, "tarot_card")
+    if await is_vip(user.id):
+        from bot.services.limits import use_vip_limit
+        await use_vip_limit(user.id, "tarot_card")
+    else:
+        from bot.services.limits import use_credit
+        await use_credit(user.id, "tarot_card")
 
     # ── Отправляем: фото сверху, текст+кнопки снизу ───────────────────────────
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")

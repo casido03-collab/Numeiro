@@ -117,86 +117,65 @@ _PLAN_LABELS: dict[str, dict[str, str]] = {
 
 
 async def _build_cabinet_text(session: AsyncSession, user: User, lang: str = "ru"):
-    plan = await get_user_plan(session, user.id)
-    limit_labels = _LIMIT_LABELS.get(lang) or _LIMIT_LABELS["en"]
-    plan_labels = _PLAN_LABELS.get(lang) or _PLAN_LABELS["en"]
-    plan_label = plan_labels.get(plan, plan)
+    from bot.services.limits import is_vip, get_vip_limits_summary
 
-    # Дата окончания
-    sub_result = await session.execute(
-        select(Subscription).where(Subscription.user_id == user.id)
-    )
-    sub = sub_result.scalar_one_or_none()
-    expires_str = "—"
-    _expired = {"ru": "Истекла", "en": "Expired", "fa": "منقضی شده", "tr": "Süresi doldu"}.get(lang, "Expired")
-    if sub and sub.expires_at:
-        if sub.status == SubscriptionStatusEnum.active:
-            expires_str = sub.expires_at.strftime("%d.%m.%Y")
-        else:
-            expires_str = _expired
+    _is_vip = await is_vip(user.id)
 
-    # Лимиты
-    limits = await get_limits_summary(session, user.id)
-    personality = await _get_or_create_personality(session, user.id, lang)
+    if _is_vip:
+        # VIP active — show limits
+        vip_limits = await get_vip_limits_summary(user.id)
+        personality = await _get_or_create_personality(session, user.id, lang)
 
-    _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
-    name = user.first_name or _friend
+        pq = vip_limits.get("personal_question", {}).get("remaining", 0)
+        mr = vip_limits.get("mini_reading", {}).get("remaining", 0)
+        tc = vip_limits.get("tarot_card", {}).get("remaining", 0)
+        fm = vip_limits.get("full_matrix", {}).get("remaining", 0)
+        cp = vip_limits.get("compatibility", {}).get("remaining", 0)
+        wr = vip_limits.get("weekly_report", {}).get("remaining", 0)
+        ds = vip_limits.get("date_selection", {}).get("remaining", 0)
 
-    _of = {"ru": "из", "en": "of", "fa": "از", "tr": "/"}.get(lang, "of")
-    lines_limits = []
-    for key, label in limit_labels.items():
-        info = limits.get(key, {})
-        remaining = info.get("remaining", 0)
-        max_val = info.get("max", 0)
-        if max_val > 0:
-            lines_limits.append(f"• {label}: *{remaining}* {_of} {max_val}")
-
-    _no_limits = {
-        "ru": "• Лимиты недоступны на бесплатном тарифе",
-        "en": "• Limits are not available on the free plan",
-        "fa": "• محدودیت‌ها در طرح رایگان موجود نیست",
-        "tr": "• Ücretsiz planda limitler mevcut değil",
-    }.get(lang, "• Limits are not available on the free plan")
-    limits_block = "\n".join(lines_limits) if lines_limits else _no_limits
-
-    _lbl_free = {"ru": "📊 *Остаток (всего):*", "en": "📊 *Balance (total):*", "fa": "📊 *موجودی (کل):*", "tr": "📊 *Bakiye (toplam):*"}.get(lang, "📊 *Balance (total):*")
-    _lbl_paid = {"ru": "📊 *Остаток за период:*", "en": "📊 *Balance for period:*", "fa": "📊 *موجودی دوره:*", "tr": "📊 *Dönem bakiyesi:*"}.get(lang, "📊 *Balance for period:*")
-    limits_label = _lbl_free if plan == "free" else _lbl_paid
-
-    _title  = {"ru": "Персональное пространство", "en": "Personal Space", "fa": "فضای شخصی", "tr": "Kişisel Alan"}.get(lang, "Personal Space")
-    _plan_l = {"ru": "Тариф", "en": "Plan", "fa": "طرح", "tr": "Plan"}.get(lang, "Plan")
-    _until  = {"ru": "Активен до", "en": "Active until", "fa": "فعال تا", "tr": "Aktif"}.get(lang, "Active until")
-
-    matrix_remaining = limits.get("matrix_readings", {}).get("remaining", 0)
-    show_matrix = matrix_remaining > 0
-
-    text = (
-        f"✨ *{_title} — {name}*\n\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"👤 *{_plan_l}:* {plan_label}\n"
-        f"📅 *{_until}:* {expires_str}\n\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"{limits_label}\n"
-        f"{limits_block}\n\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"{personality}"
-    )
-    return text, show_matrix
+        text = (
+            "💎 *Тариф VIP — активен*\n\n"
+            "📊 *Осталось в этом месяце:*\n"
+            f"• 🔮 Личные вопросы: {pq} из 30\n"
+            f"• 📖 Мини-разборы: {mr} из 20\n"
+            "• 🃏 Карта дня: каждый день\n"
+            f"• 🌟 Матрица судьбы: {fm} из 3\n"
+            f"• 💞 Совместимость: {cp} из 10\n"
+            f"• 📅 Расклад на неделю: {wr} из 4\n"
+            f"• 🎯 Подбор дат: {ds} из 5\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            f"{personality}"
+        )
+        return text, True  # is_vip=True
+    else:
+        # Not VIP — show offer
+        text = (
+            "💎 *Тариф VIP — 1 999 ₽/мес*\n\n"
+            "Полный доступ ко всем разделам:\n"
+            "• 🔮 Личные вопросы — до 30 в месяц\n"
+            "• 📖 Мини-разборы — до 20 в месяц\n"
+            "• 🃏 Карта дня — каждый день\n"
+            "• 🌟 Матрица судьбы — 3 в месяц\n"
+            "• 💞 Совместимость — 10 в месяц\n"
+            "• 📅 Расклад на неделю — 4 в месяц\n"
+            "• 🎯 Подбор дат — 5 в месяц\n\n"
+            "💰 *Экономия:*\n"
+            "По отдельности всё это стоит 5 718 ₽\n"
+            "С VIP вы платите 1 999 ₽ — экономия 65%\n\n"
+            "Без покупки каждого раздела отдельно."
+        )
+        return text, False  # is_vip=False
 
 
-def _cabinet_kb(show_matrix: bool = False, lang: str = "ru") -> InlineKeyboardMarkup:
-    _matrix  = {"ru": "🌟 Матрица судьбы",          "en": "🌟 Destiny Matrix",         "fa": "🌟 ماتریس سرنوشت",     "tr": "🌟 Kader Matrisi"}.get(lang, "🌟 Destiny Matrix")
-    _renew   = {"ru": "💎 Продлить / сменить тариф", "en": "💎 Renew / change plan",    "fa": "💎 تمدید / تغییر طرح", "tr": "💎 Yenile / plan değiştir"}.get(lang, "💎 Renew / change plan")
-    _all     = {"ru": "📋 Все тарифы",               "en": "📋 All plans",              "fa": "📋 همه طرح‌ها",        "tr": "📋 Tüm planlar"}.get(lang, "📋 All plans")
-    _menu    = {"ru": "🔮 Главное меню",              "en": "🔮 Main menu",              "fa": "🔮 منوی اصلی",         "tr": "🔮 Ana menü"}.get(lang, "🔮 Main menu")
+def _cabinet_kb(is_vip: bool = False, lang: str = "ru") -> InlineKeyboardMarkup:
     rows = []
-    if show_matrix:
-        rows.append([InlineKeyboardButton(text=_matrix, callback_data="matrix:start")])
-    rows += [
-        [InlineKeyboardButton(text=_renew, callback_data="menu:main")],
-        [InlineKeyboardButton(text=_all,   callback_data="menu:main")],
-        [InlineKeyboardButton(text=_menu,  callback_data="menu:main")],
-    ]
+    if is_vip:
+        rows.append([InlineKeyboardButton(text="🔄 Продлить VIP", callback_data="pay:vip:renew")])
+    else:
+        rows.append([InlineKeyboardButton(text="💎 Приобрести VIP — 1 999 ₽", callback_data="pay:card:product:vip")])
+        rows.append([InlineKeyboardButton(text="⭐ Приобрести VIP — 1 999 Stars", callback_data="pay:stars:product:vip")])
+    rows.append([InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -211,16 +190,16 @@ async def reply_cabinet(message: Message, user: User, session: AsyncSession, sta
     except Exception:
         pass
     from bot.utils import show_menu_message
-    text, show_matrix = await _build_cabinet_text(session, user, lang)
-    await show_menu_message(message, user.telegram_id, text, _cabinet_kb(show_matrix, lang), force_new=True, fast=True)
+    text, _is_vip = await _build_cabinet_text(session, user, lang)
+    await show_menu_message(message, user.telegram_id, text, _cabinet_kb(_is_vip, lang), force_new=True, fast=True)
     logger.info("MENU_RENDER_DONE handler=reply_cabinet duration_ms=%.0f", (time.monotonic() - t0) * 1000)
 
 
 @router.callback_query(F.data == "cabinet:open")
 async def cb_cabinet_open(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    text, show_matrix = await _build_cabinet_text(session, user, lang)
+    text, _is_vip = await _build_cabinet_text(session, user, lang)
     try:
-        await callback.message.edit_text(text, reply_markup=_cabinet_kb(show_matrix, lang), parse_mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=_cabinet_kb(_is_vip, lang), parse_mode="Markdown")
     except Exception:
-        await callback.message.answer(text, reply_markup=_cabinet_kb(show_matrix, lang), parse_mode="Markdown")
+        await callback.message.answer(text, reply_markup=_cabinet_kb(_is_vip, lang), parse_mode="Markdown")
     await callback.answer()

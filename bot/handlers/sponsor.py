@@ -123,6 +123,35 @@ async def check_subscription(callback: CallbackQuery):
         )
 
 
+# ─── Хендлер кнопки «Проверить подписку» (обязательная подписка) ──────────────
+
+@router.callback_query(F.data == "subgate:check")
+async def subgate_check(callback: CallbackQuery):
+    from config import settings
+    if not settings.required_channel_id:
+        await callback.answer("✅")
+        return
+    try:
+        member = await callback.bot.get_chat_member(
+            chat_id=settings.required_channel_id, user_id=callback.from_user.id
+        )
+        if member.status in ("member", "administrator", "creator"):
+            from bot.services.cache import get_redis
+            r = await get_redis()
+            await r.set(f"sub_gate:{callback.from_user.id}", "1", ex=3600)
+            from bot.keyboards.main import main_menu
+            await callback.message.edit_text(
+                "✅ Подписка подтверждена!\n\nДобро пожаловать:",
+                reply_markup=main_menu(),
+            )
+            await callback.answer()
+        else:
+            await callback.answer("❌ Подписка не найдена. Подпишитесь и попробуйте снова.", show_alert=True)
+    except Exception as e:
+        logger.warning("subgate:check error: %s", e)
+        await callback.answer("❌ Не удалось проверить подписку", show_alert=True)
+
+
 # ─── Админ-команды ────────────────────────────────────────────────────────────
 
 @router.message(Command("sponsor"))

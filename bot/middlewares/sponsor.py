@@ -1,8 +1,8 @@
-"""Middleware проверки спонсорской подписки."""
+"""Middleware проверки спонсорской подписки + обязательной подписки на канал."""
 import logging
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,75 @@ _GATED_CALLBACKS = (
 # Reply-кнопки нижнего меню которые требуют проверки (все языки)
 from bot.keyboards.reply import ALL_REPLY_TEXTS as _GATED_REPLIES
 
+
+# ─── Обязательная подписка (sub_gate) ────────────────────────────────────────
+
+_SUBGATE_TEXT = (
+    "🔒 Для доступа к боту подпишитесь:\n\n"
+    "1️⃣ 📰 Новостной канал\n"
+    "2️⃣ 🤖 Анонимный чат"
+)
+
+
+async def _check_subgate(bot, user_id: int) -> bool:
+    """Check mandatory channel subscription. Returns True if subscribed or gate not configured."""
+    from config import settings
+    if not settings.required_channel_id:
+        return True
+
+    # Check Redis cache first
+    try:
+        from bot.services.cache import get_redis
+        r = await get_redis()
+        cached = await r.get(f"sub_gate:{user_id}")
+        if cached:
+            return True
+    except Exception:
+        pass
+
+    # Check via Telegram API
+    try:
+        member = await bot.get_chat_member(
+            chat_id=settings.required_channel_id,
+            user_id=user_id,
+        )
+        if member.status in ("member", "administrator", "creator"):
+            # Cache for 1 hour
+            try:
+                r = await get_redis()
+                await r.set(f"sub_gate:{user_id}", "1", ex=3600)
+            except Exception:
+                pass
+            return True
+    except Exception as e:
+        logger.warning("sub_gate check error uid=%s: %s", user_id, e)
+        # fail-open on error
+        return True
+
+    return False
+
+
+async def _show_subgate(event, bot) -> None:
+    """Show mandatory subscription gate screen."""
+    from config import settings
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📰 Подписаться на канал", url=settings.required_channel_link)],
+        [InlineKeyboardButton(text="🤖 Открыть бота", url=f"https://t.me/{settings.required_bot_username}?start=ref")],
+        [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="subgate:check")],
+    ])
+
+    if isinstance(event, CallbackQuery):
+        try:
+            await event.message.edit_text(_SUBGATE_TEXT, reply_markup=kb)
+        except Exception:
+            await event.message.answer(_SUBGATE_TEXT, reply_markup=kb)
+        await event.answer()
+    elif isinstance(event, Message):
+        await event.answer(_SUBGATE_TEXT, reply_markup=kb)
+
+
+# ─── Спонсорская подписка ────────────────────────────────────────────────────
 
 async def _get_sponsor_state() -> dict:
     try:
@@ -66,7 +135,6 @@ async def _is_subscribed(bot, user_id: int, channel: str) -> bool:
 
 
 async def _show_sponsor(event, bot, link: str) -> None:
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from bot.handlers.sponsor import _SPONSOR_TEXT
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -85,7 +153,7 @@ async def _show_sponsor(event, bot, link: str) -> None:
 
 
 class SponsorMiddleware(BaseMiddleware):
-    """Проверяет подписку на канал спонсора перед любым действием в меню."""
+    """Проверяет обязательную подписку на канал + подписку на канал спонсора."""
 
     async def __call__(
         self,
@@ -97,18 +165,15 @@ class SponsorMiddleware(BaseMiddleware):
         if not isinstance(event, (Message, CallbackQuery)):
             return await handler(event, data)
 
-        # Получаем состояние спонсора
-        sponsor = await _get_sponsor_state()
-        if not sponsor["enabled"] or not sponsor["channel"]:
-            return await handler(event, data)
-
         # Определяем нужно ли проверять
         needs_check = False
 
         if isinstance(event, CallbackQuery):
             cb_data = event.data or ""
-            # Проверяем только если это кнопка меню (не sponsor:check сам по себе)
-            if cb_data != "sponsor:check" and any(cb_data.startswith(p) for p in _GATED_CALLBACKS):
+            # Не проверяем sponsor:check и subgate:check
+            if cb_data in ("sponsor:check", "subgate:check"):
+                return await handler(event, data)
+            if any(cb_data.startswith(p) for p in _GATED_CALLBACKS):
                 needs_check = True
 
         elif isinstance(event, Message):
@@ -124,7 +189,7 @@ class SponsorMiddleware(BaseMiddleware):
         if user_id is None:
             return await handler(event, data)
 
-        # Исключения — эти пользователи не проходят проверку
+        # Исключения — админы не проходят проверку
         from config import settings
         if user_id in settings.admin_ids_list:
             return await handler(event, data)
@@ -139,6 +204,17 @@ class SponsorMiddleware(BaseMiddleware):
 
         if bot is None:
             logger.warning("SponsorMiddleware: bot is None, skipping check")
+            return await handler(event, data)
+
+        # ── 1. Обязательная подписка (sub_gate) ─────────────────────────────
+        subgate_ok = await _check_subgate(bot, user_id)
+        if not subgate_ok:
+            await _show_subgate(event, bot)
+            return
+
+        # ── 2. Спонсорская подписка ──────────────────────────────────────────
+        sponsor = await _get_sponsor_state()
+        if not sponsor["enabled"] or not sponsor["channel"]:
             return await handler(event, data)
 
         subscribed = await _is_subscribed(bot, user_id, sponsor["channel"])

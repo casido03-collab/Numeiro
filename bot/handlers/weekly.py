@@ -64,9 +64,11 @@ def _week_energy(birth_date: date, week_start: date) -> dict:
 @router.callback_query(F.data == "menu:weekly")
 @router.callback_query(F.data == "weekly:start")
 async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    from bot.services.limits import has_credit
+    from bot.services.limits import has_credit, is_vip, check_vip_limit
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
-    if not await has_credit(user.id, "weekly_report"):
+
+    _is_vip = await is_vip(user.id)
+    if not _is_vip and not await has_credit(user.id, "weekly_report"):
         _locked = {
             "ru": (
                 "📅 *Расклад на неделю*\n\n"
@@ -94,6 +96,18 @@ async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSessio
             ),
         }.get(lang, "📅 *Weekly Reading*\n\nYour personal forecast for the week ahead.\n\n💳 Price: *79 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("weekly_report", 79, 79, lang), parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    if _is_vip and not await check_vip_limit(user.id, "weekly_report"):
+        _exhausted = {
+            "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
+            "en": "💎 VIP limit for this section exhausted this month.",
+            "fa": "💎 محدودیت VIP برای این بخش تمام شده.",
+            "tr": "💎 Bu bölüm için VIP limitiniz doldu.",
+        }.get(lang, "💎 VIP limit exhausted.")
+        from bot.keyboards.main import back_to_main as _btm
+        await callback.message.edit_text(_exhausted, reply_markup=_btm(), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -188,8 +202,12 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
         content=cached,
         metadata={"sphere": sphere, "week_start": str(week_start), "week_end": str(week_end)},
     )
-    from bot.services.limits import use_credit
-    await use_credit(user.id, "weekly_report")
+    if await is_vip(user.id):
+        from bot.services.limits import use_vip_limit
+        await use_vip_limit(user.id, "weekly_report")
+    else:
+        from bot.services.limits import use_credit
+        await use_credit(user.id, "weekly_report")
 
     name = user.first_name or _FRIEND.get(lang, "friend")
     sphere_name = sphere_label

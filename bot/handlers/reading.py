@@ -80,9 +80,11 @@ async def menu_reading(callback: CallbackQuery, user: User, session: AsyncSessio
 async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     sphere = callback.data.split(":")[-1]
 
-    from bot.services.limits import has_credit
+    from bot.services.limits import has_credit, is_vip, check_vip_limit
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
-    if not await has_credit(user.id, "mini_reading"):
+
+    _is_vip = await is_vip(user.id)
+    if not _is_vip and not await has_credit(user.id, "mini_reading"):
         _locked = {
             "ru": (
                 "📖 *Мини-разбор*\n\n"
@@ -112,6 +114,17 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
             ),
         }.get(lang, "📖 *Mini Reading*\n\nA deep look at one area of your life.\n\n💳 Price: *49 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("mini_reading", 49, 49, lang), parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    if _is_vip and not await check_vip_limit(user.id, "mini_reading"):
+        _exhausted = {
+            "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
+            "en": "💎 VIP limit for this section exhausted this month.",
+            "fa": "💎 محدودیت VIP برای این بخش تمام شده.",
+            "tr": "💎 Bu bölüm için VIP limitiniz doldu.",
+        }.get(lang, "💎 VIP limit exhausted.")
+        await callback.message.edit_text(_exhausted, reply_markup=back_to_main(), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -153,8 +166,12 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
         content=cached,
         metadata={"sphere": sphere, "birth_date": user.birth_date},
     )
-    from bot.services.limits import use_credit
-    await use_credit(user.id, "mini_reading")
+    if await is_vip(user.id):
+        from bot.services.limits import use_vip_limit
+        await use_vip_limit(user.id, "mini_reading")
+    else:
+        from bot.services.limits import use_credit
+        await use_credit(user.id, "mini_reading")
 
     name = user.first_name or _friend
     _title = {"ru": "Разбор для", "en": "Reading for", "fa": "بررسی برای", "tr": "Okuma:"}.get(lang, "Reading for")
@@ -168,9 +185,11 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
 
 @router.callback_query(F.data == "matrix:start")
 async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    from bot.services.limits import has_credit
+    from bot.services.limits import has_credit as _has_credit_matrix, is_vip as _is_vip_matrix, check_vip_limit as _check_vip_matrix
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
-    if not await has_credit(user.id, "full_matrix"):
+
+    _vip_active = await _is_vip_matrix(user.id)
+    if not _vip_active and not await _has_credit_matrix(user.id, "full_matrix"):
         _locked = {
             "ru": (
                 "🌟 *Матрица судьбы*\n\n"
@@ -202,6 +221,17 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
             ),
         }.get(lang, "🌟 *Destiny Matrix*\n\nThe deepest analysis of your purpose and karma.\n\n💳 Price: *199 ⭐*")
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("full_matrix", 199, 199, lang), parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    if _vip_active and not await _check_vip_matrix(user.id, "full_matrix"):
+        _exhausted = {
+            "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
+            "en": "💎 VIP limit for this section exhausted this month.",
+            "fa": "💎 محدودیت VIP برای این بخش تمام شده.",
+            "tr": "💎 Bu bölüm için VIP limitiniz doldu.",
+        }.get(lang, "💎 VIP limit exhausted.")
+        await callback.message.edit_text(_exhausted, reply_markup=back_to_main(), parse_mode="Markdown")
         await callback.answer()
         return
 
@@ -245,8 +275,12 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
         content=cached,
         metadata={"birth_date": user.birth_date},
     )
-    from bot.services.limits import use_credit
-    await use_credit(user.id, "full_matrix")
+    if await _is_vip_matrix(user.id):
+        from bot.services.limits import use_vip_limit as _use_vip_matrix
+        await _use_vip_matrix(user.id, "full_matrix")
+    else:
+        from bot.services.limits import use_credit
+        await use_credit(user.id, "full_matrix")
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend

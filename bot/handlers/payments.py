@@ -33,6 +33,7 @@ PRODUCT_DISPLAY = {
     "compatibility":     {"label": "Совместимость пары",    "price_rub": 99,  "price_stars": 99},
     "weekly_report":     {"label": "Расклад на неделю",     "price_rub": 79,  "price_stars": 79},
     "date_selection":    {"label": "Подбор дат",            "price_rub": 99,  "price_stars": 99},
+    "vip":               {"label": "VIP — 30 дней",         "price_rub": 1999, "price_stars": 1999},
 }
 
 # Оставляем для обратной совместимости с yookassa_webhook.py
@@ -199,8 +200,12 @@ async def successful_payment(message: Message, user: User, session: AsyncSession
 # ─── Вспомогательные ──────────────────────────────────────────────────────────
 
 async def _activate_one_time_product(user: User, product_key: str):
-    from bot.services.limits import add_credit
-    await add_credit(user.id, product_key)
+    if product_key == "vip":
+        from bot.services.limits import activate_vip
+        await activate_vip(user.id, days=30)
+    else:
+        from bot.services.limits import add_credit
+        await add_credit(user.id, product_key)
 
 
 async def _process_referral_reward(session: AsyncSession, user: User, bot):
@@ -248,4 +253,18 @@ def _product_callback(product_key: str) -> str:
         "date_selection":    "menu:dates",
         "tarot_card":        "menu:tarot",
         "mini_reading":      "menu:reading",
+        "vip":               "cabinet:open",
     }.get(product_key, "menu:main")
+
+
+# ─── VIP Продление ──────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "pay:vip:renew")
+async def vip_renew(callback: CallbackQuery, lang: str = "ru"):
+    from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    await callback.message.edit_text(
+        "💎 *Продление VIP — 1 999 ₽*\n\nВыберите способ оплаты:",
+        reply_markup=_pay_kb("vip", 1999, 1999, lang, back="cabinet:open"),
+        parse_mode="Markdown",
+    )
+    await callback.answer()

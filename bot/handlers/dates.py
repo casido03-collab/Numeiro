@@ -19,9 +19,11 @@ router = Router()
 
 @router.callback_query(F.data == "menu:dates")
 async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
-    from bot.services.limits import has_credit
+    from bot.services.limits import has_credit, is_vip, check_vip_limit
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
-    if not await has_credit(user.id, "date_selection"):
+
+    _is_vip = await is_vip(user.id)
+    if not _is_vip and not await has_credit(user.id, "date_selection"):
         _locked = {
             "ru": (
                 "🎯 *Подбор благоприятных дат*\n\n"
@@ -55,6 +57,17 @@ async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession,
         await callback.answer()
         return
 
+    if _is_vip and not await check_vip_limit(user.id, "date_selection"):
+        _exhausted = {
+            "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
+            "en": "💎 VIP limit for this section exhausted this month.",
+            "fa": "💎 محدودیت VIP برای این بخش تمام شده.",
+            "tr": "💎 Bu bölüm için VIP limitiniz doldu.",
+        }.get(lang, "💎 VIP limit exhausted.")
+        await callback.message.edit_text(_exhausted, reply_markup=back_to_main(), parse_mode="Markdown")
+        await callback.answer()
+        return
+
     _dates_prompt = {
         "ru": "📆 *Подбор благоприятных дат*\n\nВыбери событие:",
         "en": "📆 *Favorable date selection*\n\nChoose an event:",
@@ -73,9 +86,10 @@ async def dates_menu(callback: CallbackQuery, user: User, session: AsyncSession,
 async def select_event(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     event_type = callback.data.split(":")[-1]
 
-    from bot.services.limits import has_credit
+    from bot.services.limits import has_credit, is_vip as _is_vip_ev, check_vip_limit as _check_vip_ev
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
-    if not await has_credit(user.id, "date_selection"):
+    _vip_ev = await _is_vip_ev(user.id)
+    if not _vip_ev and not await has_credit(user.id, "date_selection"):
         await callback.message.edit_text(
             "🔒 *Подбор дат*\n\nДоступно за *99 ₽* или *99 ⭐*",
             reply_markup=_pay_kb("date_selection", 99, 99, lang),
@@ -110,8 +124,13 @@ async def select_event(callback: CallbackQuery, user: User, session: AsyncSessio
         content=response,
         metadata={"event": event_type, "event_name": event_name},
     )
-    from bot.services.limits import use_credit
-    await use_credit(user.id, "date_selection")
+    from bot.services.limits import is_vip as _is_vip_fn
+    if await _is_vip_fn(user.id):
+        from bot.services.limits import use_vip_limit
+        await use_vip_limit(user.id, "date_selection")
+    else:
+        from bot.services.limits import use_credit
+        await use_credit(user.id, "date_selection")
 
     dates_list = "\n".join(
         f"• *{d['date']}* ({d['weekday']}) — энергия {d['energy']}" for d in favorable

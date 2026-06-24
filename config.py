@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # ID-шники, которым разрешено писать в TG Business даже если они в admin_ids
     biz_allowed_ids: str = Field(default="", env="BIZ_ALLOWED_IDS")
 
+    # Обязательная подписка
+    required_channel_id: str = Field(default="", env="REQUIRED_CHANNEL_ID")
+    required_channel_link: str = Field(default="https://t.me/+C9qj4yn2NX43YzUy", env="REQUIRED_CHANNEL_LINK")
+    required_bot_username: str = Field(default="chatixmebot", env="REQUIRED_BOT_USERNAME")
+
     @property
     def admin_ids_list(self) -> list[int]:
         if not self.admin_ids:
@@ -121,6 +126,21 @@ ONE_TIME_PRODUCTS = {
     "weekly_report": {"name": "Расклад на неделю", "stars": 199},
     "personal_question": {"name": "Личный вопрос", "stars": 99},
     "date_selection": {"name": "Подбор благоприятной даты", "stars": 199},
+}
+
+VIP_PLAN = {
+    "price_rub": 1999,
+    "price_stars": 1999,
+    "duration_days": 30,
+    "limits": {
+        "personal_question": 30,
+        "mini_reading": 20,
+        "tarot_card": 30,
+        "full_matrix": 3,
+        "compatibility": 10,
+        "weekly_report": 4,
+        "date_selection": 5,
+    },
 }
 
 PRODUCTS = {
