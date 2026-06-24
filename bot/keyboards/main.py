@@ -19,7 +19,6 @@ def main_menu(lang: str = "ru") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=t("menu_compatibility", lang),    callback_data="menu:compatibility")],
         [InlineKeyboardButton(text=t("menu_question", lang),         callback_data="menu:question")],
         [InlineKeyboardButton(text=t("menu_dates", lang),            callback_data="menu:dates")],
-        [InlineKeyboardButton(text=t("menu_reviews", lang),          url="https://t.me/ezoterika_aisha")],
         [InlineKeyboardButton(text=t("menu_history", lang),          callback_data="reports:menu")],
     ])
 
