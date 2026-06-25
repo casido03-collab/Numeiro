@@ -339,3 +339,4 @@ async def run_onboarding_nudge(bot: Bot, session: AsyncSession) -> None:
             except Exception as e:
                 await r.set(nudge_key, "1", ex=86400 * 30)
                 logger.warning("Onboarding nudge failed for user %s: %s", user.telegram_id, e)
+            break
