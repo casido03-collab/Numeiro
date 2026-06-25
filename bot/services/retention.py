@@ -269,50 +269,55 @@ async def run_trial_upsell(bot: Bot, session: AsyncSession) -> None:
 
 
 # ─── Onboarding nudge — 4 пуша для незавершённого онбординга ─────────────────
-# Расписание: 10 мин, +30 мин (=40), +60 мин (=100), +120 мин (=220)
+# Первый через 10 мин от регистрации, далее +30/+60/+120 мин от предыдущего
 
-_ONBOARD_PUSHES = [
-    (10, (
+_ONBOARD_TEXTS = [
+    (
         "🌙 Бабушка Aisha просила передать…\n\n"
         "Иногда человек уходит именно в тот момент, "
         "когда ответы начинают становиться особенно важными.\n\n"
         "Если внутри остались вопросы — возвращайтесь.\n\n"
         "✨ /start"
-    )),
-    (40, (
+    ),
+    (
         "🌙 Вы начали знакомство, но не завершили его.\n\n"
         "Мне нужна всего пара минут, чтобы настроить всё под Вас — "
         "дата рождения и сфера интереса.\n\n"
         "Нажмите /start — продолжим ✨"
-    )),
-    (100, (
+    ),
+    (
         "🔮 Ваш персональный разбор ждёт Вас.\n\n"
         "Без даты рождения я не смогу рассчитать Ваши числа "
         "и дать точный прогноз.\n\n"
         "Завершите знакомство — это займёт меньше минуты.\n\n"
         "/start"
-    )),
-    (220, (
+    ),
+    (
         "✨ Последнее напоминание.\n\n"
         "Сотни людей уже получили свой разбор — гороскоп, карту дня, матрицу судьбы.\n\n"
         "Всё это доступно и для Вас. Осталось только завершить знакомство.\n\n"
         "/start — и я начну 🌙"
-    )),
+    ),
 ]
+
+_ONBOARD_FIRST_DELAY = 10
+_ONBOARD_GAPS = [30, 60, 120]
 
 
 async def run_onboarding_nudge(bot: Bot, session: AsyncSession) -> None:
-    """Отправить до 3 пушей пользователям, не завершившим онбординг."""
+    """Отправить пуши пользователям, не завершившим онбординг.
+    Первый через 10 мин от регистрации, далее +30/+60/+120 мин от предыдущего."""
     if not _is_push_time():
         return
 
     from bot.models.user import User, UserProfile
     from bot.services.cache import get_redis
+    import time as _time
 
     r = await get_redis()
     now = datetime.now(timezone.utc)
+    now_ts = int(_time.time())
 
-    # Пользователи без onboarding_done
     all_profiles = await session.execute(select(UserProfile.user_id, UserProfile.preferences))
     onboarded_ids = set()
     for row in all_profiles.all():
@@ -331,20 +336,36 @@ async def run_onboarding_nudge(bot: Bot, session: AsyncSession) -> None:
     for user in users:
         if not user.created_at:
             continue
-        minutes_since = (now - user.created_at).total_seconds() / 60
 
-        for delay_min, text in _ONBOARD_PUSHES:
-            if minutes_since < delay_min:
-                break
-            nudge_key = f"onboard_nudge:{delay_min}:{user.id}"
-            already = await r.get(nudge_key)
-            if already:
+        idx_key = f"onboard_idx:{user.id}"
+        ts_key = f"onboard_last_ts:{user.id}"
+
+        idx_raw = await r.get(idx_key)
+        idx = int(idx_raw) if idx_raw else 0
+
+        if idx >= len(_ONBOARD_TEXTS):
+            continue
+
+        if idx == 0:
+            minutes_since_reg = (now - user.created_at).total_seconds() / 60
+            if minutes_since_reg < _ONBOARD_FIRST_DELAY:
                 continue
-            try:
-                await bot.send_message(user.telegram_id, text)
-                await r.set(nudge_key, "1", ex=86400 * 30)
-                logger.info("Onboarding nudge %smin sent to user %s", delay_min, user.telegram_id)
-            except Exception as e:
-                await r.set(nudge_key, "1", ex=86400 * 30)
-                logger.warning("Onboarding nudge failed for user %s: %s", user.telegram_id, e)
-            break
+        else:
+            last_ts_raw = await r.get(ts_key)
+            if not last_ts_raw:
+                continue
+            gap = _ONBOARD_GAPS[idx - 1] if idx - 1 < len(_ONBOARD_GAPS) else 120
+            minutes_since_last = (now_ts - int(last_ts_raw)) / 60
+            if minutes_since_last < gap:
+                continue
+
+        text = _ONBOARD_TEXTS[idx]
+        try:
+            await bot.send_message(user.telegram_id, text)
+            await r.set(idx_key, str(idx + 1), ex=86400 * 30)
+            await r.set(ts_key, str(now_ts), ex=86400 * 30)
+            logger.info("Onboarding nudge #%s sent to user %s", idx + 1, user.telegram_id)
+        except Exception as e:
+            await r.set(idx_key, str(idx + 1), ex=86400 * 30)
+            await r.set(ts_key, str(now_ts), ex=86400 * 30)
+            logger.warning("Onboarding nudge failed for user %s: %s", user.telegram_id, e)
