@@ -178,8 +178,9 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
     scheduler.add_job(_reminders, CronTrigger(hour=9, minute=0))
     # Retention push — каждые 10 минут (проверяет 24ч неактивности)
     scheduler.add_job(_retention, CronTrigger(minute="*/10"))
-    # Trial upsell — каждые 5 минут (проверяет 1ч неактивности для free)
-    scheduler.add_job(_trial_upsell, CronTrigger(minute="*/5"))
+    # Trial upsell — ОТКЛЮЧЁН 17.07.2026 по просьбе владельца (слишком частая рассылка).
+    # Чтобы вернуть — раскомментировать строку ниже.
+    # scheduler.add_job(_trial_upsell, CronTrigger(minute="*/5"))
     # Onboarding nudge — каждые 5 минут (30/60/120 мин после регистрации)
     scheduler.add_job(_onboarding_nudge, CronTrigger(minute="*/5"))
     # ── СТАРЫЕ пуши бизнес-чата ОТКЛЮЧЕНЫ (заменены новой системой monthly_990) ──
