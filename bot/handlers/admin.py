@@ -583,7 +583,9 @@ async def cmd_broadcast(message: Message, session: AsyncSession):
         failed = 0
         for tg_id in users:
             try:
-                await message.bot.send_message(tg_id, text, parse_mode="Markdown")
+                # parse_mode=None — текст уходит как есть. С Markdown символ «_»
+                # трактуется как курсив и съедается: t.me/bubbles_ton_bot → t.me/bubblestonbot
+                await message.bot.send_message(tg_id, text, parse_mode=None)
                 sent += 1
             except Exception:
                 failed += 1
