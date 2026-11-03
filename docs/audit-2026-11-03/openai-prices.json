@@ -1,0 +1,74 @@
+[
+  {
+    "id": "gpt-6-luna",
+    "source": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+    "excerpt": [
+      "> For the complete documentation index, see [llms.txt](/llms.txt). Markdown versions of documentation pages are available by appending `.md` to the page URL.",
+      "> Our most efficient model for focused, high-volume tasks.",
+      "| Input | $0.1 | 1M tokens |",
+      "| Cached input | $0.01 | 1M tokens |",
+      "| Output | $0.5 | 1M tokens |"
+    ]
+  },
+  {
+    "id": "gpt-6.1-terra",
+    "source": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+    "excerpt": [
+      "> For the complete documentation index, see [llms.txt](/llms.txt). Markdown versions of documentation pages are available by appending `.md` to the page URL.",
+      "> A fast, efficient model for visual reasoning, precise computer use, and clear, natural writing.",
+      "| Input | $1 | 1M tokens |",
+      "| Cached input | $0.05 | 1M tokens |",
+      "| Output | $5 | 1M tokens |"
+    ]
+  },
+  {
+    "id": "gpt-6.1-sol",
+    "source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+    "excerpt": [
+      "> For the complete documentation index, see [llms.txt](/llms.txt). Markdown versions of documentation pages are available by appending `.md` to the page URL.",
+      "> Near-Astra performance for complex work at a lower cost.",
+      "| Input | $2 | 1M tokens |",
+      "| Cached input | $0.1 | 1M tokens |",
+      "| Output | $10 | 1M tokens |"
+    ]
+  },
+  {
+    "id": "gpt-5.4-mini",
+    "source": "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+    "excerpt": [
+      "> For the complete documentation index, see [llms.txt](/llms.txt). Markdown versions of documentation pages are available by appending `.md` to the page URL.",
+      "> Our strongest mini model yet for coding, computer use, and subagents",
+      "| Input | $0.75 | 1M tokens |",
+      "| Cached input | $0.075 | 1M tokens |",
+      "| Output | $4.5 | 1M tokens |"
+    ]
+  },
+  {
+    "id": "gpt-4.1-mini",
+    "source": "https://developers.openai.com/api/docs/models/gpt-4.1-mini",
+    "excerpt": [
+      "> For the complete documentation index, see [llms.txt](/llms.txt). Markdown versions of documentation pages are available by appending `.md` to the page URL.",
+      "> Smaller, faster version of GPT-4.1",
+      "Status: Deprecated",
+      "| Input | $0.4 | 1M tokens |",
+      "| Cached input | $0.1 | 1M tokens |",
+      "| Output | $1.6 | 1M tokens |",
+      "- `gpt-4.1-mini-2025-04-14` — Deprecated",
+      "> 128k input tokens"
+    ]
+  },
+  {
+    "id": "gpt-4o",
+    "source": "https://developers.openai.com/api/docs/models/gpt-4o",
+    "excerpt": [
+      "> For the complete documentation index, see [llms.txt](/llms.txt). Markdown versions of documentation pages are available by appending `.md` to the page URL.",
+      "> Fast, intelligent, flexible GPT model",
+      "Status: Deprecated",
+      "| Input | $2.5 | 1M tokens |",
+      "| Cached input | $1.25 | 1M tokens |",
+      "| Output | $10 | 1M tokens |",
+      "- `gpt-4o-2024-11-20` — Deprecated",
+      "- `gpt-4o-2024-08-06` — Deprecated"
+    ]
+  }
+]

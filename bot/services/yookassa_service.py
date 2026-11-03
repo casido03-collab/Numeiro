@@ -74,3 +74,40 @@ async def create_payment(
         metadata,
         email,
     )
+
+
+async def verified_payment(payment_id: str) -> dict:
+    """Read status and metadata from our merchant account, not from webhook input."""
+    from config import settings
+    if not settings.yookassa_shop_id or not settings.yookassa_secret_key:
+        raise RuntimeError("YooKassa credentials are not configured")
+    def fetch():
+        from yookassa import Payment
+        _configure(settings.yookassa_shop_id, settings.yookassa_secret_key)
+        payment = Payment.find_one(payment_id)
+        return {"id": payment.id, "status": payment.status, "paid": payment.paid,
+                "amount": {"value": str(payment.amount.value), "currency": payment.amount.currency},
+                "metadata": dict(payment.metadata or {})}
+    return await asyncio.to_thread(fetch)
+
+
+def validate_payment(payment: dict) -> bool:
+    from decimal import Decimal
+    from config import PRODUCTS, VIP_PLAN
+    from bot.business_dialog.upsell import TIERS
+    if payment.get("status") != "succeeded" or payment.get("paid") is not True:
+        return False
+    amount = payment.get("amount", {})
+    if amount.get("currency") != "RUB":
+        return False
+    meta = payment.get("metadata", {})
+    platform = meta.get("platform")
+    if platform in ("vk", "tg_business"):
+        tier = meta.get("tier_key")
+        expected = {"q29": 29, "monthly_990": 990}.get(tier, TIERS.get(tier, {}).get("price"))
+    elif platform in (None, "", "tg", "telegram") and meta.get("product_type") == "product":
+        key = meta.get("product_key")
+        expected = VIP_PLAN["price_rub"] if key == "vip" else PRODUCTS.get(key, {}).get("price_rub")
+    else:
+        return False
+    return expected is not None and Decimal(str(amount.get("value", 0))) == Decimal(expected)

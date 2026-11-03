@@ -1,181 +1,85 @@
-"""AI Service — маршрутизация запросов к OpenAI."""
-import json
+"""Direct OpenAI generation. An unavailable answer is never a paid result."""
 import logging
+import re
 from openai import AsyncOpenAI
 from config import settings, AI_MODELS
 from bot.models.user import AIRequest
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
-
-# Клиент создаётся лениво — чтобы не падать при старте без ключа
 _client: AsyncOpenAI | None = None
+
+
+class AIUnavailable(RuntimeError):
+    """No complete answer was obtained; do not consume the customer's purchase."""
 
 
 def _get_client() -> AsyncOpenAI | None:
     global _client
-    # Приоритет: OpenRouter (без геоблокировок) → OpenAI напрямую
-    api_key = getattr(settings, "openrouter_api_key", "") or settings.openai_api_key
-    if not api_key:
+    if not settings.openai_api_key:
         return None
     if _client is None:
-        use_openrouter = bool(getattr(settings, "openrouter_api_key", ""))
-        _client = AsyncOpenAI(
-            api_key=api_key,
-            base_url="https://openrouter.ai/api/v1" if use_openrouter else "https://api.openai.com/v1",
-            timeout=90.0,
-            max_retries=1,
-            default_headers={"HTTP-Referer": "https://t.me/numerelogia_astro_bot"} if use_openrouter else {},
-        )
-        logger.info("AI client: %s", "OpenRouter" if use_openrouter else "OpenAI direct")
+        _client = AsyncOpenAI(api_key=settings.openai_api_key,
+                              base_url="https://api.openai.com/v1",
+                              timeout=75.0, max_retries=1)
     return _client
 
 
-# Примерная стоимость за токен ($)
-COST_PER_TOKEN = {
-    "gpt-4o-mini": {"input": 0.000000150, "output": 0.000000600},
-    "gpt-4o":      {"input": 0.000002500, "output": 0.000010000},
-}
-
-# Заглушки для работы без OpenAI
-_STUB_RESPONSES: dict[str, str] = {
-    "free_reading": (
-        "✨ Твои числа судьбы говорят о глубоком внутреннем потенциале и умении находить нестандартные решения. "
-        "Энергия этого периода направлена на развитие и обновление.\n\n"
-        "Сейчас хорошее время, чтобы прислушаться к своей интуиции — она не подведёт.\n\n"
-        "_Это демо-ответ. Подключи OpenAI API для персонального разбора._"
-    ),
-    "weekly_report": (
-        "📅 *Энергия недели*\n\n"
-        "✨ Общая энергия: период трансформации и новых начинаний.\n"
-        "🎯 Главная тема: принятие важных решений.\n"
-        "🌟 Возможности: открываются новые пути.\n"
-        "⚠️ Риски: поспешность может дорого стоить.\n"
-        "💡 Совет: действуй обдуманно, но не откладывай.\n"
-        "💫 День силы: Среда.\n"
-        "🚫 Избегай: конфликтов и споров без необходимости.\n"
-        "🔮 Итог: неделя принесёт ясность.\n\n"
-        "_Это демо-ответ. Подключи OpenAI API для персонального прогноза._"
-    ),
-    "compatibility": (
-        "💞 *Совместимость*\n\n"
-        "💞 Общий процент: 74% — хорошая основа для отношений.\n"
-        "🌊 Эмоциональная связь: сильная, интуитивная.\n"
-        "🏠 Бытовая совместимость: требует договорённостей.\n"
-        "⚡ Конфликтные зоны: разные темпы жизни.\n"
-        "💪 Сильная сторона: взаимодополняемость.\n"
-        "🌀 Главный риск: накопление обид.\n"
-        "🌟 Совет: больше открытого общения.\n"
-        "🔮 Итог: у этой пары есть потенциал.\n\n"
-        "_Это демо-ответ. Подключи OpenAI API для точного анализа._"
-    ),
-    "daily_forecast": (
-        "⚡ Энергия дня: спокойная, созидательная.\n"
-        "💡 Совет дня: сосредоточься на деталях.\n"
-        "⚠️ Внимание: не торопись с решениями.\n"
-        "✅ Удачное действие: начать что-то новое.\n"
-        "🔢 Число дня: 6\n"
-        "✨ Аффирмация: Я нахожусь в потоке и принимаю лучшее.\n\n"
-        "_Это демо-ответ. Подключи OpenAI API для персонального прогноза._"
-    ),
-    "personal_question": (
-        "🔮 Что говорит энергетика: ситуация требует терпения.\n"
-        "💫 Что важно учесть: ваши внутренние сомнения — это сигнал, не препятствие.\n"
-        "🌟 Совет: доверяй процессу и двигайся маленькими шагами.\n"
-        "⚡ Возможный сценарий: в ближайшие недели придёт ясность.\n\n"
-        "_Это демо-ответ. Подключи OpenAI API для персонального ответа._"
-    ),
-    "full_matrix": (
-        "🌟 *Матрица судьбы*\n\n"
-        "🌟 Ключевые энергии: трансформация и рост.\n"
-        "💪 Сильные стороны: интуиция, лидерство, творческое мышление.\n"
-        "⚡ Слабые стороны: склонность к перфекционизму.\n"
-        "🔮 Кармические задачи: научиться принимать помощь.\n"
-        "💰 Деньги: потенциал раскрывается через собственное дело.\n"
-        "💞 Отношения: глубокие, но требуют открытости.\n"
-        "🎨 Таланты: работа с людьми, творчество.\n"
-        "🌙 Предназначение: вдохновлять и создавать.\n"
-        "📅 Рекомендации на неделю: выдели время для себя.\n\n"
-        "_Это демо-ответ. Подключи OpenAI API для полного разбора._"
-    ),
-    "date_selection": (
-        "Выбранные даты обладают благоприятной нумерологической энергией для твоего события. "
-        "Числа этих дней поддерживают начинания и усиливают намерение.\n\n"
-        "_Это демо-ответ. Подключи OpenAI API для персонального обоснования._"
-    ),
+# USD per million tokens, Standard processing, reviewed 2026-11-03.
+MODEL_PRICES = {
+    "gpt-6-luna": (0.10, 0.50),
+    "gpt-6.1-terra": (1.00, 5.00),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4o": (2.50, 10.00),
 }
 
 
-async def _log_request(
-    session: AsyncSession,
-    user_id: int,
-    request_type: str,
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-) -> None:
-    costs = COST_PER_TOKEN.get(model, COST_PER_TOKEN["gpt-4o-mini"])
-    estimated_cost = input_tokens * costs["input"] + output_tokens * costs["output"]
-    req = AIRequest(
-        user_id=user_id,
-        request_type=request_type,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        model=model,
-        estimated_cost=estimated_cost,
-    )
-    session.add(req)
-    await session.commit()
-
-
-async def generate(
-    session: AsyncSession,
-    user_id: int,
-    request_type: str,
-    system_prompt: str,
-    user_message: str,
-    complexity: str = "medium",
-    max_tokens: int = 1200,
-) -> str:
-    """Generate AI response. Falls back to stub if OpenAI key is missing."""
+async def complete(system_prompt, user_message, complexity="medium", max_tokens=1600):
     client = _get_client()
-
     if client is None:
-        logger.warning("OpenAI key not set — returning stub response for '%s'", request_type)
-        return _STUB_RESPONSES.get(request_type, "✨ AI-ответ временно недоступен. Попробуйте позже.")
-
-    base_model = AI_MODELS.get(complexity, AI_MODELS["medium"])
-    # OpenRouter требует префикс "openai/" перед именем модели
-    use_openrouter = bool(getattr(settings, "openrouter_api_key", ""))
-    model = f"openai/{base_model}" if use_openrouter else base_model
-
+        raise AIUnavailable("OpenAI is not configured")
+    model = AI_MODELS.get(complexity, AI_MODELS["medium"])
+    params = dict(model=model, messages=[
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ], max_completion_tokens=max_tokens)
+    # Sampling overrides are incompatible with reasoning on newer models.
+    if model.startswith(("gpt-5", "gpt-6")):
+        # Public SDK escape hatch: pinned openai 1.57 predates this named argument.
+        params["extra_body"] = {"reasoning_effort": "none"}
     try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            max_tokens=max_tokens,
-            temperature=0.85,
-        )
-        content = response.choices[0].message.content or ""
-        usage = response.usage
-        await _log_request(
-            session, user_id, request_type, model,
-            usage.prompt_tokens if usage else 0,
-            usage.completion_tokens if usage else 0,
-        )
-        return content
+        response = await client.chat.completions.create(**params)
+        choice = response.choices[0]
+        content = (choice.message.content or "").strip()
+        if choice.finish_reason != "stop" or getattr(choice.message, "refusal", None) or not content:
+            raise AIUnavailable("Incomplete or refused response")
+        # Both messengers receive plain text; avoid visible Markdown artifacts.
+        content = re.sub(r"(?m)^#{1,6}\s+", "", content)
+        content = re.sub(r"\*\*([^*\n]+)\*\*", r"\1", content)
+        return content, model, response.usage
+    except AIUnavailable:
+        raise
+    except Exception as exc:
+        # SDK exception strings can contain request data. Log the type only.
+        logger.warning("OpenAI request failed: %s / %s", model, type(exc).__name__)
+        raise AIUnavailable("OpenAI request failed") from exc
 
-    except Exception as e:
-        # Логируем тип ошибки явно чтобы легче диагностировать
-        logger.error(
-            "OpenAI error for user %s / type %s / model %s: [%s] %s",
-            user_id, request_type, model, type(e).__name__, e,
-            exc_info=True,
-        )
-        return _STUB_RESPONSES.get(
-            request_type,
-            "🌙 Что-то пошло не так при генерации ответа. Попробуй чуть позже."
-        )
+
+async def generate(session, user_id, request_type, system_prompt, user_message,
+                   complexity="medium", max_tokens=1600) -> str:
+    content, model, usage = await complete(system_prompt, user_message, complexity, max_tokens)
+    minimum_words = {"personal_question": 90, "mini_reading": 100, "full_matrix": 250,
+                     "compatibility": 140, "weekly_report": 200, "date_selection": 130,
+                     "tarot_card": 80, "clarification": 35}.get(request_type, 0)
+    if len(content.split()) < minimum_words:
+        raise AIUnavailable("Answer is too short for the purchased service")
+    input_tokens = usage.prompt_tokens if usage else 0
+    output_tokens = usage.completion_tokens if usage else 0
+    prices = MODEL_PRICES.get(model)
+    if prices is None:
+        logger.warning("No cost estimate configured for model %s", model)
+    session.add(AIRequest(user_id=user_id, request_type=request_type, model=model,
+                          input_tokens=input_tokens, output_tokens=output_tokens,
+                          estimated_cost=(input_tokens * prices[0] + output_tokens * prices[1]) / 1e6 if prices else None))
+    await session.flush()
+    return content

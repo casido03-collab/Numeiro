@@ -1,3 +1,5 @@
+from bot.services.catalog import product_offer
+from bot.services.limits import has_credit as product_has_credit
 """Личный вопрос к судьбе — FSM."""
 import json
 from aiogram import Router, F
@@ -19,9 +21,82 @@ from bot.keyboards.reply import ALL_REPLY_TEXTS as _ALL_REPLY
 router = Router()
 
 
+@router.message(F.text == "/new_context")
+async def reset_context(message: Message, user: User, lang="ru"):
+    import time
+    from bot.services.cache import get_redis
+    await (await get_redis()).set(f"question_context:after:{user.id}", str(time.time()))
+    await message.answer({"ru": "Новые вопросы будут рассматриваться без прежней переписки. Сохранённые разборы остаются в истории.",
+                          "en": "New questions will not use earlier conversations. Saved readings remain in history.",
+                          "fa": "سؤال‌های جدید بدون گفت‌وگوی قبلی بررسی می‌شوند. تفسیرهای ذخیره‌شده باقی می‌مانند.",
+                          "tr": "Yeni sorularda eski konuşmalar kullanılmayacak. Kayıtlı okumalar geçmişte kalır."}.get(lang))
+
+
 class QuestionFSM(StatesGroup):
     waiting_birth_date = State()  # ввод даты рождения перед вопросом
     waiting_question   = State()
+    waiting_clarification = State()
+
+
+def question_result_keyboard(report_id, lang="ru"):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    label = {"ru": "Уточнить ответ — включено, 24 часа", "en": "One clarification included · 24h",
+             "fa": "یک سؤال تکمیلی در ۲۴ ساعت", "tr": "Bir açıklama dahil · 24 saat"}.get(lang, "Clarify · 24h")
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, callback_data=f"question:clarify:{report_id}")],
+        [InlineKeyboardButton(text=t("btn_back", lang), callback_data="menu:main")]])
+
+
+@router.callback_query(F.data.startswith("question:clarify:"))
+async def begin_clarification(callback: CallbackQuery, state: FSMContext, user: User, session: AsyncSession, lang="ru"):
+    from bot.services.reports_service import get_report_by_id
+    from bot.services.clarification import is_open
+    report = await get_report_by_id(session, int(callback.data.rsplit(":", 1)[1]), user.id)
+    if not report or report.report_type != "personal_question" or (report.metadata_json or {}).get("parent_report_id"):
+        await callback.answer("Разбор не найден", show_alert=True)
+        return
+    existing = (report.metadata_json or {}).get("clarification_report_id")
+    if existing:
+        answer = await get_report_by_id(session, existing, user.id)
+        await safe_edit_ai(callback.message, answer.content, reply_markup=back_to_main())
+    elif not is_open(report):
+        await callback.answer({"ru": "24 часа для уточнения истекли. Сам разбор остаётся в истории.",
+                               "en": "The 24-hour clarification window has ended. Your reading stays in history.",
+                               "fa": "مهلت ۲۴ ساعته تمام شده؛ تفسیر در تاریخچه باقی می‌ماند.",
+                               "tr": "24 saatlik süre doldu. Okumanız geçmişte kalır."}.get(lang, "24h window ended"), show_alert=True)
+        return
+    else:
+        await state.set_state(QuestionFSM.waiting_clarification)
+        await state.update_data(report_id=report.id, lang=lang)
+        await callback.message.answer({"ru": "Напишите одно уточнение по этому разбору. Оно включено в стоимость; повторная оплата не нужна.",
+                                       "en": "Send one clarification about this reading. It is included; no extra payment is required.",
+                                       "fa": "یک سؤال تکمیلی درباره این تفسیر بنویسید. هزینه اضافی ندارد.",
+                                       "tr": "Bu okumayla ilgili bir açıklama sorusu yazın. Ek ödeme gerekmez."}.get(lang))
+    await callback.answer()
+
+
+@router.message(QuestionFSM.waiting_clarification, ~F.text.in_(_ALL_REPLY))
+async def receive_clarification(message: Message, state: FSMContext, user: User, session: AsyncSession, lang="ru"):
+    from bot.services.clarification import clarify, ClarificationUnavailable
+    data = await state.get_data()
+    lang = data.get("lang", lang)
+    question = (message.text or "").strip()
+    if not 5 <= len(question) <= 1000:
+        await message.answer({"ru": "Уточнение должно содержать от 5 до 1000 символов.", "en": "Please use 5–1000 characters.",
+                              "fa": "بین ۵ تا ۱۰۰۰ نویسه بنویسید.", "tr": "5–1000 karakter yazın."}.get(lang))
+        return
+    thinking = await message.answer(random_thinking())
+    try:
+        answer = await clarify(session, user.id, data["report_id"], question, lang)
+    except ClarificationUnavailable:
+        await state.clear()
+        await safe_edit_ai(thinking, {"ru": "Срок уточнения завершён. Исходный ответ остаётся в «Мои разборы».",
+                                     "en": "The clarification window has ended. Your original answer remains in My Readings.",
+                                     "fa": "مهلت تمام شده؛ پاسخ اصلی در تاریخچه موجود است.",
+                                     "tr": "Süre doldu. İlk yanıtınız geçmişte durur."}.get(lang), reply_markup=back_to_main())
+        return
+    await state.clear()
+    await safe_edit_ai(thinking, answer.content, reply_markup=back_to_main())
 
 
 @router.callback_query(F.data == "question:cancel")
@@ -44,60 +119,12 @@ async def question_start(callback: CallbackQuery, user: User, session: AsyncSess
 
     _is_vip = await is_vip(user.id)
     if not _is_vip and not await has_credit(user.id, "personal_question"):
-        _locked = {
-            "ru": (
-                "🔮 *Личный расклад*\n\n"
-                "Добро пожаловать, мои хорошие.\n\n"
-                "Сейчас Вы можете задать мне свой вопрос и получить индивидуальный разбор ситуации.\n\n"
-                "Чем подробнее Вы опишете ситуацию, тем глубже я смогу её рассмотреть.\n\n"
-                "Например:\n\n"
-                "❤️ Что чувствует ко мне этот человек?\n"
-                "💼 Стоит ли принимать новое предложение?\n"
-                "🌙 Что ожидает меня в ближайшее время?\n"
-                "⭐ На что мне стоит обратить внимание сейчас?\n\n"
-                "💳 Стоимость: *29 ₽* или *29 ⭐*"
-            ),
-            "en": (
-                "🔮 *Personal Reading*\n\n"
-                "Welcome, dear ones.\n\n"
-                "You can ask me your question and receive a personal reading of your situation.\n\n"
-                "The more detail you provide, the deeper I can look into it.\n\n"
-                "For example:\n\n"
-                "❤️ What does this person feel for me?\n"
-                "💼 Should I accept the new offer?\n"
-                "🌙 What awaits me in the near future?\n"
-                "⭐ What should I pay attention to right now?\n\n"
-                "💳 Price: *29 ⭐*"
-            ),
-            "fa": (
-                "🔮 *خواندن شخصی*\n\n"
-                "خوش آمدید، عزیزانم.\n\n"
-                "می‌توانید سؤال خود را بپرسید و تفسیر شخصی دریافت کنید.\n\n"
-                "هرچه بیشتر توضیح دهید، عمیق‌تر می‌توانم بررسی کنم.\n\n"
-                "مثلاً:\n\n"
-                "❤️ این شخص چه احساسی نسبت به من دارد؟\n"
-                "💼 آیا باید پیشنهاد جدید را بپذیرم؟\n"
-                "🌙 در آینده نزدیک چه چیزی در انتظار من است؟\n\n"
-                "💳 قیمت: *29 ⭐*"
-            ),
-            "tr": (
-                "🔮 *Kişisel Okuma*\n\n"
-                "Hoş geldiniz, canlarım.\n\n"
-                "Sorunuzu sorabilir ve durumunuz için kişisel bir yorum alabilirsiniz.\n\n"
-                "Ne kadar ayrıntı verirseniz, o kadar derin bakabilirim.\n\n"
-                "Örneğin:\n\n"
-                "❤️ Bu kişi benim için ne hissediyor?\n"
-                "💼 Yeni teklifi kabul etmeli miyim?\n"
-                "🌙 Yakın gelecekte beni ne bekliyor?\n"
-                "⭐ Şu an neye dikkat etmeliyim?\n\n"
-                "💳 Fiyat: *29 ⭐*"
-            ),
-        }.get(lang, "🔮 *Personal Reading*\n\nAsk me your question and receive a personal reading.\n\n💳 Price: *29 ⭐*")
+        _locked = product_offer("personal_question", lang)
         await replace_message(callback.message, _locked, reply_markup=_pay_kb("personal_question", 29, 29, lang))
         await callback.answer()
         return
 
-    if _is_vip and not await check_vip_limit(user.id, "personal_question"):
+    if _is_vip and not await check_vip_limit(user.id, "personal_question") and not await product_has_credit(user.id, "personal_question"):
         _exhausted = {
             "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
             "en": "💎 VIP limit for this section exhausted this month.",
@@ -233,7 +260,6 @@ async def receive_question(message: Message, state: FSMContext, user: User, sess
         await message.answer(_too_long)
         return
 
-    await state.clear()
     thinking_msg = await message.answer(random_thinking())
 
     birth_date_obj = parse_birth_date(user.birth_date)
@@ -246,40 +272,23 @@ async def receive_question(message: Message, state: FSMContext, user: User, sess
         "numbers": {k: v for k, v in nums.items() if k in ["life_path", "destiny", "personality"]},
     }
 
-    from bot.services.limits import get_user_plan
     from bot.prompts.prompts import PERSONAL_QUESTION_PAID_PROMPT
-    plan = await get_user_plan(session, user.id)
-    is_paid = plan != "free"
-
-    prompt     = PERSONAL_QUESTION_PAID_PROMPT(lang) if is_paid else PERSONAL_QUESTION_PROMPT(lang)
-    max_tokens = 600 if is_paid else 450
-
-    user_msg = f"Ответь на личный вопрос пользователя.\nДанные: {json.dumps(context, ensure_ascii=False)}"
-    response = await generate(
-        session, user.id, "personal_question",
-        prompt, user_msg,
-        complexity="medium", max_tokens=max_tokens,
-    )
-
-    from bot.services.reports_service import save_report
-    await save_report(
-        session, user.id, "personal_question",
-        title=f"Вопрос: {question[:70]}{'…' if len(question) > 70 else ''}",
-        content=response,
-        metadata={"question": question},
-    )
-    from bot.services.limits import is_vip as _is_vip_fn
-    if await _is_vip_fn(user.id):
-        from bot.services.limits import use_vip_limit
-        await use_vip_limit(user.id, "personal_question")
-    else:
-        from bot.services.limits import use_credit
-        await use_credit(user.id, "personal_question")
+    from bot.services.fulfillment import generate_paid_report
+    from bot.services.question_context import recent_questions
+    context["recent_conversation"] = await recent_questions(session, user.id)
+    # A new submitted question is a new order; redelivery of this update is not.
+    context["request_id"] = f"{message.chat.id}:{message.message_id}"
+    report = await generate_paid_report(
+        session, user.id, "personal_question", "personal_question",
+        f"Вопрос: {question[:70]}", context, PERSONAL_QUESTION_PAID_PROMPT(lang),
+        lang, max_tokens=2400, metadata={"question": question})
+    response = report.content
+    await state.clear()
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend
     _ans_title = {"ru": "Ответ для", "en": "Answer for", "fa": "پاسخ برای", "tr": "Cevap:"}.get(lang, "Answer for")
     _q_label = {"ru": "Вопрос", "en": "Question", "fa": "سؤال", "tr": "Soru"}.get(lang, "Question")
-    text = f"🔮 *{_ans_title} {name}*\n_{_q_label}: {question}_\n\n{response}"
-    kb = after_question_keyboard_paid() if is_paid else after_question_keyboard_free()
+    text = f"🔮 {_ans_title} {name}\n{_q_label}: {question}\n\n{response}"
+    kb = question_result_keyboard(report.id, lang)
     await safe_edit_ai(thinking_msg, text, reply_markup=kb)

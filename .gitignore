@@ -39,6 +39,7 @@ Thumbs.db
 # Логи
 *.log
 logs/
+.codex-deploy/
 
 # Alembic временные файлы
 alembic/versions/__pycache__/

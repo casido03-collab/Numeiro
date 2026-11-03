@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 _RESET_PHRASE = "сброс12"
 _ESOTERIC_EMOJIS = ["🌙", "✨", "💫", "🔮", "🌟", "⭐", "🌌", "💎"]
 _TAROT_ASSETS = Path(__file__).parent.parent.parent / "assets" / "tarot"
-_T990_WAIT_SECONDS = 480
+_T990_WAIT_SECONDS = 0
 
 _MAJOR_ARCANA = [
     ("00_fool",             "Шут",              "0 — Шут"),
@@ -424,17 +424,8 @@ async def _handle_human_bot_question_vk(api, uid: int, stage: str) -> None:
     profile   = await get_profile(uid)
     name      = profile.get("name", "")
     name_hint = f"Имя клиента: {name}." if name else ""
-    reply = await generate_business(
-        AISHA_FREE_PROMPT,
-        f"Клиент спрашивает — живой ли ты человек или это бот, программа, нейросеть.\n\n"
-        f"Ответь ОЧЕНЬ коротко — ровно 1–2 предложения. "
-        f"Дай понять что ты настоящая живая бабушка Аиша — реальный человек. "
-        f"Говори тепло, с лёгкой иронией, без лишних слов. Обращайся на вы. "
-        f"Никаких упоминаний технологий, ИИ или алгоритмов — только человеческое. "
-        f"ВАЖНО: НЕ задавай никакого вопроса в конце — только подтверди что ты живая. "
-        f"{name_hint}",
-        complexity="simple", max_tokens=60,
-    )
+    reply = ("Я Aisha AI — цифровой помощник в образе бабушки Аиши. "
+             "Ответы создаёт ИИ по вашим данным; живой консультант эту переписку не ведёт. 🌙")
     await _typing_short(api, uid)
     await _send(api, uid, reply)
     reprompt = _STAGE_REPROMPT.get(stage)
@@ -458,7 +449,7 @@ async def _stage_support_vk(api, uid: int) -> None:
     await _send(api, uid, "Я уточняю — пожалуйста, немного подождите 🌙")
 
 
-async def handle_vk_message(api, uid: int, text: str, first_name: str = "", vk_sex: int = 0) -> None:
+async def _handle_vk_message(api, uid: int, text: str, first_name: str = "", vk_sex: int = 0) -> None:
     """Точка входа — вызывается из router.py на каждое входящее сообщение."""
     text = text.strip()
     if not text:
@@ -619,12 +610,9 @@ async def _stage_city(api, uid: int, text: str) -> None:
         adj = "хороший"
     else:
         adj = None  # нейтральное обращение для амбигуозных имён
-    intro = random.choice([
-        f"{'Мой ' + adj + ' ' if adj else 'Душа моя, '}{name} {_emo()}\n\nЗадайте мне свой вопрос — я отвечу вам прямо и честно.",
-        f"{name}, я здесь {_emo()}\n\nЧто вы хотите узнать? Задайте ваш вопрос.",
-        f"Слышу вас, {name} {_emo()}\n\nЗадайте ваш вопрос — я отвечу.",
-        f"{name}, задайте мне свой вопрос {_emo()} Я готова.",
-    ])
+    intro = (f"{name}, напишите вопрос и кратко опишите ситуацию. 🌙\n\n"
+             "Ответ Aisha AI стоит 29 ₽. Включены разбор, практические шаги и одно уточнение в течение 24 часов. "
+             "Ссылку на оплату покажу после вашего сообщения.")
     await _typing_for_text(api, uid, intro)
     await _send(api, uid, intro)
 
@@ -639,11 +627,16 @@ async def _stage_problem(api, uid: int, text: str) -> None:
     await set_stage(uid, "answered")
 
     try:
-        link = create_payment_link(uid, "q29")
+        from uuid import uuid4
+        from bot.services.cache import get_redis
+        order_id = uuid4().hex
+        order_profile = await get_profile(uid)
+        await (await get_redis()).set(f"vk:order:{uid}:{order_id}", json.dumps(order_profile, ensure_ascii=False))
+        link = await asyncio.to_thread(create_payment_link, uid, "q29", order_id)
         offer = (
             f"Я вижу ваш вопрос, душа моя {_emo()}\n\n"
-            f"Ответ на один вопрос — 29 ₽.\n\n"
-            f"После оплаты я сразу отвечу вам лично и подробно.\n\n"
+            f"Личный вопрос — 29 ₽: полный ответ, практические шаги и одно уточнение в течение 24 часов.\n\n"
+            f"После оплаты Aisha AI подготовит персональный ответ. Это символическая интерпретация, без гарантий будущих событий.\n\n"
             f"✨ Оплатить — 29 ₽:\n{link}"
         )
     except Exception as e:
@@ -962,7 +955,7 @@ async def _stage_followup(api, uid: int, text: str) -> None:
         return  # слот НЕ тратится
 
     # ── Реальный follow-up вопрос — тратит слот ───────────────────────────────
-    left    = await decrement_followup(uid)
+    left = await get_followup_left(uid)
     context = json.dumps({
         "name":           profile.get("name", ""),
         "gender":         profile.get("gender", "unknown"),
@@ -978,6 +971,7 @@ async def _stage_followup(api, uid: int, text: str) -> None:
         complexity="medium", max_tokens=300,
     )
     await append_history(uid, "aisha", resp)
+    left = await decrement_followup(uid)
     await _typing_for_text(api, uid, resp)
     await _send(api, uid, resp)
 
@@ -1071,6 +1065,7 @@ async def _stage_t990_waiting_question(api, uid: int, text: str) -> None:
     await store_field(uid, "t990_question", text)
     from bot.services.cache import get_redis
     r = await get_redis()
+    await r.delete(f"vk:t990_delivered:{uid}", f"vk:t990_task:{uid}")
     await r.set(f"vk:t990_start:{uid}", str(time.time()), ex=86400)
     await set_stage(uid, "t990_preparing")
     await _typing_short(api, uid)
@@ -1107,8 +1102,8 @@ async def _stage_t990_preparing(api, uid: int, text: str) -> None:
     await _send(api, uid, reply)
 
 
-async def _deliver_tarot_reading_vk(api, uid: int) -> None:
-    """Фоновая задача — 8 минут, затем карта Таро + интерпретация."""
+async def _deliver_tarot_reading_vk_impl(api, uid: int) -> None:
+    """Фоновая задача — генерация ответа, затем карта Таро + интерпретация."""
     from bot.services.cache import get_redis
 
     await asyncio.sleep(_T990_WAIT_SECONDS)
@@ -1126,7 +1121,9 @@ async def _deliver_tarot_reading_vk(api, uid: int) -> None:
     question = profile.get("t990_question") or profile.get("problem", "")
     name     = profile.get("name", "")
 
-    card_file, card_name, card_display = random.choice(_MAJOR_ARCANA)
+    from bot.services.dialogue_results import stable_card
+    reading_key = await r.get(f"vk:t990_start:{uid}")
+    card_file, card_name, card_display = await stable_card(r, f"vk:t990_card:{uid}:{reading_key}", _MAJOR_ARCANA)
     card_path = _TAROT_ASSETS / f"{card_file}.png"
 
     # Отправка фото карты через VK
@@ -1155,11 +1152,13 @@ async def _deliver_tarot_reading_vk(api, uid: int) -> None:
         "card_name": card_name,
     }, ensure_ascii=False)
 
+    reading_key = await r.get(f"vk:t990_start:{uid}")
     interpretation = await generate_business(
         AISHA_TAROT_BUSINESS_PROMPT,
         f"Данные клиента: {context}",
-        complexity="complex", max_tokens=900,
+        complexity="complex", max_tokens=2200, cache_key=f"vk:tarot:{uid}:{reading_key}",
     )
+    await store_field(uid, "last_paid_result", interpretation)
     await _typing_for_text(api, uid, interpretation)
     await _send(api, uid, interpretation)
 
@@ -1199,3 +1198,45 @@ async def _handle_dissatisfaction(api, uid: int, text: str) -> None:
     )
     await _typing_short(api, uid)
     await _send(api, uid, reply)
+
+
+async def handle_vk_message(api, uid: int, text: str, first_name: str = "", vk_sex: int = 0) -> None:
+    from bot.services.notifications import set_muted
+    from bot.services.ai_service import AIUnavailable
+    from redis.exceptions import RedisError
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    if text.strip().lower() in ("/last_reading", "мой разбор", "мои разборы"):
+        payment_id = await r.get(f"paid_last:vk:{uid}")
+        saved = await r.get(f"paid_answer:vk:payment:{payment_id}") if payment_id else None
+        profile = await get_profile(uid)
+        await _send(api, uid, saved or profile.get("last_paid_result") or "Сохранённого платного разбора пока нет.")
+        return
+    if text.strip().lower() == "/new_question":
+        await set_stage(uid, "collecting_problem")
+        await _send(api, uid, "Новый личный вопрос — 29 ₽, включая одно уточнение за 24 часа. Напишите вопрос; оплата будет следующим шагом.")
+        return
+    if text.strip().lower() in ("/stop", "стоп", "/notifications_on"):
+        off = text.strip().lower() != "/notifications_on"
+        await set_muted("vk", uid, off)
+        await _send(api, uid, "Уведомления отключены. Включить: /notifications_on" if off else "Уведомления включены. Отключить: /stop")
+        return
+    try:
+        if await get_stage(uid) == "q29_followup":
+            from bot.services.dialogue_results import vk_clarification
+            reply = await vk_clarification(uid, text)
+            await _send(api, uid, reply)
+        else:
+            await _handle_vk_message(api, uid, text, first_name, vk_sex)
+    except (AIUnavailable, RedisError):
+        await _send(api, uid, "Не удалось завершить ответ. Повторите сообщение чуть позже — неудачная генерация не расходует уточнение.")
+
+
+async def _deliver_tarot_reading_vk(api, uid):
+    from bot.services.cache import get_redis
+    try:
+        await _deliver_tarot_reading_vk_impl(api, uid)
+    except Exception:
+        r = await get_redis()
+        await r.delete(f"vk:t990_delivered:{uid}", f"vk:t990_task:{uid}")
+        await _send(api, uid, "Не удалось завершить разбор. Оплата сохранена. Напишите «повторить», чтобы продолжить.")

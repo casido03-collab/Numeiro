@@ -371,7 +371,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "Здесь вас ждёт:\n\n"
             "🔯 *Гороскоп* — ежедневный знак зодиака и послание звёзд\n"
             "⚡️ *Энергия дня* — ежедневный бесплатный прогноз\n"
-            "✨ *Мой разбор* — нумерологический анализ по дате рождения _(Лимитированный бесплатный доступ)_\n"
+            "✨ *Мой разбор* — нумерологический анализ по дате рождения _(49 ₽ / 49 ⭐ или VIP)_\n"
             "🌟 *Матрица судьбы* — глубокий разбор арканов и энергий\n"
             "📅 *Прогноз на неделю* — по любой сфере жизни\n"
             "💞 *Совместимость* — числа двух людей\n"
@@ -384,7 +384,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "What's waiting for you:\n\n"
             "🔯 *Horoscope* — daily zodiac sign and message from the stars\n"
             "⚡️ *Energy of the day* — free daily forecast\n"
-            "✨ *My reading* — numerological analysis by date of birth _(Limited free access)_\n"
+            "✨ *My reading* — numerological analysis by date of birth _(49 ⭐ or VIP)_\n"
             "🌟 *Destiny matrix* — deep reading of arcana and energies\n"
             "📅 *Weekly forecast* — for any area of life\n"
             "💞 *Compatibility* — numbers of two people\n"
@@ -397,7 +397,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "اینجا منتظر شماست:\n\n"
             "🔯 *طالع‌بینی* — نشانه روزانه زودیاک و پیام ستاره‌ها\n"
             "⚡️ *انرژی روز* — پیش‌بینی روزانه رایگان\n"
-            "✨ *تحلیل من* — تحلیل عددشناسی بر اساس تاریخ تولد _(دسترسی رایگان محدود)_\n"
+            "✨ *تحلیل من* — تحلیل عددشناسی بر اساس تاریخ تولد _(49 ⭐ یا VIP)_\n"
             "🌟 *ماتریس سرنوشت* — بررسی عمیق آرکان‌ها و انرژی‌ها\n"
             "📅 *پیش‌بینی هفتگی* — برای هر بخش از زندگی\n"
             "💞 *سازگاری* — اعداد دو نفر\n"
@@ -410,7 +410,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "Burada sizi şunlar bekliyor:\n\n"
             "🔯 *Burç yorumu* — günlük burç işareti ve yıldızlardan mesaj\n"
             "⚡️ *Günün enerjisi* — ücretsiz günlük tahmin\n"
-            "✨ *Yorumum* — doğum tarihine göre numerolojik analiz _(Sınırlı ücretsiz erişim)_\n"
+            "✨ *Yorumum* — doğum tarihine göre numerolojik analiz _(49 ⭐ veya VIP)_\n"
             "🌟 *Kader matrisi* — arkanlar ve enerjiler üzerine derin yorum\n"
             "📅 *Haftalık tahmin* — hayatın her alanı için\n"
             "💞 *Uyumluluk* — iki kişinin sayıları\n"
@@ -832,7 +832,7 @@ TEXTS: dict[str, dict[str, str]] = {
     "biz_redirect_msg": {
         "ru": (
             "Рада знакомству! ✨\n\n"
-            "У меня есть небольшой помощник — бот, где можно задать вопрос по астрологии совершенно бесплатно 🎁\n\n"
+            "В Aisha AI бесплатно доступны гороскоп и «Энергия дня». Личный вопрос — 29 ₽ / 29 ⭐ или в пределах VIP.\n\n"
             "Я лично просматриваю обращения и отвечаю там подробнее, чем в переписке. "
             "Попробуйте — это просто и быстро:\n\n"
             '👉 <a href="https://t.me/numerelogia_astro_bot?start=ref_1715461306">@numerelogia_astro_bot</a>\n\n'
@@ -840,7 +840,7 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
         "en": (
             "Lovely to meet you! ✨\n\n"
-            "I have a little assistant — a bot where you can ask any astrology question for free 🎁\n\n"
+            "Aisha AI offers a free horoscope and Daily Energy. A personal question costs 29 ⭐ or is included within VIP quotas.\n\n"
             "I personally read every message and give more detailed answers there than in chat. "
             "Give it a try — it's simple and quick:\n\n"
             '👉 <a href="https://t.me/numerelogia_astro_bot?start=ref_1715461306">@numerelogia_astro_bot</a>\n\n'
@@ -848,7 +848,7 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
         "fa": (
             "خوشحالم از آشنایی! ✨\n\n"
-            "یک دستیار کوچک دارم — باتی که می‌توانید سوالات طالع‌بینی را کاملاً رایگان بپرسید 🎁\n\n"
+            "در Aisha AI طالع‌بینی و انرژی روز رایگان است. سؤال شخصی 29 ⭐ یا در سهمیه VIP است.\n\n"
             "من شخصاً همه پیام‌ها را می‌خوانم و آنجا پاسخ‌های دقیق‌تری می‌دهم. "
             "امتحان کنید — ساده و سریع است:\n\n"
             '👉 <a href="https://t.me/numerelogia_astro_bot?start=ref_1715461306">@numerelogia_astro_bot</a>\n\n'
@@ -856,7 +856,7 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
         "tr": (
             "Tanıştığımıza memnun oldum! ✨\n\n"
-            "Küçük bir asistanım var — astroloji sorularınızı tamamen ücretsiz sorabildiğiniz bir bot 🎁\n\n"
+            "Aisha AI'da burç ve Günün Enerjisi ücretsizdir. Kişisel soru 29 ⭐ veya VIP kotası dahilindedir.\n\n"
             "Tüm mesajları şahsen okuyorum ve orada daha ayrıntılı yanıtlar veriyorum. "
             "Deneyin — basit ve hızlı:\n\n"
             '👉 <a href="https://t.me/numerelogia_astro_bot?start=ref_1715461306">@numerelogia_astro_bot</a>\n\n'
@@ -912,7 +912,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "ru": (
             "Добро пожаловать, мои хорошие.\n\n"
             "Сейчас Вы можете задать мне свой вопрос и получить индивидуальный разбор ситуации.\n\n"
-            "🔮 *Остался 1 бесплатный вопрос*\n\n"
+            "🔮 *Личный вопрос — 29 ₽ / 29 ⭐ или VIP*\n\n"
             "Чем подробнее Вы опишете ситуацию, тем глубже я смогу её рассмотреть.\n\n"
             "Например:\n\n"
             "_«Стоит ли мне менять работу в этом году?»_\n"
@@ -923,7 +923,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "en": (
             "Welcome, dear ones.\n\n"
             "You can now ask me your question and receive a personal reading of your situation.\n\n"
-            "🔮 *1 free question remaining*\n\n"
+            "🔮 *Personal question — 29 ⭐ or VIP*\n\n"
             "The more detail you provide, the deeper I can look into it.\n\n"
             "For example:\n\n"
             "_«Should I change jobs this year?»_\n"
@@ -934,7 +934,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "fa": (
             "خوش آمدید، عزیزانم.\n\n"
             "اکنون می‌توانید سؤال خود را بپرسید و تفسیر شخصی وضعیت خود را دریافت کنید.\n\n"
-            "🔮 *۱ سؤال رایگان باقی مانده*\n\n"
+            "🔮 *سؤال شخصی — 29 ⭐ یا VIP*\n\n"
             "هرچه بیشتر توضیح دهید، عمیق‌تر می‌توانم بررسی کنم.\n\n"
             "مثلاً:\n\n"
             "_«آیا باید امسال شغلم را عوض کنم؟»_\n"
@@ -945,7 +945,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "tr": (
             "Hoş geldiniz, canlarım.\n\n"
             "Şimdi sorunuzu sorabilir ve durumunuz hakkında kişisel bir yorum alabilirsiniz.\n\n"
-            "🔮 *1 ücretsiz soru kaldı*\n\n"
+            "🔮 *Kişisel soru — 29 ⭐ veya VIP*\n\n"
             "Ne kadar ayrıntı verirseniz, o kadar derine bakabilirim.\n\n"
             "Örneğin:\n\n"
             "_«Bu yıl iş değiştirmeli miyim?»_\n"

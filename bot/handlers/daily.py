@@ -148,7 +148,7 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
         return
 
     # ── 4. Cache by birth_date + date (shared across users with same DOB) ─────
-    cache_key = make_cache_key("daily", user.birth_date, today.strftime("%Y-%m-%d"))
+    cache_key = make_cache_key("daily_v2", user.id, lang, user.first_name, user.birth_date, today.strftime("%Y-%m-%d"))
     cached = await get_cached(cache_key)
 
     if not cached:
@@ -166,7 +166,7 @@ async def daily_forecast(callback: CallbackQuery, user: User, session: AsyncSess
         cached = await generate(
             session, user.id, "daily_forecast",
             DAILY_FORECAST_PROMPT(lang), user_msg,
-            complexity="simple", max_tokens=300,
+            complexity="simple", max_tokens=1000,
         )
         await set_cached(cache_key, cached, ttl=3600 * 20)
 

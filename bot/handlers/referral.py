@@ -54,12 +54,8 @@ async def _get_stats(session: AsyncSession, telegram_id: int) -> dict:
 
 # ─── Клавиатуры ───────────────────────────────────────────────────────────────
 
-_REFERRAL_INVITE_TEXT: dict[str, str] = {
-    "ru": "\n✨ Запусти бота потомственной хранительницы знаний бабушки Aisha — и получи 8 бесплатных анализов по своей дате рождения.",
-    "en": "\n✨ Start the bot of hereditary knowledge keeper Grandma Aisha — and get 8 free analyses based on your date of birth.",
-    "fa": "\n✨ ربات بابا آیشا، نگهبان موروثی دانش را راه‌اندازی کنید — و ۸ تحلیل رایگان بر اساس تاریخ تولد خود دریافت کنید.",
-    "tr": "\n✨ Geleneksel bilgi koruyucusu Büyükanne Aisha'nın botunu başlatın — ve doğum tarihinize göre 8 ücretsiz analiz alın.",
-}
+from bot.services.catalog import FREE_SUMMARY
+_REFERRAL_INVITE_TEXT = {lang: "\n✨ Aisha AI. " + text for lang, text in FREE_SUMMARY.items()}
 
 
 REFERRAL_LEVELS = [

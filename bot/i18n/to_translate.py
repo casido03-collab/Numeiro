@@ -94,7 +94,7 @@ EXTRA_TEXTS: dict[str, dict[str, str]] = {
         "ru": (
             "Добро пожаловать, мои хорошие.\n\n"
             "Сейчас Вы можете задать мне свой вопрос и получить индивидуальный разбор ситуации.\n\n"
-            "🔮 *Остался 1 бесплатный вопрос*\n\n"
+            "🔮 *Личный вопрос — 29 ₽ / 29 ⭐ или VIP*\n\n"
             "Чем подробнее Вы опишете ситуацию, тем глубже я смогу её рассмотреть.\n\n"
             "Например:\n\n"
             "_«Стоит ли мне менять работу в этом году?»_\n"
@@ -105,7 +105,7 @@ EXTRA_TEXTS: dict[str, dict[str, str]] = {
         "en": (
             "Welcome, dear ones.\n\n"
             "You can now ask me your question and receive a personal reading of your situation.\n\n"
-            "🔮 *1 free question remaining*\n\n"
+            "🔮 *Personal question — 29 ⭐ or VIP*\n\n"
             "The more detail you provide, the deeper I can look into it.\n\n"
             "For example:\n\n"
             "_«Should I change jobs this year?»_\n"

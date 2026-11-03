@@ -45,24 +45,27 @@ EVENT_NAMES = {
 }
 
 
-def find_favorable_dates(event_type: str, from_date: date, count: int = 5) -> list[dict]:
-    """Find next N favorable dates for an event type."""
-    favorable_nums = FAVORABLE_ENERGIES.get(event_type, [1, 3, 6])
-    results = []
+def find_favorable_dates(event_type: str, from_date: date, count: int = 5,
+                         to_date: date | None = None, weekdays: str = "all",
+                         birth_date: date | None = None) -> list[dict]:
+    """Rank symbolic dates inside the customer's real availability window."""
+    if event_type not in FAVORABLE_ENERGIES or weekdays not in ("all", "workdays", "weekends"):
+        raise ValueError("Unknown event or weekday preference")
+    end = to_date or from_date + timedelta(days=60)
+    favorable_nums = FAVORABLE_ENERGIES[event_type]
+    candidates = []
     current = from_date + timedelta(days=1)
-    checked = 0
-
-    while len(results) < count and checked < 60:
+    while current <= end:
+        if ((weekdays == "workdays" and current.weekday() >= 5)
+                or (weekdays == "weekends" and current.weekday() < 5)):
+            current += timedelta(days=1)
+            continue
         energy = _day_energy(current)
-        if energy in favorable_nums:
-            weekday_names = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-            results.append({
-                "date": current.strftime("%d.%m.%Y"),
-                "weekday": weekday_names[current.weekday()],
-                "energy": energy,
-                "date_obj": current,
-            })
+        personal = _reduce(birth_date.day + birth_date.month + current.day + current.month
+                           + sum(int(c) for c in str(current.year))) if birth_date else None
+        score = int(energy in favorable_nums) + int(personal in favorable_nums)
+        candidates.append({"date": current.strftime("%d.%m.%Y"), "weekday": current.weekday(),
+                           "energy": energy, "personal_energy": personal, "date_obj": current, "score": score})
         current += timedelta(days=1)
-        checked += 1
-
-    return results
+    best = sorted(candidates, key=lambda item: (-item["score"], item["date_obj"]))[:count]
+    return sorted(best, key=lambda item: item["date_obj"])

@@ -1,0 +1,20 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --no-deps vkbottle==4.3.10 && \
+    pip install --no-cache-dir vkbottle_types
+
+COPY . .
+COPY healthcheck.py /usr/local/bin/numeiro-healthcheck.py
+COPY verified-entrypoint.py /usr/local/bin/numeiro-verified-entrypoint.py
+RUN python -c "import hashlib,json,pathlib; root=pathlib.Path('/app'); names=['bot/main.py','bot/services/runtime_health.py']; pathlib.Path('/usr/local/share/numeiro-runtime-hashes.json').write_text(json.dumps({n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in names}))"
+ENTRYPOINT ["python", "/usr/local/bin/numeiro-verified-entrypoint.py"]
+CMD ["python", "-m", "bot.main"]
+HEALTHCHECK --interval=120s --timeout=5s --start-period=60s --retries=3 CMD ["python", "/usr/local/bin/numeiro-healthcheck.py"]

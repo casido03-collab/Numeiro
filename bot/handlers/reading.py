@@ -1,3 +1,5 @@
+from bot.services.catalog import product_offer
+from bot.services.limits import has_credit as product_has_credit
 """Бесплатный разбор + матрица судьбы."""
 import json
 from datetime import date
@@ -10,7 +12,7 @@ from bot.services import numerology, matrix as matrix_svc
 from bot.services.cache import get_cached, set_cached, make_cache_key
 from bot.services.limits import check_limit, consume_limit
 from bot.services.ai_service import generate
-from bot.prompts.prompts import FREE_BIRTH_REPORT_PROMPT, FULL_MATRIX_PROMPT, UPSELL_PROMPT
+from bot.prompts.prompts import PAID_MINI_REPORT_PROMPT, FULL_MATRIX_PROMPT, UPSELL_PROMPT
 from bot.i18n.translations import t
 from bot.keyboards.main import sphere_menu, upsell_keyboard, limit_reached_keyboard, back_to_main, main_menu, upsell_keyboard_reading, after_reading_keyboard_matrix
 from bot.utils import parse_birth_date, safe_edit, safe_edit_ai
@@ -85,39 +87,12 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
 
     _is_vip = await is_vip(user.id)
     if not _is_vip and not await has_credit(user.id, "mini_reading"):
-        _locked = {
-            "ru": (
-                "📖 *Мини-разбор*\n\n"
-                "Я посмотрю одну сферу вашей жизни — отношения, деньги, работу, здоровье или другое — "
-                "и дам глубокий разбор с учётом ваших личных чисел.\n\n"
-                "Что мешает. Что помогает. Что делать.\n\n"
-                "💳 Стоимость: *49 ₽* или *49 ⭐*"
-            ),
-            "en": (
-                "📖 *Mini Reading*\n\n"
-                "I will look at one area of your life — relationships, money, work, health or other — "
-                "and give a deep reading based on your personal numbers.\n\n"
-                "What's blocking you. What helps. What to do.\n\n"
-                "💳 Price: *49 ⭐*"
-            ),
-            "fa": (
-                "📖 *تحلیل کوتاه*\n\n"
-                "یک حوزه از زندگی شما را بررسی می‌کنم — روابط، پول، کار، سلامتی یا موارد دیگر — "
-                "و تحلیل عمیقی بر اساس اعداد شخصی شما ارائه می‌دهم.\n\n"
-                "💳 قیمت: *49 ⭐*"
-            ),
-            "tr": (
-                "📖 *Mini Yorum*\n\n"
-                "Hayatınızın bir alanına bakacağım — ilişkiler, para, iş, sağlık veya başka bir şey — "
-                "ve kişisel sayılarınıza dayalı derin bir yorum sunacağım.\n\n"
-                "💳 Fiyat: *49 ⭐*"
-            ),
-        }.get(lang, "📖 *Mini Reading*\n\nA deep look at one area of your life.\n\n💳 Price: *49 ⭐*")
+        _locked = product_offer("mini_reading", lang)
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("mini_reading", 49, 49, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
-    if _is_vip and not await check_vip_limit(user.id, "mini_reading"):
+    if _is_vip and not await check_vip_limit(user.id, "mini_reading") and not await product_has_credit(user.id, "mini_reading"):
         _exhausted = {
             "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
             "en": "💎 VIP limit for this section exhausted this month.",
@@ -137,45 +112,21 @@ async def select_sphere(callback: CallbackQuery, user: User, session: AsyncSessi
         await callback.answer()
         return
 
-    # Кэш
-    cache_key = make_cache_key("free_reading", user.birth_date, sphere)
-    cached = await get_cached(cache_key)
-
+    from bot.services.fulfillment import generate_paid_report
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     sphere_label = _sphere(sphere, lang)
-    sphere_label_ru = SPHERE_NAMES.get(sphere, sphere)  # для кэша/истории всегда ru
-
-    if not cached:
-        nums = numerology.calculate_all(birth_date)
-        traits = numerology.get_traits(nums["life_path"])
-        context = {
-            "name": user.first_name or _friend,
-            "birth_date": user.birth_date,
-            "sphere": sphere_label,
-            "numbers": nums,
-            "traits": traits,
-        }
-        user_msg = f"Сделай бесплатный разбор для сферы '{sphere_label}'.\nДанные: {json.dumps(context, ensure_ascii=False)}"
-        cached = await generate(session, user.id, "free_reading", FREE_BIRTH_REPORT_PROMPT(lang), user_msg, complexity="simple", max_tokens=400)
-        await set_cached(cache_key, cached, ttl=3600 * 24 * 3)
-
-    from bot.services.reports_service import save_report
-    await save_report(
-        session, user.id, "mini_report",
-        title=f"Разбор: {sphere_label_ru}",
-        content=cached,
-        metadata={"sphere": sphere, "birth_date": user.birth_date},
-    )
-    if await is_vip(user.id):
-        from bot.services.limits import use_vip_limit
-        await use_vip_limit(user.id, "mini_reading")
-    else:
-        from bot.services.limits import use_credit
-        await use_credit(user.id, "mini_reading")
+    nums = numerology.calculate_all(birth_date)
+    context = {"name": user.first_name or _friend, "birth_date": user.birth_date,
+               "sphere": sphere_label, "numbers": nums, "traits": numerology.get_traits(nums["life_path"])}
+    report = await generate_paid_report(
+        session, user.id, "mini_reading", "mini_report", f"Разбор: {SPHERE_NAMES.get(sphere, sphere)}",
+        context, PAID_MINI_REPORT_PROMPT(lang), lang, max_tokens=2000,
+        metadata={"sphere": sphere, "birth_date": user.birth_date})
+    cached = report.content
 
     name = user.first_name or _friend
     _title = {"ru": "Разбор для", "en": "Reading for", "fa": "بررسی برای", "tr": "Okuma:"}.get(lang, "Reading for")
-    text = f"🔮 *{_title} {name}*\n\n{cached}"
+    text = f"🔮 {_title} {name}\n\n{cached}"
 
     # CTA кнопка встроена прямо в клавиатуру — не нужен лишний API-вызов
     from bot.keyboards.main import upsell_keyboard_reading
@@ -190,41 +141,12 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
 
     _vip_active = await _is_vip_matrix(user.id)
     if not _vip_active and not await _has_credit_matrix(user.id, "full_matrix"):
-        _locked = {
-            "ru": (
-                "🌟 *Матрица судьбы*\n\n"
-                "Полный разбор вашего предназначения, кармы и сильных сторон.\n\n"
-                "Я рассмотрю все ключевые точки вашей карты — таланты, задачи, кармические уроки, "
-                "сильные и слабые энергии.\n\n"
-                "Самый глубокий анализ из всех доступных разборов.\n\n"
-                "💳 Стоимость: *199 ₽* или *199 ⭐*"
-            ),
-            "en": (
-                "🌟 *Destiny Matrix*\n\n"
-                "A full reading of your purpose, karma and strengths.\n\n"
-                "I will examine all the key points of your map — talents, life tasks, karmic lessons, "
-                "strong and weak energies.\n\n"
-                "The deepest analysis available.\n\n"
-                "💳 Price: *199 ⭐*"
-            ),
-            "fa": (
-                "🌟 *ماتریس سرنوشت*\n\n"
-                "تحلیل کامل هدف، کارما و نقاط قوت شما.\n\n"
-                "تمام نقاط کلیدی نقشه شما را بررسی می‌کنم — استعدادها، وظایف زندگی، درس‌های کارمایی.\n\n"
-                "💳 قیمت: *199 ⭐*"
-            ),
-            "tr": (
-                "🌟 *Kader Matrisi*\n\n"
-                "Amacınızın, karmanızın ve güçlü yönlerinizin tam analizi.\n\n"
-                "Haritanızın tüm önemli noktalarını inceleyeceğim — yetenekler, yaşam görevleri, karmik dersler.\n\n"
-                "💳 Fiyat: *199 ⭐*"
-            ),
-        }.get(lang, "🌟 *Destiny Matrix*\n\nThe deepest analysis of your purpose and karma.\n\n💳 Price: *199 ⭐*")
+        _locked = product_offer("full_matrix", lang)
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("full_matrix", 199, 199, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
-    if _vip_active and not await _check_vip_matrix(user.id, "full_matrix"):
+    if _vip_active and not await _check_vip_matrix(user.id, "full_matrix") and not await product_has_credit(user.id, "full_matrix"):
         _exhausted = {
             "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
             "en": "💎 VIP limit for this section exhausted this month.",
@@ -251,41 +173,20 @@ async def matrix_start(callback: CallbackQuery, user: User, session: AsyncSessio
     thinking_msg = await callback.message.edit_text(random_thinking())
 
     birth_date = parse_birth_date(user.birth_date)
-    cache_key = make_cache_key("full_matrix", user.birth_date)
-    cached = await get_cached(cache_key)
-
-    if not cached:
-        mat = matrix_svc.calculate_matrix(birth_date)
-        ctx = matrix_svc.matrix_to_context(mat)
-        nums = numerology.calculate_all(birth_date)
-        context = {
-            "name": user.first_name or "друг",
-            "birth_date": user.birth_date,
-            "matrix": ctx,
-            "numbers": nums,
-        }
-        user_msg = f"Сделай полный разбор матрицы судьбы.\nДанные: {json.dumps(context, ensure_ascii=False)}"
-        cached = await generate(session, user.id, "full_matrix", FULL_MATRIX_PROMPT(lang), user_msg, complexity="complex", max_tokens=900)
-        await set_cached(cache_key, cached, ttl=3600 * 24 * 7)
-
-    from bot.services.reports_service import save_report as _save
-    await _save(
-        session, user.id, "destiny_matrix",
-        title="Матрица судьбы",
-        content=cached,
-        metadata={"birth_date": user.birth_date},
-    )
-    if await _is_vip_matrix(user.id):
-        from bot.services.limits import use_vip_limit as _use_vip_matrix
-        await _use_vip_matrix(user.id, "full_matrix")
-    else:
-        from bot.services.limits import use_credit
-        await use_credit(user.id, "full_matrix")
+    from bot.services.fulfillment import generate_paid_report
+    context = {"name": user.first_name or "друг", "birth_date": user.birth_date,
+               "matrix": matrix_svc.matrix_to_context(matrix_svc.calculate_matrix(birth_date)),
+               "numbers": numerology.calculate_all(birth_date)}
+    report = await generate_paid_report(
+        session, user.id, "full_matrix", "destiny_matrix", "Матрица судьбы",
+        context, FULL_MATRIX_PROMPT(lang), lang, complexity="complex", max_tokens=4200,
+        metadata={"birth_date": user.birth_date})
+    cached = report.content
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend
     _matrix_title = {"ru": "Матрица судьбы", "en": "Destiny Matrix", "fa": "ماتریس سرنوشت", "tr": "Kader Matrisi"}.get(lang, "Destiny Matrix")
-    text = f"🌟 *{_matrix_title} — {name}*\n\n{cached}"
+    text = f"🌟 {_matrix_title} — {name}\n\n{cached}"
     await safe_edit_ai(thinking_msg, text, reply_markup=after_reading_keyboard_matrix())
     await callback.answer()
 

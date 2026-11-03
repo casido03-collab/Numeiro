@@ -86,8 +86,6 @@ def event_type_menu() -> InlineKeyboardMarkup:
         ("🤝 Деловая встреча",       "business_meeting"),
         ("📝 Подписание договора",   "contract"),
         ("🎓 Начало обучения",       "education"),
-        ("💰 Крупная инвестиция",    "investment"),
-        ("🏥 Медицинская процедура", "medical"),
         ("🎨 Творческий проект",     "creative"),
         ("🙏 Духовная практика",     "spiritual"),
     ]

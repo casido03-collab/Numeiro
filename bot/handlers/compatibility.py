@@ -1,3 +1,5 @@
+from bot.services.catalog import product_offer
+from bot.services.limits import has_credit as product_has_credit
 """Совместимость двух людей — FSM + AI."""
 import json
 from datetime import datetime, date
@@ -75,38 +77,12 @@ async def compat_start(callback: CallbackQuery, user: User, session: AsyncSessio
 
     _is_vip = await is_vip(user.id)
     if not _is_vip and not await has_credit(user.id, "compatibility"):
-        _locked = {
-            "ru": (
-                "💞 *Совместимость*\n\n"
-                "Введите дату рождения второго человека — и я разберу вашу совместимость по нумерологии.\n\n"
-                "Где вы усиливаете друг друга, где возникают трения и как выстроить гармонию.\n\n"
-                "Работает для романтики, дружбы и бизнеса.\n\n"
-                "💳 Стоимость: *99 ₽* или *99 ⭐*"
-            ),
-            "en": (
-                "💞 *Compatibility*\n\n"
-                "Enter the second person's date of birth — and I'll break down your compatibility by numerology.\n\n"
-                "Where you strengthen each other, where friction arises and how to build harmony.\n\n"
-                "Works for romance, friendship and business.\n\n"
-                "💳 Price: *99 ⭐*"
-            ),
-            "fa": (
-                "💞 *سازگاری*\n\n"
-                "تاریخ تولد نفر دوم را وارد کنید — و من سازگاری شما را از نظر عددشناسی بررسی می‌کنم.\n\n"
-                "💳 قیمت: *99 ⭐*"
-            ),
-            "tr": (
-                "💞 *Uyumluluk*\n\n"
-                "İkinci kişinin doğum tarihini girin — numerolojiye göre uyumluluğunuzu analiz edeceğim.\n\n"
-                "Birbirinizi nerede güçlendirdiğinizi, nerede sürtüşme yaşandığını ve nasıl uyum kurulacağını göreceksiniz.\n\n"
-                "💳 Fiyat: *99 ⭐*"
-            ),
-        }.get(lang, "💞 *Compatibility*\n\nNumerology-based compatibility reading for two people.\n\n💳 Price: *99 ⭐*")
+        _locked = product_offer("compatibility", lang)
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("compatibility", 99, 99, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
-    if _is_vip and not await check_vip_limit(user.id, "compatibility"):
+    if _is_vip and not await check_vip_limit(user.id, "compatibility") and not await product_has_credit(user.id, "compatibility"):
         _exhausted = {
             "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
             "en": "💎 VIP limit for this section exhausted this month.",
@@ -194,63 +170,29 @@ async def receive_relation_type(callback: CallbackQuery, state: FSMContext, user
         await callback.answer()
         return
 
-    cache_key = make_cache_key("compat", user.birth_date, partner_date_str, relation_type)
-    cached = await get_cached(cache_key)
-
-    if not cached:
-        compat = calculate_compatibility(user_date, partner_date, relation_type)
-        context = {
-            "name": user.first_name or "друг",
-            "user_birth": user.birth_date,
-            "partner_birth": partner_date_str,
-            "relation_type": _relation(relation_type, lang),
-            "compatibility": compat,
-        }
-        user_msg = f"Анализируй совместимость.\nДанные: {json.dumps(context, ensure_ascii=False)}"
-        cached = await generate(
-            session, user.id, "compatibility",
-            COMPATIBILITY_PROMPT(lang), user_msg,
-            complexity="medium", max_tokens=700,
-        )
-        await set_cached(cache_key, cached, ttl=3600 * 24 * 30)
-
-        # Сохраняем отчёт
-        from bot.models.user import CompatibilityReport
-        report = CompatibilityReport(
-            user_id=user.id,
-            user_birth_date=user.birth_date,
-            partner_birth_date=partner_date_str,
-            relation_type=relation_type,
-            content=cached,
-            cache_key=cache_key,
-        )
-        session.add(report)
-        await session.commit()
-
-    from bot.services.reports_service import save_report
-    await save_report(
-        session, user.id, "compatibility",
-        title=f"Совместимость | {RELATION_NAMES.get(relation_type, relation_type)}",  # история всегда ru
-        content=cached,
-        metadata={"partner_birth": partner_date_str, "relation_type": relation_type},
-    )
-    if await is_vip(user.id):
-        from bot.services.limits import use_vip_limit
-        await use_vip_limit(user.id, "compatibility")
-    else:
-        from bot.services.limits import use_credit
-        await use_credit(user.id, "compatibility")
+    from bot.services.fulfillment import generate_paid_report, result_key
+    compat = calculate_compatibility(user_date, partner_date, relation_type)
+    context = {"name": user.first_name or "друг", "user_birth": user.birth_date,
+               "partner_birth": partner_date_str, "relation_type": _relation(relation_type, lang),
+               "compatibility": compat}
+    report = await generate_paid_report(
+        session, user.id, "compatibility", "compatibility",
+        f"Совместимость | {RELATION_NAMES.get(relation_type, relation_type)}",
+        context, COMPATIBILITY_PROMPT(lang), lang, max_tokens=2800,
+        metadata={"partner_birth": partner_date_str, "relation_type": relation_type})
+    cached = report.content
+    cache_key = result_key(user.id, "compatibility", lang, context)
 
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend
     relation_name = _relation(relation_type, lang)
     _type_label = {"ru": "Тип связи", "en": "Relationship type", "fa": "نوع رابطه", "tr": "İlişki türü"}.get(lang, "Relationship type")
     _compat_title = {"ru": "Совместимость", "en": "Compatibility", "fa": "سازگاری", "tr": "Uyumluluk"}.get(lang, "Compatibility")
-    header = f"💞 *{_compat_title} — {name}*\n_{_type_label}: {relation_name}_\n\n"
+    header = f"💞 {_compat_title} — {name}\n{_type_label}: {relation_name}\n\n"
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 Поделиться результатом", callback_data=f"share:compat:{cache_key[:20]}")],
+        [InlineKeyboardButton(text="📤 Поделиться результатом", callback_data=f"reports:share:{report.id}")],
         [InlineKeyboardButton(text="💞 Другая совместимость", callback_data="compat:start")],
         [InlineKeyboardButton(text="❤️ Что такое кармические отношения?", callback_data="content:compatibility")],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu:main")],

@@ -172,14 +172,10 @@ async def _process_payment(
     tier     = get_tier(tier_key)
     followup_limit = tier.get("followup_limit") or 2
 
-    # Запись платежа
-    session.add(BusinessPayment(
-        telegram_id=telegram_id,
-        payment_id=payment_id,
-        amount=amount,
-        status="paid",
-        product_id=product_id,
-    ))
+    existing = await session.scalar(select(BusinessPayment).where(BusinessPayment.payment_id == payment_id))
+    if existing is None:
+        session.add(BusinessPayment(telegram_id=telegram_id, payment_id=payment_id,
+                                    amount=amount, status="paid", product_id=product_id))
 
     # Обновление сессии в БД
     res = await session.execute(
@@ -254,7 +250,7 @@ async def _process_payment(
         prompt,
         f"Данные клиента: {context}",
         complexity=complexity,
-        max_tokens=max_tokens,
+        max_tokens=max_tokens, cache_key=f"tg:payment:{payment_id}",
     )
 
     # Сохранить текст консультации

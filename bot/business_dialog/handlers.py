@@ -256,18 +256,8 @@ async def _handle_human_bot_question(
     name    = profile.get("name", "")
     name_hint = f"Имя клиента: {name}." if name else ""
 
-    reply = await generate_business(
-        AISHA_FREE_PROMPT,
-        f"Клиент спрашивает — живой ли ты человек или это бот, программа, нейросеть.\n\n"
-        f"Ответь ОЧЕНЬ коротко — ровно 1–2 предложения. "
-        f"Дай понять что ты настоящая живая бабушка Аиша — реальный человек. "
-        f"Говори тепло, с лёгкой иронией, без лишних слов. Обращайся на вы. "
-        f"Никаких упоминаний технологий, ИИ или алгоритмов — только человеческое. "
-        f"ВАЖНО: НЕ задавай никакого вопроса в конце — только подтверди что ты живая. "
-        f"{name_hint}",
-        complexity="simple",
-        max_tokens=60,
-    )
+    reply = ("Я Aisha AI — цифровой помощник в образе бабушки Аиши. "
+             "Ответы создаёт ИИ по вашим данным; живой консультант эту переписку не ведёт. 🌙")
     await typing_short(bot, chat_id, biz_conn_id)
     await _send(bot, chat_id, reply, biz_conn_id)
 
@@ -464,7 +454,7 @@ _MAJOR_ARCANA = [
 _TAROT_ASSETS = Path(__file__).parent.parent.parent / "assets" / "tarot"
 
 # Время ожидания перед отправкой карты (в секундах)
-_T990_WAIT_SECONDS = 480  # 8 минут
+_T990_WAIT_SECONDS = 0  # No artificial delay
 from bot.business_dialog.tribute_flow import payment_keyboard, return_payment_keyboard, TRIBUTE_PRICE
 from bot.business_dialog.upsell import get_tier, tier_link, upsell_bridge, is_accompaniment
 from bot.business_dialog.validators import (
@@ -1022,6 +1012,7 @@ async def _stage_t990_waiting_question(
     # Фиксируем время начала
     from bot.services.cache import get_redis
     r = await get_redis()
+    await r.delete(f"t990_delivered:{telegram_id}", f"t990_task:{telegram_id}")
     await r.set(f"t990_start:{telegram_id}", str(time.time()), ex=86400)
 
     # Переключаем стадию
@@ -1048,7 +1039,7 @@ async def _stage_t990_waiting_question(
         )
 
 
-# ─── t990: парирование во время ожидания (8 минут) ───────────────────────────
+# ─── t990: парирование во время ожидания (генерация ответа) ───────────────────────────
 
 async def _stage_t990_preparing(
     bot: Bot, chat_id: int, telegram_id: int, biz_conn_id: str | None, text: str,
@@ -1057,7 +1048,7 @@ async def _stage_t990_preparing(
     from bot.services.cache import get_redis
     r = await get_redis()
 
-    # Проверка: не прошло ли уже 8 минут (восстановление после перезапуска)
+    # Проверка: не прошло ли уже генерация ответа (восстановление после перезапуска)
     already_delivered = await r.get(f"t990_delivered:{telegram_id}")
     if not already_delivered:
         start_raw = await r.get(f"t990_start:{telegram_id}")
@@ -1092,13 +1083,13 @@ async def _stage_t990_preparing(
 
 # ─── t990: фоновая задача — доставка карты и интерпретации ──────────────────
 
-async def _deliver_tarot_reading(
+async def _deliver_tarot_reading_impl(
     bot: Bot, telegram_id: int, chat_id: int, biz_conn_id: str | None,
 ) -> None:
-    """Спать 8 минут, затем отправить карту Таро + AI-интерпретацию."""
+    """Спать генерация ответа, затем отправить карту Таро + AI-интерпретацию."""
     from bot.services.cache import get_redis
 
-    # Ждём 8 минут
+    # Ждём генерация ответа
     await asyncio.sleep(_T990_WAIT_SECONDS)
 
     # Дедупликация — не отправляем дважды
@@ -1118,7 +1109,9 @@ async def _deliver_tarot_reading(
     name     = profile.get("name", "")
 
     # Выбираем случайную карту
-    card_file, card_name, card_display = random.choice(_MAJOR_ARCANA)
+    from bot.services.dialogue_results import stable_card
+    reading_key = await r.get(f"t990_start:{telegram_id}")
+    card_file, card_name, card_display = await stable_card(r, f"t990_card:{telegram_id}:{reading_key}", _MAJOR_ARCANA)
     card_path = _TAROT_ASSETS / f"{card_file}.png"
 
     async def _send_photo() -> None:
@@ -1161,12 +1154,14 @@ async def _deliver_tarot_reading(
 
         await typing_long(bot, chat_id, biz_conn_id)
 
+        reading_key = await r.get(f"t990_start:{telegram_id}")
         interpretation = await generate_business(
             AISHA_TAROT_BUSINESS_PROMPT,
             f"Данные клиента: {context}",
             complexity="complex",
-            max_tokens=900,
+            max_tokens=2200, cache_key=f"tg:tarot:{telegram_id}:{reading_key}",
         )
+        await store_profile_field(telegram_id, "last_paid_result", interpretation)
 
         await typing_for_text(bot, chat_id, biz_conn_id, interpretation)
         await _send(bot, chat_id, interpretation, biz_conn_id)
@@ -1188,7 +1183,9 @@ async def _deliver_tarot_reading(
         logger.info("t990 tarot reading delivered to tid=%s card=%s", telegram_id, card_display)
 
     except Exception as e:
+        await r.delete(f"t990_delivered:{telegram_id}")
         logger.error("t990 delivery failed for tid=%s: %s", telegram_id, e)
+        raise
 
 
 # ─── Этапы диалога ────────────────────────────────────────────────────────────
@@ -1847,7 +1844,7 @@ async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id:
         return  # слот НЕ тратится
 
     # ── Реальный follow-up вопрос — тратит слот ───────────────────────────────
-    left = await decrement_followup(telegram_id)
+    left = await get_followup_left(telegram_id)
 
     context = json.dumps({
         "name":           profile.get("name", ""),
@@ -1866,6 +1863,7 @@ async def _stage_followup(bot: Bot, chat_id: int, telegram_id: int, biz_conn_id:
         max_tokens=300,
     )
     await append_history(telegram_id, "aisha", response)
+    left = await decrement_followup(telegram_id)
     await typing_for_text(bot, chat_id, biz_conn_id, response)
     await _send(bot, chat_id, response, biz_conn_id)
 
@@ -1926,3 +1924,13 @@ async def _ensure_db_session(telegram_id: int, biz_conn_id: str | None) -> None:
                 await session.commit()
     except Exception as e:
         logger.warning("_ensure_db_session failed: %s", e)
+
+
+async def _deliver_tarot_reading(bot, telegram_id, chat_id, biz_conn_id):
+    from bot.services.cache import get_redis
+    try:
+        await _deliver_tarot_reading_impl(bot, telegram_id, chat_id, biz_conn_id)
+    except Exception:
+        r = await get_redis()
+        await r.delete(f"t990_delivered:{telegram_id}", f"t990_task:{telegram_id}")
+        await _send(bot, chat_id, "Не удалось завершить разбор. Оплата сохранена. Напишите «повторить», чтобы продолжить.", biz_conn_id)

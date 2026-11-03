@@ -201,105 +201,104 @@ async def get_limits_summary(session: AsyncSession, user_id: int) -> dict:
 
 
 async def is_vip(user_id: int) -> bool:
-    """Check if user has active VIP subscription (Redis key vip:{user_id})."""
-    try:
-        from bot.services.cache import get_redis
-        r = await get_redis()
-        val = await r.get(f"vip:{user_id}")
-        return bool(val)
-    except Exception:
-        return False
+    from bot.services.cache import get_redis
+    return bool(await (await get_redis()).exists(f"vip:{user_id}"))
 
 
-async def activate_vip(user_id: int, days: int = 30) -> None:
-    """Activate VIP subscription for N days."""
-    try:
-        from bot.services.cache import get_redis
-        r = await get_redis()
-        await r.set(f"vip:{user_id}", "1", ex=86400 * days)
-        # Set all VIP limits
-        from config import VIP_PLAN
-        for product_key, limit in VIP_PLAN["limits"].items():
-            await r.set(f"vip_limit:{product_key}:{user_id}", str(limit), ex=86400 * days)
-    except Exception:
-        pass
+async def activate_vip(user_id: int, days: int = 30, event_id: str | None = None) -> None:
+    """Extend remaining time and add quotas, atomically; retries do not grant twice."""
+    from bot.services.cache import get_redis
+    from config import VIP_PLAN
+    r = await get_redis()
+    keys = [f"vip:{user_id}", f"grant:{event_id}" if event_id else f"unused:{user_id}"]
+    keys += [f"vip_limit:{product}:{user_id}" for product in VIP_PLAN["limits"]]
+    await r.eval("""
+        if ARGV[1] == '1' and redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+        local remaining = math.max(0, redis.call('TTL', KEYS[1]))
+        local ttl = remaining + tonumber(ARGV[2])
+        redis.call('SET', KEYS[1], '1', 'EX', ttl)
+        for i=3,#KEYS do
+            local old = 0
+            if remaining > 0 then old = tonumber(redis.call('GET', KEYS[i]) or '0') end
+            redis.call('SET', KEYS[i], old + tonumber(ARGV[i]), 'EX', ttl)
+        end
+        if ARGV[1] == '1' then redis.call('SET', KEYS[2], '1') end
+        return ttl
+    """, len(keys), *keys, "1" if event_id else "0", days * 86400, *VIP_PLAN["limits"].values())
 
 
 async def check_vip_limit(user_id: int, product_key: str) -> bool:
-    """Check if VIP user has remaining uses for this feature."""
-    try:
-        from bot.services.cache import get_redis
-        r = await get_redis()
-        val = await r.get(f"vip_limit:{product_key}:{user_id}")
-        return bool(val and int(val) > 0)
-    except Exception:
-        return False
-
-
-async def use_vip_limit(user_id: int, product_key: str) -> bool:
-    """Decrement VIP limit for a feature. Returns True if successful."""
-    try:
-        from bot.services.cache import get_redis
-        r = await get_redis()
-        key = f"vip_limit:{product_key}:{user_id}"
-        val = await r.get(key)
-        if not val or int(val) <= 0:
-            return False
-        await r.decr(key)
-        return True
-    except Exception:
-        return False
-
-
-async def get_vip_limits_summary(user_id: int) -> dict:
-    """Get all VIP limits remaining."""
-    try:
-        from bot.services.cache import get_redis
-        from config import VIP_PLAN
-        r = await get_redis()
-        result = {}
-        for product_key, max_val in VIP_PLAN["limits"].items():
-            val = await r.get(f"vip_limit:{product_key}:{user_id}")
-            remaining = int(val) if val else 0
-            result[product_key] = {"remaining": remaining, "max": max_val}
-        return result
-    except Exception:
-        return {}
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    return bool(await is_vip(user_id) and int(await r.get(f"vip_limit:{product_key}:{user_id}") or 0) > 0)
 
 
 async def has_credit(user_id: int, product_key: str) -> bool:
-    """Check if user has a purchased credit for this feature (Redis oneoff key)."""
-    try:
-        from bot.services.cache import get_redis
-        r = await get_redis()
-        val = await r.get(f"oneoff:{product_key}:{user_id}")
-        return bool(val and int(val) > 0)
-    except Exception:
-        return False
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    return int(await r.get(f"oneoff:{product_key}:{user_id}") or 0) > 0
+
+
+async def can_use_product(user_id: int, product_key: str) -> bool:
+    return await check_vip_limit(user_id, product_key) or await has_credit(user_id, product_key)
+
+
+async def consume_product(user_id: int, product_key: str, result_id: str) -> bool:
+    """One debit per durable result, even after retries or a DB commit failure."""
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    return bool(await r.eval("""
+        if redis.call('EXISTS', KEYS[1]) == 1 then return 1 end
+        local source = KEYS[4]
+        if redis.call('EXISTS', KEYS[2]) == 1 and tonumber(redis.call('GET', KEYS[3]) or '0') > 0 then
+            source = KEYS[3]
+        end
+        if tonumber(redis.call('GET', source) or '0') <= 0 then return 0 end
+        redis.call('DECR', source)
+        redis.call('SET', KEYS[1], source)
+        return 1
+    """, 4, f"spent:{result_id}", f"vip:{user_id}",
+        f"vip_limit:{product_key}:{user_id}", f"oneoff:{product_key}:{user_id}"))
+
+
+async def _decrement(key: str) -> bool:
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    return bool(await r.eval("""
+        if tonumber(redis.call('GET', KEYS[1]) or '0') <= 0 then return 0 end
+        redis.call('DECR', KEYS[1])
+        return 1
+    """, 1, key))
+
+
+async def use_vip_limit(user_id: int, product_key: str) -> bool:
+    return await is_vip(user_id) and await _decrement(f"vip_limit:{product_key}:{user_id}")
 
 
 async def use_credit(user_id: int, product_key: str) -> bool:
-    """Decrement one credit. Returns True if successful."""
-    try:
-        from bot.services.cache import get_redis
-        r = await get_redis()
-        key = f"oneoff:{product_key}:{user_id}"
-        val = await r.get(key)
-        if not val or int(val) <= 0:
-            return False
-        await r.decr(key)
-        return True
-    except Exception:
-        return False
+    return await _decrement(f"oneoff:{product_key}:{user_id}")
 
 
-async def add_credit(user_id: int, product_key: str, amount: int = 1) -> None:
-    """Add purchased credits for a feature."""
-    try:
-        from bot.services.cache import get_redis
-        r = await get_redis()
-        key = f"oneoff:{product_key}:{user_id}"
-        await r.incrby(key, amount)
-        await r.expire(key, 86400 * 365)
-    except Exception:
-        pass
+async def add_credit(user_id: int, product_key: str, amount: int = 1, event_id: str | None = None) -> None:
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    await r.eval("""
+        if ARGV[1] == '1' and redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+        redis.call('INCRBY', KEYS[1], ARGV[2])
+        redis.call('PERSIST', KEYS[1])
+        if ARGV[1] == '1' then redis.call('SET', KEYS[2], '1') end
+        return 1
+    """, 2, f"oneoff:{product_key}:{user_id}", f"grant:{event_id}",
+        "1" if event_id else "0", amount)
+
+
+async def get_vip_limits_summary(user_id: int) -> dict:
+    from bot.services.cache import get_redis
+    from config import VIP_PLAN
+    r = await get_redis()
+    active = await is_vip(user_id)
+    result = {}
+    for product, quota in VIP_PLAN["limits"].items():
+        remaining = int(await r.get(f"vip_limit:{product}:{user_id}") or 0) if active else 0
+        result[product] = {"remaining": remaining, "max": max(quota, remaining)}
+    return result

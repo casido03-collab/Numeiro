@@ -3,12 +3,16 @@ import asyncio
 import logging
 import os
 import signal
-import time
+import threading
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from bot.services.resilient_session import ResilientSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
+from bot.services.runtime_health import (
+    RuntimeHealth, heartbeat_loop, dependency_loop, start_watchdog,
+    internal_health_response,
+)
 
 from config import settings
 from database.base import create_tables, async_session_maker
@@ -30,34 +34,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ─── Watchdog: timestamp последнего обработанного апдейта ─────────────────────
-# Пишется в файл чтобы Docker healthcheck мог его прочитать
-_HEALTH_FILE = "/tmp/bot_last_update"
-_WATCHDOG_TIMEOUT = 1800  # 30 минут без апдейтов → считаем зависшим
-
-
-def touch_health():
-    """Обновить timestamp — вызывается на каждый обработанный апдейт."""
-    try:
-        with open(_HEALTH_FILE, "w") as f:
-            f.write(str(time.time()))
-    except Exception:
-        pass
-
-
-def check_health() -> bool:
-    """Вернуть True если бот живой (апдейт был недавно или бот только стартовал)."""
-    try:
-        with open(_HEALTH_FILE) as f:
-            last = float(f.read().strip())
-        return (time.time() - last) < _WATCHDOG_TIMEOUT
-    except Exception:
-        return True  # файл ещё не создан — значит только стартовали
-
-
 async def main():
     logger.info("Starting Numeiro bot...")
-    touch_health()  # сброс watchdog при старте
+    health = RuntimeHealth()
+    scheduler = None
+    polling_running = False
 
     # Создаём таблицы
     await create_tables()
@@ -99,6 +80,10 @@ async def main():
 
     dp.update.outer_middleware(DbSessionMiddleware(async_session_maker))
     dp.update.outer_middleware(UserMiddleware())
+    from bot.middlewares.service_errors import ServiceErrorsMiddleware
+    dp.message.outer_middleware(ServiceErrorsMiddleware())
+    dp.callback_query.outer_middleware(ServiceErrorsMiddleware())
+    dp.business_message.outer_middleware(ServiceErrorsMiddleware())
     # Activity tracking — после UserMiddleware (нужен user в data)
     dp.message.outer_middleware(ActivityMiddleware(async_session_maker))
     dp.callback_query.outer_middleware(ActivityMiddleware(async_session_maker))
@@ -111,12 +96,11 @@ async def main():
     dp.message.outer_middleware(_sponsor_mw)
     dp.callback_query.outer_middleware(_sponsor_mw)
 
-    # Обновляем healthcheck-файл на каждый обработанный апдейт
+    # Incoming activity is diagnostic only, never a liveness signal.
     @dp.update.outer_middleware()
-    async def health_touch_middleware(handler, event, data):
-        result = await handler(event, data)
-        touch_health()
-        return result
+    async def incoming_activity_middleware(handler, event, data):
+        health.incoming()
+        return await handler(event, data)
 
     # Роутеры
     dp.include_routers(
@@ -151,6 +135,12 @@ async def main():
     from aiohttp import web as aiohttp_web
     setup_webhook(bot, async_session_maker)
     _webhook_app = aiohttp_web.Application()
+
+    async def runtime_health_response(request):
+        return await internal_health_response(
+            request, health, scheduler is not None and scheduler.running, polling_running,
+        )
+
     # Единый webhook ЮКассы — маршрутизирует по metadata.platform (tg / vk)
     _webhook_app.router.add_post("/yookassa/webhook", handle_yookassa_webhook)
     # Business dialog: Tribute webhook + инициализация модуля
@@ -170,22 +160,38 @@ async def main():
     scheduler = setup_scheduler(bot, async_session_maker)
     scheduler.start()
 
-    # Watchdog: каждые 5 мин проверяет не завис ли polling
-    async def _watchdog():
-        await asyncio.sleep(300)  # первые 5 мин — grace period
-        while True:
-            await asyncio.sleep(300)
-            if not check_health():
-                logger.error("WATCHDOG: no updates for %s sec — restarting", _WATCHDOG_TIMEOUT)
-                os.kill(os.getpid(), signal.SIGTERM)
-                break
+    # Separate loopback-only listener, not exposed through public webhook/proxy.
+    _health_app = aiohttp_web.Application()
+    _health_app.router.add_get("/_internal/health", runtime_health_response)
+    _health_runner = aiohttp_web.AppRunner(_health_app)
+    await _health_runner.setup()
+    await aiohttp_web.TCPSite(_health_runner, "127.0.0.1", 8081).start()
 
-    asyncio.create_task(_watchdog())
+    async def postgres_probe():
+        from sqlalchemy import text
+        async with async_session_maker() as session:
+            return (await session.execute(text("SELECT 1"))).scalar_one() == 1
+
+    async def redis_probe():
+        return bool(await storage.redis.ping())
 
     # Гарантированно сбросить webhook перед polling (на случай если был зарегистрирован)
     await bot.delete_webhook(drop_pending_updates=False)
     logger.info("Webhook cleared, starting polling...")
 
+    # Main-loop progress, cached dependencies and an independent stall watchdog.
+    health_tasks = [
+        asyncio.create_task(heartbeat_loop(health), name="service-heartbeat"),
+        asyncio.create_task(dependency_loop(health, postgres_probe, redis_probe), name="health-dependencies"),
+    ]
+    watchdog_stop = threading.Event()
+
+    def runtime_stalled():
+        logger.error("WATCHDOG: internal runtime heartbeat stale; SIGTERM requested")
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    watchdog_thread = start_watchdog(health, watchdog_stop, runtime_stalled)
+    polling_running = True
     # Запуск
     try:
         logger.info("Bot started. Press Ctrl+C to stop.")
@@ -196,7 +202,14 @@ async def main():
             handle_signals=True,    # корректно обрабатывать SIGTERM
         )
     finally:
+        polling_running = False
+        watchdog_stop.set()
+        for task in health_tasks:
+            task.cancel()
+        await asyncio.gather(*health_tasks, return_exceptions=True)
+        watchdog_thread.join(timeout=1)
         scheduler.shutdown()
+        await _health_runner.cleanup()
         await _webhook_runner.cleanup()
         await bot.session.close()
         logger.info("Bot stopped.")

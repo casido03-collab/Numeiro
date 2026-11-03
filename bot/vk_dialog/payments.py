@@ -36,7 +36,7 @@ async def set_payment_offered_at(uid: int) -> None:
     await r.set(f"vk:pay_offered:{uid}", str(int(time.time())), ex=86400 * 7)
 
 
-def create_payment_link(vk_user_id: int, tier_key: str) -> str:
+def create_payment_link(vk_user_id: int, tier_key: str, order_id: str = "") -> str:
     """Создать платёж в ЮКассе и вернуть ссылку на оплату."""
     from yookassa import Payment
     from bot.business_dialog.upsell import get_tier
@@ -55,6 +55,7 @@ def create_payment_link(vk_user_id: int, tier_key: str) -> str:
             "platform":    "vk",
             "vk_user_id":  str(vk_user_id),
             "tier_key":    tier_key,
+            "order_id": order_id,
         },
     }, str(uuid.uuid4()))
 
@@ -85,7 +86,13 @@ async def handle_vk_payment_webhook(
             if data.get("event") != "payment.succeeded":
                 return web.Response(status=200)
 
-            payment_obj = data.get("object", {})
+            from bot.services.yookassa_service import verified_payment, validate_payment
+            incoming_id = data.get("object", {}).get("id")
+            if not incoming_id:
+                return web.Response(status=400)
+            payment_obj = await verified_payment(incoming_id)
+            if payment_obj.get("id") != incoming_id or not validate_payment(payment_obj):
+                return web.Response(status=400)
             if payment_obj.get("status") != "succeeded":
                 return web.Response(status=200)
 
@@ -104,23 +111,19 @@ async def handle_vk_payment_webhook(
             logger.error("VK webhook: missing metadata in payment %s", payment_id)
             return web.Response(status=200)
 
-        # Дедупликация
-        from bot.services.cache import get_redis
-        r = await get_redis()
-        already = not await r.set(f"vk_paid:{payment_id}", "1", nx=True, ex=86400)
-        if already:
-            logger.info("VK payment %s already processed", payment_id)
-            return web.Response(status=200)
-
-        if tier_key == "monthly_990":
-            await _process_vk_monthly(int(vk_user_id), payment_id)
-        elif tier_key == "q29":
-            await _process_vk_q29(int(vk_user_id), payment_id)
-        else:
-            await _process_vk_payment(int(vk_user_id), tier_key, payment_id, int(amount))
+        from bot.services.payment_guard import payment_guard
+        async with payment_guard("vk_paid", payment_id) as process:
+            if process:
+                if tier_key == "monthly_990":
+                    await _process_vk_monthly(int(vk_user_id), payment_id)
+                elif tier_key == "q29":
+                    await _process_vk_q29(int(vk_user_id), payment_id, metadata.get("order_id", ""))
+                else:
+                    await _process_vk_payment(int(vk_user_id), tier_key, payment_id, int(amount))
 
     except Exception:
         logger.exception("VK YooKassa webhook error")
+        return web.Response(status=503)
 
     return web.Response(status=200)
 
@@ -149,8 +152,7 @@ async def _process_vk_payment(vk_user_id: int, tier_key: str, payment_id: str, a
     await set_followup_left(vk_user_id, followup_limit)
 
     if not _vk_api:
-        logger.error("VK API not initialized in payments.py")
-        return
+        raise RuntimeError("VK API is not initialized; retry required")
 
     async def _send(text: str) -> None:
         try:
@@ -160,7 +162,8 @@ async def _process_vk_payment(vk_user_id: int, tier_key: str, payment_id: str, a
                 random_id=random.randint(1, 2**31),
             )
         except Exception as e:
-            logger.warning("VK send failed for %s: %s", vk_user_id, e)
+            logger.warning("VK send failed for %s: %s", vk_user_id, type(e).__name__)
+            raise
 
     async def _typing(seconds: float = 2.0) -> None:
         """Держать индикатор «печатает» ровно seconds секунд (обновляем каждые 5 сек)."""
@@ -217,8 +220,10 @@ async def _process_vk_payment(vk_user_id: int, tier_key: str, payment_id: str, a
         prompt,
         f"Данные клиента: {context}",
         complexity=complexity,
-        max_tokens=max_tokens,
+        max_tokens=max_tokens, cache_key=f"vk:payment:{payment_id}",
     )
+    from bot.vk_dialog.session_manager import store_field
+    await store_field(vk_user_id, "last_paid_result", consultation)
     # Typing по длине текста перед отправкой разбора
     await _typing(_calc_typing(consultation))
     await _send(consultation)
@@ -228,7 +233,7 @@ async def _process_vk_payment(vk_user_id: int, tier_key: str, payment_id: str, a
     await set_stage(vk_user_id, "followup")
 
 
-async def _process_vk_q29(vk_user_id: int, payment_id: str) -> None:
+async def _process_vk_q29(vk_user_id: int, payment_id: str, order_id: str = "") -> None:
     """Ответить на один вопрос за 29 ₽, затем пригласить задать следующий."""
     import json
     import asyncio
@@ -240,10 +245,12 @@ async def _process_vk_q29(vk_user_id: int, payment_id: str) -> None:
     from bot.services.numerology import calculate_all
 
     if not _vk_api:
-        logger.error("VK API not initialized in payments.py")
-        return
+        raise RuntimeError("VK API is not initialized; retry required")
 
-    profile = await get_profile(vk_user_id)
+    from bot.services.cache import get_redis
+    r = await get_redis()
+    raw_order = await r.get(f"vk:order:{vk_user_id}:{order_id}") if order_id else None
+    profile = json.loads(raw_order) if raw_order else await get_profile(vk_user_id)
 
     async def _send_msg(text: str) -> None:
         try:
@@ -253,7 +260,8 @@ async def _process_vk_q29(vk_user_id: int, payment_id: str) -> None:
                 random_id=random.randint(1, 2**31),
             )
         except Exception as e:
-            logger.warning("VK q29 send failed for %s: %s", vk_user_id, e)
+            logger.warning("VK q29 send failed for %s: %s", vk_user_id, type(e).__name__)
+            raise
 
     async def _typing_sec(seconds: float) -> None:
         elapsed = 0.0
@@ -296,19 +304,24 @@ async def _process_vk_q29(vk_user_id: int, payment_id: str) -> None:
         PERSONAL_QUESTION_PAID_PROMPT("ru"),
         f"Ответь на личный вопрос пользователя.\nДанные: {context}",
         complexity="medium",
-        max_tokens=600,
+        max_tokens=600, cache_key=f"vk:payment:{payment_id}",
     )
+    from bot.vk_dialog.session_manager import store_field
+    await store_field(vk_user_id, "last_paid_result", answer)
+    import time
+    await r.set(f"paid_last:vk:{vk_user_id}", payment_id)
+    await r.set(f"vk:q29:{vk_user_id}", json.dumps({
+        "payment_id": payment_id, "question": question, "created_at": time.time(),
+    }, ensure_ascii=False), ex=86400 * 2)
     await _typing_sec(_calc_typing_secs(answer))
     await _send_msg(answer)
 
-    # Приглашение задать следующий вопрос
-    await asyncio.sleep(2)
-    emo = random.choice(["🌙", "✨", "💫", "🔮"])
     await _send_msg(
-        f"Если хотите задать ещё вопрос — напишите его, душа моя {emo}\n\n"
-        f"Ответ на один вопрос — 29 ₽. Я здесь."
+        "В течение 24 часов можно задать одно уточнение по этому ответу — оно уже включено в стоимость. "
+        "Напишите его следующим сообщением.\n\n"
+        "Готовый ответ: /last_reading. Новая отдельная тема за 29 ₽: /new_question."
     )
-    await set_stage(vk_user_id, "collecting_problem")
+    await set_stage(vk_user_id, "q29_followup")
 
 
 async def _process_vk_monthly(vk_user_id: int, payment_id: str) -> None:
@@ -319,11 +332,11 @@ async def _process_vk_monthly(vk_user_id: int, payment_id: str) -> None:
 
     r = await get_redis()
     await set_stage(vk_user_id, "paid_monthly")
-    await r.set(f"vk:paid_until:{vk_user_id}", str(int(time.time()) + 86400 * 30), ex=86400 * 31)
+    from bot.services.payment_guard import extend_dialogue_subscription
+    await extend_dialogue_subscription("vk", vk_user_id, payment_id)
 
     if not _vk_api:
-        logger.error("VK API not initialized in payments.py")
-        return
+        raise RuntimeError("VK API is not initialized; retry required")
 
     import random as _rand
     confirm = "Оплата прошла, душа моя 🌙\n\nТеперь я с вами весь месяц. Задавайте вопросы — я здесь."

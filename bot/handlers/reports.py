@@ -138,9 +138,9 @@ async def reports_category(callback: CallbackQuery, user: User, session: AsyncSe
         page = 0
 
     plan = await get_user_plan(session, user.id)
-    is_paid = plan in ("lite", "premium", "pro")
+    is_paid = True  # Every saved result belongs to its buyer; no subscription gate.
     limit = PAGE_SIZE if is_paid else FREE_LIMIT
-    offset = page * PAGE_SIZE if is_paid else 0
+    offset = max(0, page) * PAGE_SIZE
 
     total = await count_reports(session, user.id, report_type)
     reports = await get_user_reports(session, user.id, report_type, limit=limit, offset=offset)
@@ -190,15 +190,6 @@ async def reports_category(callback: CallbackQuery, user: User, session: AsyncSe
             row.append(InlineKeyboardButton(text=_next, callback_data=f"reports:cat:{report_type}:{page + 1}"))
         if row:
             nav.append(row)
-    elif total > FREE_LIMIT:
-        _locked = {
-            "ru": f"🔒 Полная история в подписке ({total - FREE_LIMIT} скрыто)",
-            "en": f"🔒 Full history with subscription ({total - FREE_LIMIT} hidden)",
-            "fa": f"🔒 تاریخچه کامل با اشتراک ({total - FREE_LIMIT} پنهان)",
-            "tr": f"🔒 Abonelikle tam geçmiş ({total - FREE_LIMIT} gizli)",
-        }.get(lang, f"🔒 Full history with subscription ({total - FREE_LIMIT} hidden)")
-        item_buttons.append([InlineKeyboardButton(text=_locked, callback_data="menu:plans")])
-
     all_buttons = item_buttons + nav + [
         [InlineKeyboardButton(text=_back, callback_data="reports:menu")],
         [InlineKeyboardButton(text=_main_menu, callback_data="menu:main")],
@@ -237,8 +228,8 @@ async def view_report(callback: CallbackQuery, user: User, session: AsyncSession
                   "fa": "🔮 از مادربزرگ آیشا سؤال بپرسید", "tr": "🔮 Büyükanne Aisha'ya soru sor"}.get(lang, "🔮 Ask Grandma Aisha a question")
     _main_menu = {"ru": "🏠 Главное меню",           "en": "🏠 Main menu",        "fa": "🏠 منوی اصلی",    "tr": "🏠 Ana menü"}.get(lang, "🏠 Main menu")
 
-    header = f"{lbl}\n*{report.title}*\n_{_date_l}: {date_str}_\n\n"
-    text = _truncate(header + report.content, lang=lang)
+    header = f"{lbl}\n{report.title}\n{_date_l}: {date_str}\n\n"
+    text = header + report.content
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -248,7 +239,11 @@ async def view_report(callback: CallbackQuery, user: User, session: AsyncSession
         [InlineKeyboardButton(text=_ask_q, callback_data="menu:question")],
         [InlineKeyboardButton(text=_main_menu, callback_data="menu:main")],
     ])
-    await safe_edit(callback.message, text, reply_markup=kb)
+    from bot.utils import safe_edit_ai
+    if report.report_type == "personal_question" and not (report.metadata_json or {}).get("parent_report_id"):
+        from bot.handlers.question import question_result_keyboard
+        kb.inline_keyboard.insert(0, question_result_keyboard(report.id, lang).inline_keyboard[0])
+    await safe_edit_ai(callback.message, text, reply_markup=kb)
     await callback.answer()
 
 

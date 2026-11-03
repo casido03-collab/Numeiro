@@ -103,6 +103,8 @@ async def send_subscription_reminders(bot: Bot, session: AsyncSession):
 
 
 def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
+    from bot.services.notifications import NotificationBot
+    bot = NotificationBot(bot)
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     async def _daily_push():
@@ -205,6 +207,9 @@ def setup_scheduler(bot: Bot, session_maker) -> AsyncIOScheduler:
 async def _send_business_reminders(bot: Bot, session_maker) -> None:
     """Отправить reminder пользователям которым была показана ссылка оплаты, но не оплатили (через 1ч).
     Кнопка оплаты включается только здесь — в диалоге она больше не дублируется."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging
     import time
     from sqlalchemy import select
@@ -284,6 +289,9 @@ async def _send_business_reminders(bot: Bot, session_maker) -> None:
 async def _send_second_business_reminders(bot: Bot, session_maker) -> None:
     """Второй пуш через 24ч после первого напоминания — без кнопки, тёплый текст.
     Только если пользователь так и не оплатил и молчит больше 24 часов."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging
     import time
     from sqlalchemy import select
@@ -365,6 +373,9 @@ async def _send_second_business_reminders(bot: Bot, session_maker) -> None:
 async def _send_abandoned_reminders(bot: Bot, session_maker) -> None:
     """Пуш для брошенных диалогов — человек начал, но исчез на 3+ часов.
     Стадия: сбор данных или бесплатный диалог. Без кнопки, тёплый контекстный текст."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging
     import time
     from sqlalchemy import select
@@ -667,6 +678,9 @@ async def _send_accompaniment_morning_plans(bot: Bot, session_maker) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def _vk_send(vk_api, uid: int, text: str) -> bool:
+    from bot.services.notifications import muted
+    if await muted("vk", uid):
+        return False
     """Отправить сообщение VK-пользователю. Возвращает True если успешно."""
     import random as _random
     try:
@@ -680,6 +694,9 @@ async def _vk_send(vk_api, uid: int, text: str) -> bool:
 
 async def _send_vk_business_reminders() -> None:
     """1й reminder: ссылка оплаты показана, но не оплатили — через 1ч."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging
     import time
     logger = logging.getLogger(__name__)
@@ -742,6 +759,9 @@ async def _send_vk_business_reminders() -> None:
 
 async def _send_vk_second_reminders() -> None:
     """2й reminder: 24ч тишины после первого — тёплый текст без ссылки."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging
     import time
     logger = logging.getLogger(__name__)
@@ -802,6 +822,9 @@ async def _send_vk_second_reminders() -> None:
 
 async def _send_vk_abandoned_reminders() -> None:
     """Пуш для брошенных диалогов — 3ч тишины на ранних стадиях."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging
     import time
     logger = logging.getLogger(__name__)
@@ -1030,90 +1053,22 @@ _MORNING_MALE_BIZ = [
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Задержки от момента редиректа (секунды)
-_BIZ_REDIRECT_PUSH_DELAYS = [
-    3600,    # Push 1: +1h
-    14400,   # Push 2: +4h
-    100800,  # Push 3: +28h
-    187200,  # Push 4: +52h  (Day 2)
-    273600,  # Push 5: +76h  (Day 3)
-    360000,  # Push 6: +100h (Day 4)
-    446400,  # Push 7: +124h (Day 5)
-    532800,  # Push 8: +148h (Day 6)
-    619200,  # Push 9: +172h (Day 7)
-]
-
-# Тексты пушей (Push 1 поддерживает {greeting})
+_BIZ_REDIRECT_PUSH_DELAYS = [86400]
 _BIZ_REDIRECT_PUSH_TEXTS = [
-    # Push 1 (+1h)
-    "🌙 {greeting}, я вспомнила одну вещь.\n\n"
-    "Многие не замечают кнопку «🎴 Карта дня», а ведь именно она часто показывает главный урок или подсказку сегодняшнего дня.\n\n"
-    "Загляните, возможно сегодня карты приготовили для Вас важное послание.\n\n"
-    "━━━━━━━━━━━━━━━",
-
-    # Push 2 (+4h)
-    "✨ Небольшой секрет.\n\n"
-    "Внутри бота можно бесплатно задать личный вопрос.\n\n"
-    "Многие спрашивают про отношения, деньги или будущее, но иногда самый сильный вопрос — "
-    "тот, который давно не даёт покоя именно Вам.\n\n"
-    "🌿 Если такой вопрос есть, не держите его в себе.\n\n"
-    "━━━━━━━━━━━━━━━",
-
-    # Push 3 (+28h)
-    "🔮 А Вы уже пробовали раздел «Энергия дня»?\n\n"
-    "Иногда одно короткое послание помогает понять, почему день складывается именно так, а не иначе.\n\n"
-    "Сегодня там уже ждёт новый ответ.\n\n"
-    "━━━━━━━━━━━━━━━",
-
-    # Push 4 (+52h, Day 2)
-    "💫 Большинство людей сразу идут в расклады и забывают про раздел «✨ Мой разбор».\n\n"
-    "А ведь именно там можно увидеть сильные стороны характера и скрытые таланты, которые заложены в дате рождения.\n\n"
-    "Иногда ответы находятся гораздо ближе, чем кажется.\n\n"
-    "━━━━━━━━━━━━━━━",
-
-    # Push 5 (+76h, Day 3)
-    "💖 Чаще всего люди приходят с вопросами об отношениях.\n\n"
-    "Если сердце сейчас занято мыслями о человеке — попробуйте раздел «💕 Совместимость».\n\n"
-    "Иногда цифры рассказывают больше слов.\n\n"
-    "━━━━━━━━━━━━━━━",
-
-    # Push 6 (+100h, Day 4)
-    "🌙 Старые знания говорят:\n\n"
-    "Когда человек долго не может принять решение, он начинает искать ответы снаружи.\n\n"
-    "Но иногда достаточно посмотреть на ситуацию под другим углом.\n\n"
-    "Для этого и существуют расклады.\n\n"
-    "━━━━━━━━━━━━━━━",
-
-    # Push 7 (+124h, Day 5)
-    "⭐ Сегодня хочу напомнить о недельном раскладе.\n\n"
-    "Он помогает увидеть не один день, а целое направление, по которому сейчас движется Ваша жизнь.\n\n"
-    "Порой именно там скрывается главный ответ.\n\n"
-    "━━━━━━━━━━━━━━━",
-
-    # Push 8 (+148h, Day 6)
-    "🔮 Многие удивляются, насколько точно дата рождения отражает характер человека.\n\n"
-    "Если Вы ещё не открывали раздел «🌟 Полная матрица судьбы», обязательно попробуйте.\n\n"
-    "Это один из самых подробных разборов в боте.\n\n"
-    "━━━━━━━━━━━━━━━",
-
-    # Push 9 (+172h, Day 7)
-    "🌿 Благодарю, что были рядом эту неделю.\n\n"
-    "Если у Вас остался вопрос, который никак не выходит из головы — задайте его в моём боте.\n\n"
-    "Иногда один ответ приходит именно тогда, когда человек готов его услышать.\n\n"
-    "━━━━━━━━━━━━━━━",
+    "{greeting}, меню Aisha AI доступно по ссылке ниже. Бесплатно: гороскоп и «Энергия дня». "
+    "Личный вопрос — 29 ₽ / 29 ⭐, остальные цены указаны в меню. "
+    "Это единственное напоминание о переходе. Отключить уведомления: /stop"
 ]
-
 
 def _biz_redirect_greeting(gender: str) -> str:
-    """Гендерное обращение для пушей; нейтральное по умолчанию."""
-    if gender == "female":
-        return "Моя хорошая"
-    if gender == "male":
-        return "Мой хороший"
-    return "Душа моя"
+    return "Здравствуйте"
 
 
 async def _send_biz_redirect_pushes(bot) -> None:
     """Серия из 9 пушей для пользователей в стадии 'redirected' (новая воронка)."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging, time
     logger = logging.getLogger(__name__)
     try:
@@ -1189,6 +1144,9 @@ async def _send_biz_redirect_pushes(bot) -> None:
 
 async def _send_biz_push_unpaid(bot) -> None:
     """Пуши для неоплативших: 1ч → push#1, 3ч → push#2, 24ч → push#3."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging, time
     logger = logging.getLogger(__name__)
     try:
@@ -1351,7 +1309,7 @@ async def _send_vk_morning_paid() -> None:
                 text    = _rand.choice(_MF if gender == "female" else _MM)
                 delay   = _rand.randint(0, 540)
                 await _asyncio.sleep(delay)
-                await vk_api.messages.send(peer_id=uid, message=text, random_id=_rand.randint(1, 2**31))
+                await _vk_send(vk_api, uid, text)
                 logger.info("VK morning (paid_monthly) sent to %s", uid)
             except Exception as e:
                 logger.warning("VK morning paid error for %s: %s", uid, e)
@@ -1361,6 +1319,9 @@ async def _send_vk_morning_paid() -> None:
 
 async def _send_vk_push_unpaid() -> None:
     """Пуши неплатным VK: 1ч → push#1, 3ч → push#2, 24ч → push#3."""
+    from config import settings
+    if not settings.marketing_reminders_enabled:
+        return
     import logging, time, random as _rand
     logger = logging.getLogger(__name__)
     try:
@@ -1421,7 +1382,7 @@ async def _send_vk_push_unpaid() -> None:
                         text += f"\n\n{link}"
                     except Exception:
                         pass
-                await vk_api.messages.send(peer_id=uid, message=text, random_id=_rand.randint(1, 2**31))
+                await _vk_send(vk_api, uid, text)
                 await r.incr(push_key)
                 await r.expire(push_key, 86400 * 7)
                 # Сохраняем время отправки для следующего пуша

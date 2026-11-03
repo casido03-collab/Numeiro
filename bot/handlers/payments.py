@@ -25,16 +25,9 @@ def _valid_email(email: str) -> bool:
 
 
 # Централизованный реестр продуктов — используется payments + webhook
-PRODUCT_DISPLAY = {
-    "tarot_card":        {"label": "Карта дня",             "price_rub": 49,  "price_stars": 49},
-    "personal_question": {"label": "Личный вопрос",         "price_rub": 29,  "price_stars": 29},
-    "mini_reading":      {"label": "Мини-разбор",           "price_rub": 49,  "price_stars": 49},
-    "full_matrix":       {"label": "Полная матрица судьбы", "price_rub": 199, "price_stars": 199},
-    "compatibility":     {"label": "Совместимость пары",    "price_rub": 99,  "price_stars": 99},
-    "weekly_report":     {"label": "Расклад на неделю",     "price_rub": 79,  "price_stars": 79},
-    "date_selection":    {"label": "Подбор дат",            "price_rub": 99,  "price_stars": 99},
-    "vip":               {"label": "VIP — 30 дней",         "price_rub": 1999, "price_stars": 1999},
-}
+from config import VIP_PLAN
+PRODUCT_DISPLAY = {key: {"label": item["name"], **item} for key, item in PRODUCTS.items()}
+PRODUCT_DISPLAY["vip"] = {"label": "VIP — 30 дней", **VIP_PLAN}
 
 # Оставляем для обратной совместимости с yookassa_webhook.py
 PLAN_DISPLAY: dict = {}
@@ -157,7 +150,12 @@ async def card_pay_create(message: Message, state: FSMContext):
 
 @router.pre_checkout_query()
 async def pre_checkout(pre_checkout_query: PreCheckoutQuery):
-    await pre_checkout_query.answer(ok=True)
+    parts = pre_checkout_query.invoice_payload.split(":", 1)
+    info = PRODUCT_DISPLAY.get(parts[-1])
+    valid = (len(parts) == 2 and parts[0] == "product" and info is not None
+             and pre_checkout_query.currency == "XTR"
+             and pre_checkout_query.total_amount == info["price_stars"])
+    await pre_checkout_query.answer(ok=valid, error_message=None if valid else "Счёт устарел. Откройте оплату заново из меню.")
 
 
 # ─── Успешная оплата Stars ────────────────────────────────────────────────────
@@ -167,6 +165,17 @@ async def successful_payment(message: Message, user: User, session: AsyncSession
     payment = message.successful_payment
     payload  = payment.invoice_payload
     charge_id = payment.telegram_payment_charge_id
+
+    await session.execute(select(User.id).where(User.id == user.id).with_for_update())
+    existing = await session.scalar(select(Payment.id).where(Payment.telegram_payment_charge_id == charge_id))
+    if existing:
+        await message.answer("Этот платёж уже зачислен. Готовые результаты доступны в «Мои разборы».")
+        return
+    parts = payload.split(":", 1)
+    product_key = parts[-1]
+    info = PRODUCT_DISPLAY.get(product_key)
+    if not info or payment.currency != "XTR" or payment.total_amount != info["price_stars"]:
+        raise ValueError("Unexpected Stars payment")
 
     session.add(Payment(
         user_id=user.id,
@@ -180,11 +189,13 @@ async def successful_payment(message: Message, user: User, session: AsyncSession
     parts = payload.split(":", 1)
     product_key = parts[1] if len(parts) > 1 else payload
 
-    await _activate_one_time_product(user, product_key)
+    await _activate_one_time_product(user, product_key, event_id=f"stars:{charge_id}")
 
     info = PRODUCT_DISPLAY.get(product_key, {})
     label = info.get("label", product_key)
 
+    await _process_referral_reward(session, user, message.bot)
+    await session.commit()
     await message.answer(
         f"✅ *{label}* — оплачено! 🌟\n\nМожете использовать раздел прямо сейчас.",
         parse_mode="Markdown",
@@ -193,19 +204,17 @@ async def successful_payment(message: Message, user: User, session: AsyncSession
         ]),
     )
 
-    await _process_referral_reward(session, user, message.bot)
-    await session.commit()
 
 
 # ─── Вспомогательные ──────────────────────────────────────────────────────────
 
-async def _activate_one_time_product(user: User, product_key: str):
+async def _activate_one_time_product(user: User, product_key: str, event_id: str | None = None):
     if product_key == "vip":
         from bot.services.limits import activate_vip
-        await activate_vip(user.id, days=30)
+        await activate_vip(user.id, days=30, event_id=event_id)
     else:
         from bot.services.limits import add_credit
-        await add_credit(user.id, product_key)
+        await add_credit(user.id, product_key, event_id=event_id)
 
 
 async def _process_referral_reward(session: AsyncSession, user: User, bot):
@@ -251,15 +260,16 @@ async def _process_referral_reward(session: AsyncSession, user: User, bot):
         already = await r.get(level_key)
         if already:
             continue
-        await r.set(level_key, "1", ex=86400 * 365)
         for product_key, amount in rewards:
             if product_key == "vip_days":
-                await activate_vip(inviter.id, days=amount)
+                await activate_vip(inviter.id, days=amount, event_id=f"ref:{threshold}:{inviter.id}:vip")
                 rewards_given.append(f"👑 {amount} дня VIP")
             else:
-                await add_credit(inviter.id, product_key, amount)
+                await add_credit(inviter.id, product_key, amount, event_id=f"ref:{threshold}:{inviter.id}:{product_key}")
                 label = PRODUCT_DISPLAY.get(product_key, {}).get("label", product_key)
                 rewards_given.append(f"✨ {label} ×{amount}")
+
+        await r.set(level_key, "1")
 
     if rewards_given:
         rewards_text = "\n".join(rewards_given)
@@ -300,10 +310,20 @@ def _product_callback(product_key: str) -> str:
 # ─── VIP Продление ──────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "pay:vip:renew")
-async def vip_renew(callback: CallbackQuery, lang: str = "ru"):
+async def vip_renew(callback: CallbackQuery, user: User, lang: str = "ru"):
     from bot.keyboards.main import payment_method_keyboard as _pay_kb
+    from bot.services.cache import get_redis
+    from zoneinfo import ZoneInfo
+    remaining = max(0, await (await get_redis()).ttl(f"vip:{user.id}"))
+    until = datetime.now(ZoneInfo("Europe/Moscow")) + timedelta(seconds=remaining, days=30)
+    terms = {
+        "ru": f"VIP — 1 999 ₽ / 1 999 ⭐. При оплате сейчас срок будет до {until:%d.%m.%Y %H:%M} МСК.\n\nДобавятся 30 дней и новый пакет разборов. Остаток сохранится до общего окончания VIP. Автосписания нет.",
+        "en": f"VIP — 1,999 ⭐. Paying now extends access until {until:%d.%m.%Y %H:%M} Moscow time. Adds 30 days and a new quota package; unused readings carry over until expiry. No automatic charges.",
+        "fa": f"VIP — 1999 ⭐. با پرداخت اکنون تا {until:%d.%m.%Y %H:%M} به وقت مسکو فعال می‌شود. ۳۰ روز و سهمیه جدید اضافه می‌شود؛ مانده حفظ می‌شود. برداشت خودکار ندارد.",
+        "tr": f"VIP — 1999 ⭐. Şimdi ödeme ile {until:%d.%m.%Y %H:%M} Moskova saatine kadar uzar. 30 gün ve yeni kota eklenir; kalan haklar korunur. Otomatik ödeme yok.",
+    }.get(lang)
     await callback.message.edit_text(
-        "💎 *Продление VIP — 1 999 ₽*\n\nВыберите способ оплаты:",
+        terms,
         reply_markup=_pay_kb("vip", 1999, 1999, lang, back="cabinet:open"),
         parse_mode="Markdown",
     )

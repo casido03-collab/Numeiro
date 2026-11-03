@@ -170,6 +170,10 @@ class SponsorMiddleware(BaseMiddleware):
 
         if isinstance(event, CallbackQuery):
             cb_data = event.data or ""
+            # Access to an owned result and its included clarification is part of
+            # the purchase, regardless of a later channel unsubscribe.
+            if cb_data.startswith(("reports:", "question:clarify:")):
+                return await handler(event, data)
             # Не проверяем sponsor:check и subgate:check
             if cb_data in ("sponsor:check", "subgate:check"):
                 return await handler(event, data)

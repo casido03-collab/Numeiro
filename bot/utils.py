@@ -168,40 +168,48 @@ async def safe_edit(
     return None
 
 
-async def safe_edit_ai(
-    message: Message,
-    text: str,
-    reply_markup: InlineKeyboardMarkup | None = None,
-    parse_mode: str | None = "Markdown",
-) -> Optional[Message]:
-    """
-    Доставка AI-ответа: request_timeout=15s (явный override).
-    Fallback на safe_answer если редактировать нельзя.
-    """
+def split_answer(text: str, limit: int = 3500) -> list[str]:
+    """Conservative limit also leaves room for Telegram's UTF-16 emoji count."""
+    parts = []
+    while text:
+        end = min(len(text), limit)
+        while len(text[:end].encode("utf-16-le")) // 2 > limit:
+            end -= 1
+        if end < len(text):
+            boundary = text.rfind("\n", 0, end)
+            if boundary > end // 2:
+                end = boundary + 1
+        parts.append(text[:end])
+        text = text[end:]
+    return parts or [""]
+
+
+async def send_long_answer(message, text, reply_markup=None):
+    parts = split_answer(text)
+    result = None
+    for i, part in enumerate(parts):
+        result = await message.answer(part, parse_mode=None,
+                                      reply_markup=reply_markup if i == len(parts) - 1 else None,
+                                      request_timeout=_AI_TIMEOUT)
+    return result
+
+
+async def safe_edit_ai(message, text, reply_markup=None, parse_mode=None):
+    """Deliver every character. A saved result remains in history if sending fails."""
+    parts = split_answer(text)
     try:
-        return await message.edit_text(
-            text,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-            request_timeout=_AI_TIMEOUT,
-        )
-    except TelegramBadRequest as e:
-        err_lower = str(e).lower()
-        if "can't parse" in err_lower:
-            try:
-                return await message.edit_text(
-                    text,
-                    reply_markup=reply_markup,
-                    parse_mode=None,
-                    request_timeout=_AI_TIMEOUT,
-                )
-            except TelegramBadRequest:
-                pass
-        logger.debug("safe_edit_ai: edit failed (%s), falling back to answer", e)
-        return await safe_answer(message, text, reply_markup=reply_markup, parse_mode=parse_mode)
-    except Exception as e:
-        logger.warning("safe_edit_ai: failed: %s", e)
-    return None
+        result = await message.edit_text(parts[0], parse_mode=None,
+            reply_markup=reply_markup if len(parts) == 1 else None, request_timeout=_AI_TIMEOUT)
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            result = message
+        else:
+            result = await message.answer(parts[0], parse_mode=None,
+                reply_markup=reply_markup if len(parts) == 1 else None, request_timeout=_AI_TIMEOUT)
+    for i, part in enumerate(parts[1:], 1):
+        result = await message.answer(part, parse_mode=None,
+            reply_markup=reply_markup if i == len(parts) - 1 else None, request_timeout=_AI_TIMEOUT)
+    return result
 
 
 async def replace_message(

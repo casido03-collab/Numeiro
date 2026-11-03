@@ -1,3 +1,5 @@
+from bot.services.catalog import product_offer
+from bot.services.limits import has_credit as product_has_credit
 """Карта дня — расклад на один Старший Аркан."""
 import json
 import random
@@ -80,19 +82,13 @@ def _time_until_midnight_msk() -> str:
 @router.callback_query(F.data == "menu:tarot")
 async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession, lang: str = "ru"):
     today_str = date.today().strftime("%Y-%m-%d")
-    cache_key = make_cache_key("tarot_card", user.id, today_str)
+    cache_key = make_cache_key("tarot_card_v2", user.id, lang, user.birth_date, user.first_name, today_str)
 
     # ── Уже получал сегодня → показываем таймер ──────────────────────────────
     already_today = await get_cached(cache_key)
     if already_today:
-        time_left = _time_until_midnight_msk()
-        _already = {
-            "ru": f"🃏 *Карта дня уже получена* — найди её выше в переписке ☝️\n\nСледующая карта откроется через *{time_left}* 🌙\n\n_Каждый день — новое послание Вселенной_",
-            "en": f"🃏 *Card of the day already received* — find it above in the chat ☝️\n\nNext card opens in *{time_left}* 🌙\n\n_Every day — a new message from the Universe_",
-            "fa": f"🃏 *کارت روز دریافت شد* — آن را بالاتر در چت پیدا کنید ☝️\n\nکارت بعدی در *{time_left}* باز می‌شود 🌙\n\n_هر روز — پیامی جدید از کیهان_",
-            "tr": f"🃏 *Günün kartı alındı* — sohbetin yukarısında bulabilirsiniz ☝️\n\nSonraki kart *{time_left}* içinde açılır 🌙\n\n_Her gün — evrenden yeni bir mesaj_",
-        }.get(lang, f"🃏 *Card of the day already received* ☝️\n\nNext opens in *{time_left}* 🌙")
-        await callback.message.edit_text(_already, reply_markup=back_to_main(), parse_mode="Markdown")
+        from bot.utils import safe_edit_ai
+        await safe_edit_ai(callback.message, already_today, reply_markup=after_tarot_keyboard())
         await callback.answer()
         return
 
@@ -102,42 +98,12 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
 
     _is_vip = await is_vip(user.id)
     if not _is_vip and not await has_credit(user.id, "tarot_card"):
-        _locked = {
-            "ru": (
-                "🃏 *Карта дня*\n\n"
-                "Каждый день Вселенная посылает вам особое послание.\n\n"
-                "Я достану для вас карту Старшего Аркана и расскажу, что она означает именно для вас сегодня — "
-                "с учётом вашей даты рождения и личных чисел.\n\n"
-                "Это ваш ориентир на день.\n\n"
-                "💳 Стоимость: *49 ₽* или *49 ⭐*"
-            ),
-            "en": (
-                "🃏 *Card of the Day*\n\n"
-                "Every day the Universe sends you a special message.\n\n"
-                "I will draw your Major Arcana card and tell you what it means for you today — "
-                "based on your date of birth and personal numbers.\n\n"
-                "Your guide for the day.\n\n"
-                "💳 Price: *49 ⭐*"
-            ),
-            "fa": (
-                "🃏 *کارت روز*\n\n"
-                "هر روز کیهان پیام ویژه‌ای برای شما می‌فرستد.\n\n"
-                "من کارت آرکان اصلی شما را می‌کشم و معنای آن را برای امروز شما توضیح می‌دهم.\n\n"
-                "💳 قیمت: *49 ⭐*"
-            ),
-            "tr": (
-                "🃏 *Günün Kartı*\n\n"
-                "Her gün Evren size özel bir mesaj gönderir.\n\n"
-                "Büyük Arcana kartınızı çekerek bugün sizin için ne anlama geldiğini anlatacağım — "
-                "doğum tarihiniz ve kişisel sayılarınıza göre.\n\n"
-                "💳 Fiyat: *49 ⭐*"
-            ),
-        }.get(lang, "🃏 *Card of the Day*\n\nYour daily guidance from the Universe.\n\n💳 Price: *49 ⭐*")
+        _locked = product_offer("tarot_card", lang)
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("tarot_card", 49, 49, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
-    if _is_vip and not await check_vip_limit(user.id, "tarot_card"):
+    if _is_vip and not await check_vip_limit(user.id, "tarot_card") and not await product_has_credit(user.id, "tarot_card"):
         _exhausted = {
             "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
             "en": "💎 VIP limit for this section exhausted this month.",
@@ -193,43 +159,22 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
         "numbers": nums,
         "date": today_str,
     }
-    user_msg = (
-        f"Дай интерпретацию карты дня «{card_label}».\n"
-        f"Данные: {json.dumps(context, ensure_ascii=False)}"
-    )
-    card_text = await generate(
-        session, user.id, "tarot_card",
-        TAROT_CARD_PROMPT(lang), user_msg,
-        complexity="medium", max_tokens=500,
-    )
-
-    # Сохраняем в кэш (до полуночи МСК)
+    from bot.services.fulfillment import generate_paid_report
+    report = await generate_paid_report(
+        session, user.id, "tarot_card", "tarot_card", f"Карта дня — {card_label} | {today_str}",
+        context, TAROT_CARD_PROMPT(lang), lang, max_tokens=2000,
+        metadata={"card_key": file_key, "card_name": card_name_ru, "date": today_str})
+    card_text = report.content
+    # Cache only after successful fulfillment; never cache an unpaid result.
     now_msk = datetime.now(_MSK)
     midnight_msk = (now_msk + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    ttl = int((midnight_msk - now_msk).total_seconds())
-    await set_cached(cache_key, card_text, ttl=ttl)
-
-    # Сохраняем в историю
-    from bot.services.reports_service import save_report
-    _save_title = {"ru": "Карта дня", "en": "Card of the Day", "fa": "کارت روز", "tr": "Günün Kartı"}.get(lang, "Card of the Day")
-    await save_report(
-        session, user.id, "tarot_card",
-        title=f"{_save_title} — {card_label} | {date.today().strftime('%d.%m.%Y')}",
-        content=card_text,
-        metadata={"card_key": file_key, "card_name": card_name_ru, "date": today_str},
-    )
-    if await is_vip(user.id):
-        from bot.services.limits import use_vip_limit
-        await use_vip_limit(user.id, "tarot_card")
-    else:
-        from bot.services.limits import use_credit
-        await use_credit(user.id, "tarot_card")
+    await set_cached(cache_key, card_text, ttl=int((midnight_msk - now_msk).total_seconds()))
 
     # ── Отправляем: фото сверху, текст+кнопки снизу ───────────────────────────
     _friend = {"ru": "друг", "en": "friend", "fa": "دوست", "tr": "dostum"}.get(lang, "friend")
     name = user.first_name or _friend
     _card_title = {"ru": "Карта дня", "en": "Card of the day", "fa": "کارت روز", "tr": "Günün kartı"}.get(lang, "Card of the day")
-    text = f"🃏 *{_card_title} — {name}*\n_{date.today().strftime('%d.%m.%Y')}_\n\n{card_text}"
+    text = f"🃏 {_card_title} — {name}\n{date.today().strftime('%d.%m.%Y')}\n\n{card_text}"
 
     image_path = ASSETS_DIR / f"{file_key}.png"
     try:
@@ -243,5 +188,6 @@ async def tarot_menu(callback: CallbackQuery, user: User, session: AsyncSession,
         except Exception:
             pass
 
-    await callback.message.answer(text, reply_markup=after_tarot_keyboard(), parse_mode="Markdown")
+    from bot.utils import send_long_answer
+    await send_long_answer(callback.message, text, reply_markup=after_tarot_keyboard())
     await callback.answer()

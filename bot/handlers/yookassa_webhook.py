@@ -30,7 +30,16 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
         body = await request.text()
         data = json.loads(body)
         event      = data.get("event", "—")
-        payment_obj = data.get("object", {})
+        if event != "payment.succeeded":
+            return web.Response(status=200)
+        from bot.services.yookassa_service import verified_payment, validate_payment
+        incoming_id = data.get("object", {}).get("id")
+        if not isinstance(incoming_id, str) or not incoming_id:
+            return web.Response(status=400)
+        payment_obj = await verified_payment(incoming_id)
+        if payment_obj.get("id") != incoming_id or not validate_payment(payment_obj):
+            return web.Response(status=400)
+        data["object"] = payment_obj
         pay_id     = payment_obj.get("id", "—")
         pay_status = payment_obj.get("status", "—")
         metadata   = payment_obj.get("metadata", {})
@@ -66,15 +75,18 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
             if telegram_id:
                 from bot.services.cache import get_redis
                 _r = await get_redis()
-                already = not await _r.set(f"tg_biz_paid:{payment_id}", "1", nx=True, ex=86400)
-                if not already:
+                from bot.services.payment_guard import payment_guard
+                async with payment_guard("tg_biz_paid", payment_id) as process:
+                    if not process:
+                        return web.Response(status=200)
                     if tier_key == "monthly_990":
                         # Новый тир — ежемесячная подписка
                         from bot.business_dialog.session_manager import set_biz_stage, get_biz_conn
                         await set_biz_stage(telegram_id, "paid_monthly")
                         # Сохраняем дату окончания подписки
                         import time
-                        await _r.set(f"biz:paid_until:{telegram_id}", str(int(time.time()) + 86400 * 30), ex=86400 * 31)
+                        from bot.services.payment_guard import extend_dialogue_subscription
+                        await extend_dialogue_subscription("biz", telegram_id, payment_id)
                         # Отправляем подтверждение
                         biz_conn_id = await get_biz_conn(telegram_id)
                         if _bot:
@@ -89,6 +101,8 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
                         logger.info("TG monthly_990 activated: tid=%s", telegram_id)
                     else:
                         from bot.business_dialog.tribute_flow import _process_payment as _biz_process_payment, _session_maker as _trib_sm
+                        if not _trib_sm:
+                            raise RuntimeError("Business payments not initialized")
                         if _trib_sm:
                             async with _trib_sm() as session:
                                 await _biz_process_payment(session, telegram_id, payment_id, amount, tier_key)
@@ -106,35 +120,13 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
             logger.error("Webhook: missing metadata in payment %s — %s", payment_id, metadata)
             return web.Response(status=200)
 
-        # Защита от двойной обработки через Redis
-        from bot.services.cache import get_redis
-        redis = await get_redis()
-        dedup_key = f"yk_paid:{payment_id}"
-        already_processed = await redis.set(dedup_key, "1", nx=True, ex=3600 * 24)
-        if not already_processed:
-            logger.warning("Webhook: payment %s already processed, skip", payment_id)
-            return web.Response(status=200)
-
-        logger.info(
-            "Webhook: processing TG payment uid=%s type=%s key=%s amount=%s payment_id=%s",
-            user_telegram_id, product_type, product_key, amount, payment_id,
-        )
-        try:
-            await _process_payment(
-                telegram_id=int(user_telegram_id),
-                product_type=product_type,
-                product_key=product_key,
-                amount=amount,
-                payment_id=payment_id,
-            )
-            logger.info("Webhook: TG payment processed OK uid=%s payment_id=%s", user_telegram_id, payment_id)
-        except Exception:
-            # Если обработка упала — удаляем ключ, чтобы следующий ретрай от ЮКассы смог пройти
-            await redis.delete(dedup_key)
-            raise
+        await _process_payment(
+            telegram_id=int(user_telegram_id), product_type=product_type,
+            product_key=product_key, amount=amount, payment_id=payment_id)
 
     except Exception:
         logger.exception("YooKassa webhook error")
+        return web.Response(status=503)
 
     return web.Response(status=200)
 
@@ -157,11 +149,14 @@ async def _process_payment(
 
     async with _session_maker() as session:
         result = await session.execute(
-            select(User).where(User.telegram_id == telegram_id)
+            select(User).where(User.telegram_id == telegram_id).with_for_update()
         )
         user = result.scalar_one_or_none()
         if not user:
             logger.error("Webhook: user telegram_id=%s not found", telegram_id)
+            raise RuntimeError("Payment user not found; retry required")
+
+        if await session.scalar(select(Payment.id).where(Payment.telegram_payment_charge_id == payment_id)):
             return
 
         # Сохраняем платёж в БД
@@ -174,7 +169,7 @@ async def _process_payment(
             status="completed",
         ))
 
-        await _activate_one_time_product(user, product_key)
+        await _activate_one_time_product(user, product_key, event_id=f"yk:{payment_id}")
         info = PRODUCT_DISPLAY.get(product_key, {})
         text = (
             f"✅ *{info.get('label', product_key)}* — оплачено! 🌟\n\n"

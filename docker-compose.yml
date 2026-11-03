@@ -13,8 +13,9 @@ services:
   bot:
     build:
       context: .
+      dockerfile: Dockerfile.bot-health
       pull: false    # не тянуть python:3.12-slim из Docker Hub, использовать кеш
-    image: numeiro-app:latest   # собирает образ и тегирует его — checker его подберёт
+    image: numeiro-app:commerce-20261103
     env_file: .env
     depends_on:
       - postgres
@@ -27,9 +28,8 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      # Проверяем что бот обрабатывал апдейты в последние 10 минут
-      test: ["CMD", "python", "-c",
-        "import time, sys; f=open('/tmp/bot_last_update'); v=float(f.read()); sys.exit(0 if time.time()-v < 660 else 1)"]
+      # Проверяем heartbeat, polling, scheduler и зависимости, независимо от активности клиентов
+      test: ["CMD", "python", "/usr/local/bin/numeiro-healthcheck.py"]
       interval: 120s      # проверять каждые 2 минуты
       timeout: 5s
       retries: 3          # 3 провала подряд → unhealthy → Docker рестартует

@@ -1,3 +1,5 @@
+from bot.services.catalog import product_offer
+from bot.services.limits import has_credit as product_has_credit
 """Недельный расклад."""
 import json
 from datetime import date, timedelta
@@ -69,37 +71,12 @@ async def weekly_start(callback: CallbackQuery, user: User, session: AsyncSessio
 
     _is_vip = await is_vip(user.id)
     if not _is_vip and not await has_credit(user.id, "weekly_report"):
-        _locked = {
-            "ru": (
-                "📅 *Расклад на неделю*\n\n"
-                "Прогноз на каждый день предстоящей недели с учётом ваших личных числовых циклов.\n\n"
-                "Узнаете, какие дни благоприятны для действий, переговоров, важных решений и отдыха.\n\n"
-                "💳 Стоимость: *79 ₽* или *79 ⭐*"
-            ),
-            "en": (
-                "📅 *Weekly Reading*\n\n"
-                "A forecast for each day of the coming week based on your personal number cycles.\n\n"
-                "Find out which days are favorable for action, negotiations, important decisions and rest.\n\n"
-                "💳 Price: *79 ⭐*"
-            ),
-            "fa": (
-                "📅 *فال هفتگی*\n\n"
-                "پیش‌بینی برای هر روز هفته آینده بر اساس چرخه‌های عددی شخصی شما.\n\n"
-                "بدانید کدام روزها برای اقدام، مذاکره، تصمیم‌گیری و استراحت مناسب است.\n\n"
-                "💳 قیمت: *79 ⭐*"
-            ),
-            "tr": (
-                "📅 *Haftalık Açılım*\n\n"
-                "Kişisel sayı döngülerinize göre gelecek haftanın her günü için tahmin.\n\n"
-                "Hangi günlerin eylem, müzakere, önemli kararlar ve dinlenme için uygun olduğunu öğrenin.\n\n"
-                "💳 Fiyat: *79 ⭐*"
-            ),
-        }.get(lang, "📅 *Weekly Reading*\n\nYour personal forecast for the week ahead.\n\n💳 Price: *79 ⭐*")
+        _locked = product_offer("weekly_report", lang)
         await callback.message.edit_text(_locked, reply_markup=_pay_kb("weekly_report", 79, 79, lang), parse_mode="Markdown")
         await callback.answer()
         return
 
-    if _is_vip and not await check_vip_limit(user.id, "weekly_report"):
+    if _is_vip and not await check_vip_limit(user.id, "weekly_report") and not await product_has_credit(user.id, "weekly_report"):
         _exhausted = {
             "ru": "💎 Лимит VIP по этому разделу исчерпан на этот месяц.",
             "en": "💎 VIP limit for this section exhausted this month.",
@@ -156,67 +133,43 @@ async def weekly_sphere_selected(callback: CallbackQuery, user: User, session: A
         await callback.answer()
         return
 
-    cache_key = make_cache_key("weekly", user.birth_date, sphere, week_start.strftime("%Y-%W"))
-    cached = await get_cached(cache_key)
-
-    if not cached:
-        nums = calculate_all(birth_date_obj)
-        week_nums = _week_energy(birth_date_obj, week_start)
-        _wd_list = _WEEKDAY_NAMES.get(lang) or _WEEKDAY_NAMES["en"]
-        days = []
-        for i in range(7):
-            d = today + timedelta(days=i)
-            days.append({
-                "date": d.strftime("%d.%m"),
-                "weekday": _wd_list[d.weekday()],
-            })
-        sphere_label = _sphere(sphere, lang)
-        context = {
-            "name": user.first_name or _FRIEND.get(lang, "friend"),
-            "birth_date": user.birth_date,
-            "sphere": sphere_label,
-            "week_start": week_start.strftime("%d.%m.%Y"),
-            "week_end": week_end.strftime("%d.%m.%Y"),
-            "days": days,
-            "numbers": nums,
-            "week_energy": week_nums,
-        }
-        user_msg = (
-            f"Создай недельный прогноз для сферы '{sphere_label}'.\n"
-            f"Данные: {json.dumps(context, ensure_ascii=False)}"
-        )
-        cached = await generate(
-            session, user.id, "weekly_report",
-            WEEKLY_PREDICTION_PROMPT(lang), user_msg,
-            complexity="medium", max_tokens=700,
-        )
-        await set_cached(cache_key, cached, ttl=3600 * 24 * 7)
-
+    from bot.services.fulfillment import generate_paid_report
+    nums = calculate_all(birth_date_obj)
+    week_nums = _week_energy(birth_date_obj, week_start)
+    _wd_list = _WEEKDAY_NAMES.get(lang) or _WEEKDAY_NAMES["en"]
+    days = []
+    for i in range(7):
+        d = today + timedelta(days=i)
+        days.append({
+            "date": d.strftime("%d.%m"),
+            "weekday": _wd_list[d.weekday()],
+        })
     sphere_label = _sphere(sphere, lang)
-    sphere_label_ru = SPHERE_NAMES.get(sphere, sphere)  # для истории — всегда ru
-
-    from bot.services.reports_service import save_report
-    await save_report(
-        session, user.id, "weekly_forecast",
-        title=f"Прогноз {week_start.strftime('%d.%m')}–{week_end.strftime('%d.%m')} | {sphere_label_ru}",
-        content=cached,
-        metadata={"sphere": sphere, "week_start": str(week_start), "week_end": str(week_end)},
-    )
-    if await is_vip(user.id):
-        from bot.services.limits import use_vip_limit
-        await use_vip_limit(user.id, "weekly_report")
-    else:
-        from bot.services.limits import use_credit
-        await use_credit(user.id, "weekly_report")
+    context = {
+        "name": user.first_name or _FRIEND.get(lang, "friend"),
+        "birth_date": user.birth_date,
+        "sphere": sphere_label,
+        "week_start": week_start.strftime("%d.%m.%Y"),
+        "week_end": week_end.strftime("%d.%m.%Y"),
+        "days": days,
+        "numbers": nums,
+        "week_energy": week_nums,
+    }
+    report = await generate_paid_report(
+        session, user.id, "weekly_report", "weekly_forecast",
+        f"Прогноз {week_start:%d.%m}–{week_end:%d.%m} | {SPHERE_NAMES.get(sphere, sphere)}",
+        context, WEEKLY_PREDICTION_PROMPT(lang), lang, max_tokens=3200,
+        metadata={"sphere": sphere, "week_start": str(week_start), "week_end": str(week_end)})
+    cached = report.content
 
     name = user.first_name or _FRIEND.get(lang, "friend")
     sphere_name = sphere_label
     _hdr_title = {"ru": "Прогноз на неделю", "en": "Weekly forecast", "fa": "پیش‌بینی هفتگی", "tr": "Haftalık tahmin"}.get(lang, "Weekly forecast")
     _hdr_sphere = {"ru": "Сфера", "en": "Sphere", "fa": "حوزه", "tr": "Alan"}.get(lang, "Sphere")
     header = (
-        f"📅 *{_hdr_title} — {name}*\n"
-        f"_{week_start.strftime('%d.%m')} — {week_end.strftime('%d.%m.%Y')}_\n"
-        f"{_hdr_sphere}: *{sphere_name}*\n\n"
+        f"📅 {_hdr_title} — {name}\n"
+        f"{week_start.strftime('%d.%m')} — {week_end.strftime('%d.%m.%Y')}\n"
+        f"{_hdr_sphere}: {sphere_name}\n\n"
     )
     from bot.keyboards.main import after_reading_keyboard_weekly
     await safe_edit_ai(thinking_msg, header + cached, reply_markup=after_reading_keyboard_weekly())

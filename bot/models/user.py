@@ -201,3 +201,17 @@ class UserReport(Base):
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship("User", back_populates="reports")
+
+
+class PaidResult(Base):
+    """Durable generation and settlement journal; additive schema migration."""
+    __tablename__ = "paid_results"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    product_key: Mapped[str] = mapped_column(String(50))
+    report_type: Mapped[str] = mapped_column(String(50))
+    title: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column(JSON)
+    report_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_reports.id"), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())

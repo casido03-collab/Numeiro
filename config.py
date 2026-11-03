@@ -5,6 +5,10 @@ from pydantic import Field
 class Settings(BaseSettings):
     bot_token: str = Field(..., env="BOT_TOKEN")
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
+    openai_model_simple: str = "gpt-6-luna"
+    openai_model_medium: str = "gpt-6-luna"
+    openai_model_complex: str = "gpt-6.1-terra"
+    marketing_reminders_enabled: bool = False
     openrouter_api_key: str = Field(default="", env="OPENROUTER_API_KEY")
     database_url: str = Field(..., env="DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
@@ -163,7 +167,7 @@ RATE_LIMITS = {
 
 # AI модели
 AI_MODELS = {
-    "simple": "gpt-4.1-mini",
-    "medium": "gpt-4.1-mini",
-    "complex": "gpt-4o",
+    "simple": settings.openai_model_simple,
+    "medium": settings.openai_model_medium,
+    "complex": settings.openai_model_complex,
 }
