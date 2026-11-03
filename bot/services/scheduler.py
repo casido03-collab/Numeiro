@@ -39,7 +39,7 @@ async def send_daily_pushes(bot: Bot, session: AsyncSession):
         return
 
     result = await session.execute(
-        select(User).join(Subscription).where(
+        select(User).join(Subscription).where(User.telegram_id.is_not(None),
             Subscription.status == SubscriptionStatusEnum.active,
             Subscription.plan != PlanEnum.free,
         )
@@ -79,7 +79,7 @@ async def send_subscription_reminders(bot: Bot, session: AsyncSession):
     window_start = datetime.now(timezone.utc) + timedelta(hours=23)
 
     result = await session.execute(
-        select(User).join(Subscription).where(
+        select(User).join(Subscription).where(User.telegram_id.is_not(None),
             Subscription.status == SubscriptionStatusEnum.active,
             Subscription.plan != PlanEnum.free,
             Subscription.expires_at >= window_start,
@@ -678,6 +678,9 @@ async def _send_accompaniment_morning_plans(bot: Bot, session_maker) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def _vk_send(vk_api, uid: int, text: str) -> bool:
+    from bot.vk_menu.support import is_manual_support
+    if await is_manual_support(uid):
+        return False
     from bot.services.notifications import muted
     if await muted("vk", uid):
         return False

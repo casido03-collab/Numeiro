@@ -15,7 +15,7 @@ services:
       context: .
       dockerfile: Dockerfile.bot-health
       pull: false    # не тянуть python:3.12-slim из Docker Hub, использовать кеш
-    image: numeiro-app:commerce-20261103
+    image: numeiro-app:vk-menu-20261103
     env_file: .env
     depends_on:
       - postgres

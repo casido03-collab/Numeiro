@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     vk_token: str = Field(default="", env="VK_TOKEN")
     vk_callback_confirm: str = Field(default="", env="VK_CALLBACK_CONFIRM")
     vk_callback_secret: str = Field(default="", env="VK_CALLBACK_SECRET")
+    vk_group_id: int = 200332918
+    vk_menu_cover: str = ""
     debug: bool = Field(default=False, env="DEBUG")
     checker_bot_token: str = Field(default="", env="CHECKER_BOT_TOKEN")
     checker_secret: str = Field(default="", env="CHECKER_SECRET")

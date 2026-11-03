@@ -574,7 +574,7 @@ async def cmd_broadcast(message: Message, session: AsyncSession):
 
     try:
         users = (await session.execute(
-            select(User.telegram_id).where(User.is_blocked == False)
+            select(User.telegram_id).where(User.is_blocked == False, User.telegram_id.is_not(None))
         )).scalars().all()
 
         await message.answer(f"📤 Начинаю рассылку для {len(users)} пользователей...")

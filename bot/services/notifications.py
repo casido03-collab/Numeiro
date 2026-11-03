@@ -24,5 +24,7 @@ class NotificationBot:
         return getattr(self.bot, name)
 
     async def send_message(self, chat_id=None, text=None, **kwargs):
+        if chat_id is None:  # VK-only users are never Telegram recipients.
+            return
         if not await muted("tg", chat_id):
             return await self.bot.send_message(chat_id=chat_id, text=text, **kwargs)

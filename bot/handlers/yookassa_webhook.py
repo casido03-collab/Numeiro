@@ -62,6 +62,11 @@ async def handle_yookassa_webhook(request: web.Request) -> web.Response:
             return web.Response(status=200)
 
         # ── VK-платёж ─────────────────────────────────────────────────────────
+        if metadata.get("platform") == "vk_catalog":
+            from bot.vk_menu.payments import accept_payment
+            await accept_payment(_session_maker, payment_obj)
+            return web.Response(status=200)
+
         if metadata.get("platform") == "vk":
             from bot.vk_dialog.payments import handle_vk_payment_webhook
             return await handle_vk_payment_webhook(request, _parsed=(data, payment_obj, metadata))

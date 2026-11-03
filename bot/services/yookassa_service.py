@@ -20,10 +20,11 @@ def _create_payment_sync(
     return_url: str,
     metadata: dict,
     email: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict:
     from yookassa import Payment
     _configure(shop_id, secret_key)
-    idempotency_key = str(uuid.uuid4())
+    idempotency_key = idempotency_key or str(uuid.uuid4())
 
     payload: dict = {
         "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
@@ -62,6 +63,7 @@ async def create_payment(
     return_url: str,
     metadata: dict,
     email: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict:
     """Создать платёж в ЮКассе. Возвращает dict с id и confirmation_url."""
     return await asyncio.to_thread(
@@ -73,6 +75,7 @@ async def create_payment(
         return_url,
         metadata,
         email,
+        idempotency_key,
     )
 
 
@@ -105,7 +108,7 @@ def validate_payment(payment: dict) -> bool:
     if platform in ("vk", "tg_business"):
         tier = meta.get("tier_key")
         expected = {"q29": 29, "monthly_990": 990}.get(tier, TIERS.get(tier, {}).get("price"))
-    elif platform in (None, "", "tg", "telegram") and meta.get("product_type") == "product":
+    elif platform in (None, "", "tg", "telegram", "vk_catalog") and meta.get("product_type") == "product":
         key = meta.get("product_key")
         expected = VIP_PLAN["price_rub"] if key == "vip" else PRODUCTS.get(key, {}).get("price_rub")
     else:

@@ -155,6 +155,8 @@ async def main():
 
     if _vk_bot:
         logger.info("VK Callback API ready at /vk/callback")
+    from bot.vk_menu.queue import start_workers
+    vk_tasks = start_workers(async_session_maker, _vk_bot.api) if _vk_bot else []
 
     # Планировщик
     scheduler = setup_scheduler(bot, async_session_maker)
@@ -206,6 +208,9 @@ async def main():
         watchdog_stop.set()
         for task in health_tasks:
             task.cancel()
+        for task in vk_tasks:
+            task.cancel()
+        await asyncio.gather(*vk_tasks, return_exceptions=True)
         await asyncio.gather(*health_tasks, return_exceptions=True)
         watchdog_thread.join(timeout=1)
         scheduler.shutdown()

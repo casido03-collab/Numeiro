@@ -50,7 +50,7 @@ async def run_retention_pushes(bot: Bot, session: AsyncSession) -> None:
     threshold = datetime.now(timezone.utc) - timedelta(hours=24)
 
     result = await session.execute(
-        select(User, UserActivity)
+        select(User, UserActivity).where(User.telegram_id.is_not(None))
         .join(UserActivity, UserActivity.user_id == User.id)
         .where(
             User.is_blocked == False,  # noqa: E712
@@ -91,7 +91,7 @@ async def run_trial_upsell(bot: Bot, session: AsyncSession) -> None:
     threshold = datetime.now(timezone.utc) - timedelta(hours=1)
 
     result = await session.execute(
-        select(User, UserActivity)
+        select(User, UserActivity).where(User.telegram_id.is_not(None))
         .join(UserActivity, UserActivity.user_id == User.id)
         .join(Subscription, Subscription.user_id == User.id)
         .where(
@@ -181,7 +181,7 @@ async def run_onboarding_nudge(bot: Bot, session: AsyncSession) -> None:
             onboarded_ids.add(row.user_id)
 
     result = await session.execute(
-        select(User).where(
+        select(User).where(User.telegram_id.is_not(None),
             User.is_blocked == False,  # noqa: E712
             User.id.notin_(onboarded_ids) if onboarded_ids else User.id.isnot(None),
         )

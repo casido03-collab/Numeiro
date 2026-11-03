@@ -12,7 +12,8 @@ _vk_api = None
 
 def setup_vk_payments(vk_api) -> None:
     global _vk_api
-    _vk_api = vk_api
+    from bot.vk_menu.support import SupportAwareAPI
+    _vk_api = SupportAwareAPI(vk_api)
 
 
 def _configure_yookassa():
