@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 echo "🕐 $(date -u) — deploy start"
 
-if git diff HEAD~1 --name-only | grep -qE "requirements.txt|Dockerfile|docker-compose.yml|pyproject.toml|poetry.lock"; then
-  echo "📦 Dependencies changed — rebuilding image..."
-  docker compose up -d --build --force-recreate bot
-else
-  echo "⚡ Code-only change — fast restart..."
-  docker compose stop bot
-  docker compose up -d bot
-fi
+# The verified entrypoint checks source hashes embedded in the image.
+# Always rebuild (Docker reuses unchanged layers), even for code-only releases.
+# Build first so a build failure leaves the running service untouched.
+echo "📦 Building verified bot image..."
+docker compose build bot
+docker compose up -d --no-deps --force-recreate bot
 
 echo "✅ $(date -u) — done"
