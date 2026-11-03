@@ -120,6 +120,15 @@ async def begin(account, user, product, reply):
 
 async def prepare(session, account, user, event, reply):
     product = account.data["product"]
+    if product == "tarot_card":
+        reports = (await session.scalars(select(UserReport).where(UserReport.user_id==user.id,
+            UserReport.report_type=="tarot_card").order_by(UserReport.id.desc()).limit(20))).all()
+        previous = next((r for r in reports if (r.metadata_json or {}).get("date")==readings.today().isoformat()), None)
+        if previous:
+            state(account, "menu")
+            await reply.send("Ваша карта на сегодня уже готова. Открываю её без нового списания 💜")
+            await show_result(reply, previous)
+            return
     order_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"vk-order:{event.event_key}"))
     order = await session.get(VKOrder, order_id)
     if order is None:
@@ -149,6 +158,7 @@ async def show_order(session, account, order, reply):
         extra = []
         for key,label in (("question","Ваш вопрос"),("birth_date","Дата рождения"),("sphere","Сфера"),
                           ("partner_birth","Дата партнёра"),("relation_type","Отношения"),("event","Событие"),
+                          ("date","Дата карты"),("week_start","Неделя с"),("week_end","По"),
                           ("period_start","Начало периода"),("period_end","Конец периода"),("available_days","Дни")):
             if key in context:
                 value = {"all":"любые", "workdays":"будни", "weekends":"выходные"}.get(str(context[key]), context[key])

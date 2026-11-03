@@ -137,9 +137,13 @@ async def main():
     _webhook_app = aiohttp_web.Application()
 
     async def runtime_health_response(request):
-        return await internal_health_response(
+        response = await internal_health_response(
             request, health, scheduler is not None and scheduler.running, polling_running,
         )
+        import json
+        details = json.loads(response.text)
+        details["vk_workers_running"] = len(vk_tasks) if vk_tasks and all(not t.done() for t in vk_tasks) else 0
+        return aiohttp_web.json_response(details, status=response.status)
 
     # Единый webhook ЮКассы — маршрутизирует по metadata.platform (tg / vk)
     _webhook_app.router.add_post("/yookassa/webhook", handle_yookassa_webhook)

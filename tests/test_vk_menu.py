@@ -304,3 +304,15 @@ async def test_manual_operator_reply_pauses_but_own_bot_reply_does_not(db,monkey
     payload["object"]["admin_author_id"]=123
     assert (await callback.handle_vk_callback(request)).text=="ok"
     assert (await d.account())[0].manual_support
+
+
+@pytest.mark.asyncio
+async def test_card_of_day_survives_name_change_without_second_purchase(db,ai):
+    d=Driver(db);await d.setup()
+    order=await d.draft("tarot_card")
+    await add_credit(order.user_id,order.product)
+    await d.event(cmd=f"run:{order.id}")
+    await d.event(cmd="edit:name");await d.event("Другое имя")
+    messages=await d.event(cmd="begin:tarot_card")
+    assert any("без нового списания" in m.body["message"] for m in messages)
+    assert ai.await_count==1
