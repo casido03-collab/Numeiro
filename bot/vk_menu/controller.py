@@ -8,9 +8,8 @@ from sqlalchemy import select, func, update
 from config import PRODUCTS, VIP_PLAN, settings
 from bot.models.user import User, UserReport
 from bot.models.vk import VKAccount, VKOrder, VKOutbox, VKReferralReward
-from bot.vk_menu import keyboards as kb, readings
+from bot.vk_menu import keyboards as kb, readings, offers
 from bot.vk_menu.payments import checkout, check_order
-from bot.services.catalog import DETAILS, FREE_SUMMARY
 from bot.services.limits import can_use_product, get_vip_limits_summary, is_vip, add_credit, activate_vip
 from bot.services.cache import get_redis
 from bot.services.fulfillment import recover_pending, PurchaseRequired
@@ -77,16 +76,29 @@ def state(account, value, **data):
 async def show_menu(account, reply, welcome=False):
     state(account, "menu")
     if welcome:
-        await reply.send("💜 Добро пожаловать к Бабушке Аише.\n\nЯ цифровой помощник: помогу посмотреть на ваш вопрос через символы, числа и карты — без обещаний предсказать будущее.\n\n"+FREE_SUMMARY["ru"]+"\n\nВыберите раздел внизу. Для живого общения с владельцем — «Техподдержка».",
+        await reply.send("💜 Добро пожаловать к Бабушке Аише.\n\nЯ цифровой помощник: помогу посмотреть на ваш вопрос через символы, числа и карты — без обещаний предсказать будущее.\n\n🌙 Бесплатно: гороскоп дня и одна «Энергия дня» в день.\n🔮 Персональные разборы оплачиваются отдельно. Состав и стоимость — внутри каждой услуги.\n\nВыберите раздел внизу. Для живого общения с владельцем — «Техподдержка».",
                          kb.home(), settings.vk_menu_cover or None)
     else:
         await reply.send("🔮 Меню Аиши\nВыберите услугу, бесплатный прогноз или сохранённый разбор.", kb.home())
-    await reply.send("✨ Разовые разборы и VIP\nЦена указана до оплаты. Платежи — картой или СБП через ЮKassa.", kb.catalog())
+    await show_catalog(account, reply)
+
+
+async def show_catalog(account, reply, page=0):
+    page = max(0, min(page, len(kb.CATALOG_PAGES)-1))
+    state(account, "menu")
+    lines = []
+    for product in kb.CATALOG_PAGES[page]:
+        if product == "vip":
+            lines.append(f"💎 VIP на {VIP_PLAN['duration_days']} дней")
+        else:
+            lines.append(f"{kb.ICONS[product]} {PRODUCTS[product]['name']}")
+    text = (f"🔮 Услуги Аиши · {page+1}/{len(kb.CATALOG_PAGES)}\n\n"+"\n".join(lines)+
+            "\n\nВыберите услугу — покажу, что входит и сколько стоит.")
+    await reply.send(text, kb.catalog(page))
 
 
 def offer(product):
-    return (f"{kb.ICONS[product]} {PRODUCTS[product]['name']} · {PRODUCTS[product]['price_rub']} ₽\n\n"
-            f"{DETAILS[product][0]}\n\nГотовый ответ останется в «Мои разборы». Это символическая интерпретация, без гарантий будущих событий.")
+    return offers.product_offer(product)
 
 
 async def show_result(reply, report):
@@ -181,9 +193,7 @@ async def show_order(session, account, order, reply):
 
 
 def vip_text():
-    lines = [f"• {kb.SHORT_NAMES[p]} — {n}" for p,n in VIP_PLAN["limits"].items()]
-    return (f"💎 VIP · {VIP_PLAN['price_rub']} ₽ на 30 дней\n\n"+"\n".join(lines)+
-            "\n\nПри продлении добавляются 30 дней и новые квоты, неиспользованный остаток сохраняется до окончания продлённого VIP.\nАвтосписаний нет. История разборов остаётся доступной после окончания подписки.")
+    return offers.vip_offer()
 
 
 async def run_order(session, account, order, reply):
@@ -298,8 +308,14 @@ async def handle(session, maker, api, event, reply):
             await reply.send(f"✅ Оплата получена: {PRODUCTS[order.product]['name']}. Готовлю разбор по данным вашего заказа.")
             await run_order(session, account, order, reply)
         return
-    if cmd in ("menu", "catalog"):
-        await show_menu(account, reply, welcome=cmd=="menu" and text.lower() in ("начать", "/start", "старт"))
+    if cmd == "menu":
+        await show_menu(account, reply, welcome=text.lower() in ("начать", "/start", "старт"))
+    elif cmd == "catalog" or cmd.startswith("catalog:"):
+        try:
+            page = int(cmd.split(":", 1)[1]) if ":" in cmd else 0
+        except ValueError:
+            page = 0
+        await show_catalog(account, reply, page)
     elif cmd == "free":
         state(account, "menu")
         await reply.send("🌙 Бесплатно каждый день\n\nГороскоп и одна «Энергия дня». Повторное открытие показывает сохранённый ответ. Новый день начинается в полночь по Москве.",
@@ -316,7 +332,7 @@ async def handle(session, maker, api, event, reply):
     elif cmd.startswith("product:") and cmd[8:] in PRODUCTS:
         product = cmd[8:]
         state(account, "menu")
-        await reply.send(offer(product), kb.keyboard([[kb.button("✨ Продолжить", f"begin:{product}", "positive")], [kb.button("🔮 Все услуги", "catalog", "secondary")]]))
+        await reply.send(offer(product), kb.keyboard([[kb.button(offers.ACTION_LABELS[product], f"begin:{product}", "positive")], [kb.button("🔮 Все услуги", "catalog", "secondary")]]))
     elif cmd.startswith("begin:") and cmd[6:] in PRODUCTS:
         product = cmd[6:]
         await begin(account, user, product, reply)

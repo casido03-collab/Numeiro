@@ -74,6 +74,18 @@ async def test_menu_identity_and_full_catalog(db):
     messages = await d.event("Начать")
     account, user = await d.account()
     assert user.id != 1 and user.telegram_id is None
+    catalog = await d.event(cmd="catalog")
+    assert len(catalog) == 1  # Opening services should not repeat the greeting.
+    assert "Личный вопрос" in catalog[0].body["message"]
+    assert "₽" not in json.dumps([m.body for m in messages + catalog], ensure_ascii=False)
+    keyboard = json.loads(catalog[0].body["keyboard"])
+    next_button = next(b for row in keyboard["buttons"] for b in row if b["action"]["label"] == "Ещё услуги →")
+    second_page = await d.event(cmd=json.loads(next_button["action"]["payload"])["a"])
+    assert len(second_page) == 1
+    assert "Совместимость пары" in second_page[0].body["message"]
+    assert "VIP на 30 дней" in second_page[0].body["message"]
+    assert "₽" not in json.dumps(second_page[0].body, ensure_ascii=False)
+    messages += second_page
     commands = []
     for msg in messages:
         keyboard = json.loads(msg.body["keyboard"])
@@ -83,6 +95,17 @@ async def test_menu_identity_and_full_catalog(db):
                 assert button["color"] in ("primary", "secondary", "positive", "negative")
     assert {"product:"+p for p in kb.ORDER}.issubset(commands)
     assert {"support", "history", "free", "vip"}.issubset(commands)
+    back_button = next(b for row in json.loads(second_page[0].body["keyboard"])["buttons"] for b in row if b["action"]["label"] == "← Назад")
+    first_page = await d.event(cmd=json.loads(back_button["action"]["payload"])["a"])
+    assert "Личный вопрос" in first_page[0].body["message"]
+    for product in kb.ORDER:
+        details = await d.event(cmd=f"product:{product}")
+        assert f"{controller.PRODUCTS[product]['price_rub']} ₽" in details[0].body["message"]
+        assert "Что вы получите:" in details[0].body["message"]
+        assert "ЮKassa" in details[0].body["message"]
+    vip = await d.event(cmd="vip")
+    assert "1999 ₽" in vip[0].body["message"]
+    assert "Автосписаний нет" in vip[0].body["message"]
 
 
 @pytest.mark.parametrize("product", kb.ORDER)
