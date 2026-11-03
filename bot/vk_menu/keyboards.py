@@ -6,13 +6,11 @@ ICONS = {"personal_question": "🔮", "mini_reading": "✨", "tarot_card": "🃏
 SHORT_NAMES = {"personal_question": "Личный вопрос", "mini_reading": "Мини-разбор", "tarot_card": "Карта дня",
                "full_matrix": "Матрица судьбы", "compatibility": "Совместимость", "weekly_report": "Неделя", "date_selection": "Подбор дат"}
 ORDER = list(SHORT_NAMES)
-CATALOG_PAGES = (
-    ("personal_question", "mini_reading", "tarot_card", "weekly_report"),
-    ("full_matrix", "compatibility", "date_selection", "vip"),
-)
-CATALOG_LABELS = {"personal_question": "Вопрос", "mini_reading": "Мини", "tarot_card": "Карта",
-                  "weekly_report": "Неделя", "full_matrix": "Матрица", "compatibility": "Пара",
-                  "date_selection": "Даты", "vip": "VIP"}
+CATALOG_ORDER = ("personal_question", "mini_reading", "tarot_card", "weekly_report",
+                 "full_matrix", "compatibility", "date_selection", "vip")
+CATALOG_LABELS = {"personal_question": "Вопрос", "mini_reading": "Разбор", "tarot_card": "Карта дня",
+                  "weekly_report": "Расклад на неделю", "full_matrix": "Матрица судьбы",
+                  "compatibility": "Совместимость", "date_selection": "Подбор даты", "vip": "VIP на 30 дней"}
 
 
 def button(label, command, color="primary"):
@@ -40,19 +38,16 @@ def home():
     ], inline=False)
 
 
-def catalog(page=0):
-    page = max(0, min(page, len(CATALOG_PAGES)-1))
-    buttons = []
-    for product in CATALOG_PAGES[page]:
+def catalog_blocks():
+    rows = []
+    for product in CATALOG_ORDER:
         command = "vip" if product == "vip" else f"product:{product}"
         icon = "💎" if product == "vip" else ICONS[product]
-        # Keep mobile labels short; details and price are inside each offer.
-        buttons.append(button(f"{icon} {CATALOG_LABELS[product]}", command))
-    rows = [buttons[i:i+2] for i in range(0, len(buttons), 2)]
-    rows.append([button("Ещё услуги →", "catalog:1", "secondary")] if page == 0
-                else [button("← Назад", "catalog:0", "secondary")])
-    rows.append([button("🌙 Бесплатно", "free", "positive"), button("Поддержка", "support", "secondary")])
-    return keyboard(rows)
+        rows.append([button(f"{icon} {CATALOG_LABELS[product]}", command)])
+    rows.extend([[button("🌙 Бесплатно", "free", "positive")],
+                 [button("💜 Техподдержка", "support", "secondary")]])
+    # VK allows six inline rows per message. Send every block together, without pagination.
+    return [keyboard(rows[i:i+6]) for i in range(0, len(rows), 6)]
 
 
 def back():

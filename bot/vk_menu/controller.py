@@ -83,18 +83,12 @@ async def show_menu(account, reply, welcome=False):
     await show_catalog(account, reply)
 
 
-async def show_catalog(account, reply, page=0):
-    page = max(0, min(page, len(kb.CATALOG_PAGES)-1))
+async def show_catalog(account, reply):
     state(account, "menu")
-    lines = []
-    for product in kb.CATALOG_PAGES[page]:
-        if product == "vip":
-            lines.append(f"💎 VIP на {VIP_PLAN['duration_days']} дней")
-        else:
-            lines.append(f"{kb.ICONS[product]} {PRODUCTS[product]['name']}")
-    text = (f"🔮 Услуги Аиши · {page+1}/{len(kb.CATALOG_PAGES)}\n\n"+"\n".join(lines)+
-            "\n\nВыберите услугу — покажу, что входит и сколько стоит.")
-    await reply.send(text, kb.catalog(page))
+    texts = ("🔮 Услуги Аиши\n\nВыберите услугу — покажу, что входит и сколько стоит.",
+             "💜 Подбор даты, VIP и помощь")
+    for text, keyboard in zip(texts, kb.catalog_blocks(), strict=True):
+        await reply.send(text, keyboard)
 
 
 def offer(product):
@@ -311,11 +305,8 @@ async def handle(session, maker, api, event, reply):
     if cmd == "menu":
         await show_menu(account, reply, welcome=text.lower() in ("начать", "/start", "старт"))
     elif cmd == "catalog" or cmd.startswith("catalog:"):
-        try:
-            page = int(cmd.split(":", 1)[1]) if ":" in cmd else 0
-        except ValueError:
-            page = 0
-        await show_catalog(account, reply, page)
+        # Previously sent page buttons now open the complete catalog as well.
+        await show_catalog(account, reply)
     elif cmd == "free":
         state(account, "menu")
         await reply.send("🌙 Бесплатно каждый день\n\nГороскоп и одна «Энергия дня». Повторное открытие показывает сохранённый ответ. Новый день начинается в полночь по Москве.",
